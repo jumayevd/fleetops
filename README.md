@@ -5,6 +5,7 @@ One control tower for a trucking / logistics company: dispatch, live tracking, f
 ## Live
 
 - Production: **https://fleetops-ochre.vercel.app** (Vercel project `fleetops`, region `fra1`)
+- Deploys: every push to `main` deploys to production automatically (GitHub ↔ Vercel). Other branches get preview deployments, but those need their own env vars before they work
 - Demo-company logins and their shared password are in `DEMO-CREDENTIALS.local.txt`. That file is git-ignored and never deployed. Change passwords under **My account** after signing in.
 
 | Role          | Email                   | What they see |
