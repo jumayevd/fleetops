@@ -39,3 +39,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+!.env.example
+
+# local sqlite
+prisma/*.db
+prisma/*.db-journal
+
+# uploaded documents (local dev storage)
+/storage
+
+.vercel
+.env*.local
+
+# production demo credentials (never commit)
+DEMO-CREDENTIALS.local.txt

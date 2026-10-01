@@ -1,0 +1,283 @@
+// Logistics platform data model.
+// Postgres (Neon via the Vercel Marketplace). DATABASE_URL is the pooled
+// connection for the app; DATABASE_URL_UNPOOLED is used for migrations.
+// Status/role fields are strings; allowed values live in src/lib/constants.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         String // OWNER | ADMIN | DISPATCHER | FLEET_MANAGER | ACCOUNTANT | DRIVER
+  phone        String?
+  active       Boolean    @default(true)
+  lastLoginAt  DateTime?
+  // Telegram alerts: chat linked via /start <telegramLinkCode> to the bot
+  telegramChatId   String?  @unique
+  telegramLinkCode String?  @unique
+  telegramAlerts   Boolean  @default(true)
+  createdAt    DateTime   @default(now())
+  driver       Driver?
+  dispatched   Load[]     @relation("Dispatcher")
+  events       LoadEvent[]
+  audits       AuditLog[]
+  documents    Document[]
+}
+
+model Driver {
+  id            String      @id @default(cuid())
+  userId        String?     @unique
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name          String
+  phone         String?
+  email         String?
+  licenseNumber String
+  licenseClass  String      @default("CE")
+  licenseExpiry DateTime
+  medicalExpiry DateTime?
+  status        String      @default("AVAILABLE") // AVAILABLE | ON_DUTY | DRIVING | OFF_DUTY | ON_LEAVE
+  hireDate      DateTime    @default(now())
+  payPerKm      Float       @default(0.35)
+  rating        Float       @default(5)
+  notes         String?
+  createdAt     DateTime    @default(now())
+  loads         Load[]
+  fuelLogs      FuelLog[]
+  truck         Truck?      @relation("TruckDriver")
+  documents     Document[]
+}
+
+model Truck {
+  id               String              @id @default(cuid())
+  unitNumber       String              @unique
+  make             String
+  model            String
+  year             Int
+  vin              String?
+  plate            String
+  status           String              @default("ACTIVE") // ACTIVE | MAINTENANCE | OUT_OF_SERVICE
+  odometerKm       Int                 @default(0)
+  fuelType         String              @default("DIESEL")
+  fuelCapacityL    Int                 @default(600)
+  insuranceExpiry  DateTime?
+  inspectionExpiry DateTime?
+  nextServiceKm    Int?
+  // Last known telemetry
+  lat              Float?
+  lng              Float?
+  speedKmh         Float?
+  heading          Float?
+  lastPingAt       DateTime?
+  pingSource       String? // SIMULATED | DEVICE
+  driverId         String?             @unique
+  driver           Driver?             @relation("TruckDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  createdAt        DateTime            @default(now())
+  loads            Load[]
+  maintenance      MaintenanceRecord[]
+  fuelLogs         FuelLog[]
+  documents        Document[]
+}
+
+model Trailer {
+  id         String   @id @default(cuid())
+  unitNumber String   @unique
+  type       String // DRY_VAN | REEFER | FLATBED | TANKER | CONTAINER
+  capacityKg Int
+  plate      String?
+  status     String   @default("ACTIVE") // ACTIVE | MAINTENANCE | OUT_OF_SERVICE
+  createdAt  DateTime @default(now())
+  loads      Load[]
+}
+
+model Customer {
+  id           String    @id @default(cuid())
+  name         String
+  contactName  String?
+  email        String?
+  phone        String?
+  address      String?
+  city         String?
+  country      String?   @default("Uzbekistan")
+  taxId        String?
+  paymentTerms Int       @default(30)
+  creditLimit  Float     @default(50000)
+  notes        String?
+  createdAt    DateTime  @default(now())
+  loads        Load[]
+  invoices     Invoice[]
+  documents    Document[]
+}
+
+model Load {
+  id           String      @id @default(cuid())
+  reference    String      @unique
+  customerId   String
+  customer     Customer    @relation(fields: [customerId], references: [id])
+  status       String      @default("PLANNED") // PLANNED | ASSIGNED | IN_TRANSIT | DELIVERED | INVOICED | CANCELLED
+  priority     String      @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  // Route
+  originName   String
+  originCity   String
+  originLat    Float
+  originLng    Float
+  destName     String
+  destCity     String
+  destLat      Float
+  destLng      Float
+  pickupAt     DateTime
+  deliveryAt   DateTime
+  distanceKm   Float
+  // Cargo
+  commodity    String
+  weightKg     Float
+  pallets      Int?
+  equipment    String      @default("DRY_VAN")
+  temperatureC Float?
+  hazmat       Boolean     @default(false)
+  // Money
+  rate         Float
+  driverPay    Float       @default(0)
+  fuelCost     Float       @default(0)
+  otherCost    Float       @default(0)
+  // Assignment
+  truckId      String?
+  truck        Truck?      @relation(fields: [truckId], references: [id], onDelete: SetNull)
+  trailerId    String?
+  trailer      Trailer?    @relation(fields: [trailerId], references: [id], onDelete: SetNull)
+  driverId     String?
+  driver       Driver?     @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  dispatcherId String?
+  dispatcher   User?       @relation("Dispatcher", fields: [dispatcherId], references: [id], onDelete: SetNull)
+  // Execution
+  departedAt   DateTime?
+  deliveredAt  DateTime?
+  podSignedBy  String?
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  events       LoadEvent[]
+  invoice      Invoice?
+  documents    Document[]
+
+  @@index([status])
+  @@index([pickupAt])
+}
+
+model LoadEvent {
+  id        String   @id @default(cuid())
+  loadId    String
+  load      Load     @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  type      String // CREATED | ASSIGNED | STATUS | NOTE | CHECK_CALL | ISSUE
+  message   String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  lat       Float?
+  lng       Float?
+  createdAt DateTime @default(now())
+
+  @@index([loadId])
+}
+
+model MaintenanceRecord {
+  id          String    @id @default(cuid())
+  truckId     String
+  truck       Truck     @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  type        String // PREVENTIVE | REPAIR | INSPECTION | TIRES | OIL_CHANGE
+  description String
+  status      String    @default("SCHEDULED") // SCHEDULED | IN_PROGRESS | DONE
+  scheduledAt DateTime
+  completedAt DateTime?
+  cost        Float     @default(0)
+  odometerKm  Int?
+  vendor      String?
+  createdAt   DateTime  @default(now())
+}
+
+model FuelLog {
+  id         String   @id @default(cuid())
+  truckId    String
+  truck      Truck    @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  driverId   String?
+  driver     Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  liters     Float
+  cost       Float
+  odometerKm Int?
+  station    String?
+  date       DateTime @default(now())
+}
+
+model Invoice {
+  id         String    @id @default(cuid())
+  number     String    @unique
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id])
+  loadId     String?   @unique
+  load       Load?     @relation(fields: [loadId], references: [id], onDelete: SetNull)
+  amount     Float
+  taxRate    Float     @default(0.12)
+  status     String    @default("DRAFT") // DRAFT | SENT | PAID | VOID
+  issuedAt   DateTime  @default(now())
+  dueAt      DateTime
+  paidAt     DateTime?
+  notes      String?
+  createdAt  DateTime  @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Files attached to loads (BOL, POD, CMR…), trucks, drivers or customers.
+// Bytes live in Vercel Blob (prod) or ./storage (local dev); see src/lib/storage.ts.
+model Document {
+  id           String    @id @default(cuid())
+  kind         String // BOL | POD | CMR | CUSTOMS | INVOICE | PHOTO | LICENSE | MEDICAL | INSURANCE | REGISTRATION | INSPECTION | CONTRACT | OTHER
+  name         String
+  storageKey   String    @unique
+  contentType  String
+  size         Int
+  expiresAt    DateTime?
+  notes        String?
+  loadId       String?
+  load         Load?     @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  truckId      String?
+  truck        Truck?    @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  driverId     String?
+  driver       Driver?   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  uploadedById String?
+  uploadedBy   User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+
+  @@index([loadId])
+  @@index([truckId])
+  @@index([driverId])
+  @@index([customerId])
+}
+
+// Small key/value store for runtime settings (e.g. linked Telegram group chat).
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
