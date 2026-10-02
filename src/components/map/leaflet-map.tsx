@@ -3,7 +3,7 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, CircleMarker, useMap } from "react-leaflet";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 // Default: OpenStreetMap (fine for dev/low volume). For production traffic set a
 // commercial tile provider via NEXT_PUBLIC_MAP_TILE_URL (e.g. MapTiler, Mapbox, Stadia).
@@ -22,24 +22,108 @@ export type MapTruck = {
   label?: string;
   route?: [number, number][];
   moving?: boolean;
+  /** GPS fix is old — marker is faded with a dashed ring. */
+  stale?: boolean;
 };
 
-export type MapPoint = { lat: number; lng: number; label: string; kind: "origin" | "dest" };
+export type MapPointKind = "origin" | "dest" | "stop";
+export type MapPoint = {
+  lat: number;
+  lng: number;
+  label: string;
+  kind: MapPointKind;
+  /** Completed stop — drawn faded. */
+  done?: boolean;
+  /** Stop number; when set the point renders as a numbered marker. */
+  index?: number;
+};
 
-function truckIcon(t: MapTruck, selected: boolean) {
-  const color = t.status !== "ACTIVE" ? "#f59e0b" : t.moving ? "#7c3aed" : "#2563eb";
-  const size = selected ? 38 : 30;
+/* ------------------------------------------------------------------ */
+/* Theme tokens, read from CSS variables at render                      */
+/* ------------------------------------------------------------------ */
+
+const VARS = ["--accent", "--on-accent", "--info", "--progress", "--warn", "--fg", "--fg-muted", "--fg-subtle", "--surface", "--primary", "--on-primary"] as const;
+type Vars = Record<(typeof VARS)[number], string>;
+
+const FALLBACK = Object.fromEntries(VARS.map((v) => [v, `var(${v})`])) as Vars;
+let cached: { mode: string; vars: Vars } | null = null;
+const listeners = new Set<() => void>();
+let observer: MutationObserver | null = null;
+
+const mode = () => document.documentElement.getAttribute("data-theme") ?? "";
+function read(): Vars {
+  const cs = getComputedStyle(document.documentElement);
+  return Object.fromEntries(VARS.map((v) => [v, cs.getPropertyValue(v).trim() || `var(${v})`])) as Vars;
+}
+function getSnapshot(): Vars {
+  if (!cached || cached.mode !== mode()) cached = { mode: mode(), vars: read() };
+  return cached.vars;
+}
+function subscribe(cb: () => void) {
+  listeners.add(cb);
+  if (!observer) {
+    observer = new MutationObserver(() => { cached = { mode: mode(), vars: read() }; listeners.forEach((l) => l()); });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  }
+  return () => {
+    listeners.delete(cb);
+    if (listeners.size === 0) { observer?.disconnect(); observer = null; cached = null; }
+  };
+}
+/** Marker colours flip with the theme toggle (Leaflet paints SVG attributes, so var() alone is not enough). */
+const useThemeVars = () => useSyncExternalStore(subscribe, getSnapshot, () => FALLBACK);
+
+/* ------------------------------------------------------------------ */
+/* Markers                                                             */
+/* ------------------------------------------------------------------ */
+
+/** moving = progress, idle = info, in service = warn, selected = accent. */
+function truckColor(t: MapTruck, selected: boolean, v: Vars) {
+  if (selected) return { fill: v["--accent"], ink: v["--on-accent"] };
+  const fill = t.status !== "ACTIVE" ? v["--warn"] : t.moving ? v["--progress"] : v["--info"];
+  // Surface colour as the glyph ink: white on the deep day fills, graphite on the light night fills.
+  return { fill, ink: v["--surface"] };
+}
+
+function truckIcon(t: MapTruck, selected: boolean, v: Vars) {
+  const { fill, ink } = truckColor(t, selected, v);
+  const size = selected ? 36 : 28;
+  const ring = `2px ${t.stale ? "dashed" : "solid"} ${v["--surface"]}`;
   return L.divIcon({
     className: "truck-marker",
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
-    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;position:relative">
-      ${t.moving ? `<div style="position:absolute;top:-7px;left:50%;transform:translateX(-50%) rotate(${t.heading}deg);transform-origin:50% ${size / 2 + 7}px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid ${color}"></div>` : ""}
-      <svg width="${size * 0.5}" height="${size * 0.5}" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+    html: `<div style="position:relative;width:${size}px;height:${size}px;border-radius:9999px;background:${fill};border:${ring};box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;${t.stale ? "opacity:.6;" : ""}">
+      ${t.moving ? `<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%) rotate(${t.heading}deg);transform-origin:50% ${size / 2 + 8}px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid ${fill}"></div>` : ""}
+      <svg width="${Math.round(size * 0.52)}" height="${Math.round(size * 0.52)}" viewBox="0 0 24 24" fill="none" stroke="${ink}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
     </div>
-    <div style="position:absolute;top:${size + 2}px;left:50%;transform:translateX(-50%);background:#0f172a;color:white;font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px;white-space:nowrap">${t.unitNumber}</div>`,
+    <div style="position:absolute;top:${size + 3}px;left:50%;transform:translateX(-50%);background:${v["--primary"]};color:${v["--on-primary"]};font-family:var(--font-mono),ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:-.01em;padding:1px 5px;border-radius:4px;white-space:nowrap;${t.stale ? "opacity:.7;" : ""}">${escapeHtml(t.unitNumber)}</div>`,
   });
 }
+
+/** origin = info, destination = accent, intermediate stop = graphite. */
+function pointColor(p: MapPoint, v: Vars) {
+  if (p.kind === "origin") return { fill: v["--info"], ink: v["--surface"] };
+  if (p.kind === "dest") return { fill: v["--accent"], ink: v["--on-accent"] };
+  return { fill: v["--fg-muted"], ink: v["--surface"] };
+}
+
+function stopIcon(p: MapPoint, v: Vars) {
+  const { fill, ink } = pointColor(p, v);
+  const size = 22;
+  return L.divIcon({
+    className: "truck-marker",
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${fill};color:${ink};border:2px solid ${v["--surface"]};box-shadow:0 1px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono),ui-monospace,monospace;font-size:11px;font-weight:600;${p.done ? "opacity:.45;" : ""}">${p.index}</div>`,
+  });
+}
+
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+
+/* ------------------------------------------------------------------ */
+/* Map behaviour                                                       */
+/* ------------------------------------------------------------------ */
 
 function FitBounds({ points, fitKey }: { points: [number, number][]; fitKey: string }) {
   const map = useMap();
@@ -80,15 +164,18 @@ function FlyTo({ target }: { target: [number, number] | null }) {
   return null;
 }
 
-export default function LeafletMap({ trucks = [], points = [], selectedId, onSelect, height = 520, fitKey = "all", flyTo = null }: {
+export default function LeafletMap({ trucks = [], points = [], selectedId, onSelect, height = 520, fitKey = "all", flyTo = null, className }: {
   trucks?: MapTruck[];
   points?: MapPoint[];
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   height?: number | string;
+  /** Refit bounds when this changes (not on every position tick). */
   fitKey?: string;
   flyTo?: [number, number] | null;
+  className?: string;
 }) {
+  const v = useThemeVars();
   const positioned = trucks.filter((t) => t.lat != null && t.lng != null);
   const all: [number, number][] = [
     ...positioned.map((t) => [t.lat!, t.lng!] as [number, number]),
@@ -96,32 +183,43 @@ export default function LeafletMap({ trucks = [], points = [], selectedId, onSel
   ];
 
   return (
-    <div style={{ height }} className="overflow-hidden rounded-xl">
+    <div style={{ height }} className={`overflow-hidden rounded-lg ${className ?? ""}`}>
       <MapContainer center={[41.3, 69.24]} zoom={6} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
         <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
         <FitBounds points={all} fitKey={fitKey} />
         <FlyTo target={flyTo} />
-        {positioned.map((t) =>
-          t.route ? (
+        {positioned.map((t) => {
+          if (!t.route) return null;
+          const selected = t.id === selectedId;
+          return (
             <Polyline key={`r-${t.id}`} positions={t.route}
-              pathOptions={{ color: t.id === selectedId ? "#7c3aed" : "#94a3b8", weight: t.id === selectedId ? 4 : 2, dashArray: "6 6", opacity: 0.9 }} />
-          ) : null,
-        )}
-        {points.map((p, i) => (
-          <CircleMarker key={i} center={[p.lat, p.lng]} radius={8}
-            pathOptions={{ color: "white", weight: 3, fillColor: p.kind === "origin" ? "#10b981" : "#ef4444", fillOpacity: 1 }}>
-            <Popup>{p.label}</Popup>
-          </CircleMarker>
-        ))}
+              pathOptions={{ color: selected ? v["--accent"] : v["--fg-subtle"], weight: selected ? 3 : 2, dashArray: "6 6", opacity: selected ? 0.95 : 0.8 }} />
+          );
+        })}
+        {points.map((p, i) => {
+          const { fill } = pointColor(p, v);
+          return p.index != null ? (
+            <Marker key={`p-${i}`} position={[p.lat, p.lng]} icon={stopIcon(p, v)} zIndexOffset={p.done ? -100 : 100}>
+              <Popup>{p.label}</Popup>
+            </Marker>
+          ) : (
+            <CircleMarker key={`p-${i}`} center={[p.lat, p.lng]} radius={7}
+              pathOptions={{ color: v["--surface"], weight: 2, fillColor: fill, fillOpacity: p.done ? 0.35 : 1, opacity: p.done ? 0.6 : 1 }}>
+              <Popup>{p.label}</Popup>
+            </CircleMarker>
+          );
+        })}
         {positioned.map((t) => (
-          <Marker key={t.id} position={[t.lat!, t.lng!]} icon={truckIcon(t, t.id === selectedId)}
+          <Marker key={t.id} position={[t.lat!, t.lng!]} icon={truckIcon(t, t.id === selectedId, v)}
             eventHandlers={{ click: () => onSelect?.(t.id) }} zIndexOffset={t.id === selectedId ? 1000 : 0}>
             {!onSelect && (
               <Popup>
-                <b>{t.unitNumber}</b>
-                {t.driverName && <><br />{t.driverName}</>}
-                {t.label && <><br />{t.label}</>}
-                <br />{Math.round(t.speedKmh)} km/h
+                <div className="text-[12px] leading-4">
+                  <b className="num">{t.unitNumber}</b>
+                  {t.driverName && <div>{t.driverName}</div>}
+                  {t.label && <div className="text-fg-muted">{t.label}</div>}
+                  <div className="num text-fg-muted">{Math.round(t.speedKmh)} km/h</div>
+                </div>
               </Popup>
             )}
           </Marker>

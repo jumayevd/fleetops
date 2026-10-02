@@ -1,153 +1,174 @@
 import Link from "next/link";
-import { Package, Truck, Users, DollarSign, AlertTriangle, TrendingUp, Plus, Clock } from "lucide-react";
+import type { ComponentProps } from "react";
+import { Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { db } from "@/lib/db";
 import { fleetSnapshot } from "@/lib/telemetry";
 import { getAlerts } from "@/lib/alerts";
-import { monthlyFinancials, receivables, revenueMtdComparison } from "@/lib/stats";
-import { money, dateTime, ago } from "@/lib/format";
-import { Card, Stat, PageHeader, Badge, LinkButton, Progress } from "@/components/ui";
-import { RevenueChart } from "@/components/charts";
+import { monthlyFinancials, receivables, revenueMtdComparison, weeklyProduction } from "@/lib/stats";
+import { money } from "@/lib/format";
+import { Card, LinkButton, PageHeader, Stat, cn } from "@/components/ui";
+import { RevenueChart, Spark } from "@/components/charts";
 import { LiveFleetMini } from "@/components/live-fleet";
+import { NeedsYou } from "./needs-you";
+import { BillingQueue, FleetLegend, MonthSoFar, MoreLink, RecentActivity, UpcomingPickups, WeekProduction, fleetLegendCounts } from "./panels";
+import { billingQueue, operationalCounts, overdueInvoices, recentEvents, upcomingPickups } from "./queries";
+import { greeting, groupAlerts, longDate, pct, plural, pts, visibleAlerts } from "./lib";
 
-export const metadata = { title: "Dashboard" };
+export const metadata = { title: "Overview" };
+
+/** KPI tile that goes somewhere. */
+function Tile({ href, className, ...stat }: ComponentProps<typeof Stat> & { href: string }) {
+  return (
+    <Link href={href} className="block rounded-lg">
+      <Stat {...stat} className={cn("h-full transition-colors hover:border-line-strong", className)} />
+    </Link>
+  );
+}
 
 export default async function Dashboard() {
   const user = await requireUser("dashboard.view");
   const showMoney = can(user.role, "finance.view");
+  const canEdit = can(user.role, "loads.edit");
+  const now = new Date();
 
-  const [fleet, alerts, months, ar, loadCounts, drivers, upcoming, events, rev] = await Promise.all([
+  const [fleet, rawAlerts, months, ops, upcoming, events, queue, week, rev, ar, overdue] = await Promise.all([
     fleetSnapshot(),
     getAlerts(),
     monthlyFinancials(6),
-    receivables(),
-    db.load.groupBy({ by: ["status"], _count: true }),
-    db.driver.groupBy({ by: ["status"], _count: true }),
-    db.load.findMany({
-      where: { status: { in: ["PLANNED", "ASSIGNED"] } },
-      orderBy: { pickupAt: "asc" }, take: 7,
-      include: { customer: { select: { name: true } }, truck: { select: { unitNumber: true } }, driver: { select: { name: true } } },
-    }),
-    db.loadEvent.findMany({ orderBy: { createdAt: "desc" }, take: 8, include: { load: { select: { reference: true, id: true } }, user: { select: { name: true } } } }),
-    revenueMtdComparison(),
+    operationalCounts(now),
+    upcomingPickups(now),
+    recentEvents(10),
+    billingQueue(),
+    weeklyProduction(now),
+    showMoney ? revenueMtdComparison() : Promise.resolve(null),
+    showMoney ? receivables() : Promise.resolve(null),
+    showMoney ? overdueInvoices(now) : Promise.resolve(null),
   ]);
 
-  const count = (s: string) => loadCounts.find((c) => c.status === s)?._count ?? 0;
-  const dcount = (s: string) => drivers.find((c) => c.status === s)?._count ?? 0;
-  const activeTrucks = fleet.filter((t) => t.status === "ACTIVE").length;
-  const busyTrucks = fleet.filter((t) => t.load).length;
-  const utilization = activeTrucks ? busyTrucks / activeTrucks : 0;
-  const thisMonth = months.at(-1)!;
-  const growth = rev.prior ? (rev.mtd - rev.prior) / rev.prior : null;
+  const alerts = visibleAlerts(rawAlerts, user.role);
+  const groups = groupAlerts(alerts);
+  const legend = fleetLegendCounts(fleet);
+
+  // Fleet
+  const activeTrucks = fleet.filter((t) => t.status === "ACTIVE");
+  const busyTrucks = activeTrucks.filter((t) => t.load).length;
+  const utilization = activeTrucks.length ? busyTrucks / activeTrucks.length : 0;
+  const inShop = fleet.length - activeTrucks.length;
+  const runningLate = fleet.filter((t) => t.load?.status === "IN_TRANSIT" && t.load.eta && t.load.eta > t.load.deliveryAt).length;
+
+  // Performance: the latest month with deliveries, so early-month tiles never read 0 %.
+  const current = months.at(-1)!;
+  const perfIdx = current.loads ? months.length - 1 : Math.max(0, months.length - 2);
+  const perf = months[perfIdx];
+  const prev = months[perfIdx - 1];
+  const onTimeDelta = prev?.loads ? perf.onTimePct - prev.onTimePct : null;
+  const emptyDelta = prev?.loads ? perf.emptyPct - prev.emptyPct : null;
+  const growth = rev && rev.prior ? Math.round(((rev.mtd - rev.prior) / rev.prior) * 100) : null;
+  const overduePct = ar && ar.total ? Math.round((ar.overdue / ar.total) * 100) : 0;
+
+  const summary = [
+    plural(legend.rolling, "truck") + " moving",
+    `${ops.assigned} awaiting pickup`,
+    alerts.length === 0 ? "nothing needs you" : alerts.length === 1 ? "1 thing needs you" : `${alerts.length} things need you`,
+  ].join(" · ");
 
   return (
     <>
       <PageHeader
-        title={`Good ${new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, ${user.name.split(" ")[0]}`}
-        subtitle="Here's what's moving across your operation right now."
-        actions={can(user.role, "loads.edit") && <LinkButton href="/loads/new"><Plus className="h-4 w-4" />New load</LinkButton>}
+        eyebrow={`Overview · ${longDate(now)}`}
+        title={`${greeting(now)}, ${user.name.split(" ")[0]}`}
+        subtitle={summary}
+        actions={canEdit && <LinkButton href="/loads/new"><Plus />New load</LinkButton>}
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-6">
-        <Stat label="In transit" value={count("IN_TRANSIT")} hint={`${count("ASSIGNED")} awaiting pickup`} tone="violet" icon={<Truck className="h-4 w-4" />} />
-        <Stat label="Unassigned" value={count("PLANNED")} hint="loads need a truck" tone={count("PLANNED") ? "amber" : "green"} icon={<Package className="h-4 w-4" />} />
-        <Stat label="Fleet utilization" value={`${Math.round(utilization * 100)}%`} hint={`${busyTrucks}/${activeTrucks} active trucks on loads`} tone="blue" icon={<TrendingUp className="h-4 w-4" />} />
-        <Stat label="Drivers available" value={dcount("AVAILABLE")} hint={`${dcount("DRIVING")} driving · ${dcount("ON_LEAVE") + dcount("OFF_DUTY")} off`} tone="green" icon={<Users className="h-4 w-4" />} />
-        {showMoney ? (
+      {/* 1 · Needs you */}
+      <NeedsYou groups={groups} />
+
+      {/* 2 · Operations now */}
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <Tile href="/loads?status=IN_TRANSIT" label="In transit" value={ops.inTransit}
+          hint={runningLate ? `${plural(runningLate, "load")} running late` : ops.inTransit ? "all on schedule" : "no loads moving"}
+          delta={runningLate ? `${runningLate} late` : undefined} deltaTone="danger" />
+        <Tile href="/loads?status=ASSIGNED" label="Awaiting pickup" value={ops.assigned}
+          hint={`${plural(ops.pickupsSoon, "pickup")} in the next 24 h`} />
+        <Tile href={canEdit ? "/dispatch" : "/loads?status=PLANNED"} label="Unassigned · next 24 h" value={ops.unassignedSoon}
+          hint={ops.unassignedSoon ? "need a truck before pickup" : `${plural(ops.planned, "booked load")} further out`}
+          delta={ops.unassignedSoon ? "needs truck" : undefined} deltaTone="warn" />
+        <Tile href="/tracking" label="Fleet utilization" value={`${Math.round(utilization * 100)}%`}
+          hint={`${busyTrucks} of ${activeTrucks.length} active trucks on loads${inShop ? ` · ${inShop} in shop` : ""}`} />
+        <Tile href="/drivers" label="Drivers ready" value={ops.driversReady}
+          hint={`${ops.driversActive - ops.driversReady} working${ops.onLeave ? ` · ${ops.onLeave} on leave` : ""}`}
+          delta={ops.hold ? `${ops.hold} on hold` : undefined} deltaTone="warn" />
+      </div>
+
+      {/* 3 · Performance */}
+      <div className="mt-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {showMoney && rev && ar ? (
           <>
-            <Stat label="Revenue (month to date)" value={money(rev.mtd)} hint={growth === null ? "no deliveries yet at this point last month" : `${growth >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(growth * 100))}% vs same days last month`} tone="green" icon={<DollarSign className="h-4 w-4" />} />
-            <Stat label="Receivables" value={money(ar.total)} hint={`${money(ar.overdue)} overdue`} tone={ar.overdue ? "red" : "slate"} icon={<DollarSign className="h-4 w-4" />} />
+            <Tile href="/finance" label="Revenue · month to date" value={money(rev.mtd)}
+              delta={growth === null ? undefined : pct(growth)} deltaTone={growth === null ? undefined : growth >= 0 ? "ok" : "danger"}
+              hint={rev.prior ? `${money(rev.prior)} same days last month` : "no comparable deliveries last month"}
+              spark={<Spark data={months.map((m) => m.revenue)} />} />
+            <Tile href="/finance?status=overdue" label="Receivables" value={money(ar.total)}
+              delta={ar.overdue ? `${overduePct}% overdue` : undefined} deltaTone="danger"
+              hint={`${plural(ar.count, "open invoice")}${ar.overdue ? ` · ${money(ar.overdue)} past due` : " · none overdue"}`} />
           </>
         ) : (
           <>
-            <Stat label="Delivered (month)" value={thisMonth.loads} hint={`${thisMonth.onTimePct}% on time`} tone="green" icon={<Package className="h-4 w-4" />} />
-            <Stat label="Alerts" value={alerts.length} hint="need attention" tone={alerts.length ? "red" : "slate"} icon={<AlertTriangle className="h-4 w-4" />} />
+            <Tile href="/loads?status=DELIVERED" label={`Delivered · ${perf.month}`} value={perf.loads}
+              hint={prev ? `${prev.loads} in ${prev.month}` : undefined}
+              spark={<Spark data={months.map((m) => m.loads)} />} />
+            <Tile href="/maintenance" label="Trucks in shop" value={inShop}
+              hint={inShop ? "maintenance or out of service" : "every truck available"}
+              delta={inShop ? `${Math.round((inShop / Math.max(1, fleet.length)) * 100)}% of fleet` : undefined} deltaTone="warn" />
           </>
         )}
+        <Tile href="/reports" label={`On time · ${perf.month}`} value={perf.loads ? `${perf.onTimePct}%` : "—"}
+          delta={onTimeDelta === null ? undefined : pts(onTimeDelta)} deltaTone={onTimeDelta === null ? undefined : onTimeDelta > 0 ? "ok" : onTimeDelta < 0 ? "danger" : "neutral"}
+          hint={perf.loads ? `${plural(perf.loads, "delivery", "deliveries")} · vs ${prev?.month ?? "last month"}` : "no deliveries yet"}
+          spark={<Spark data={months.map((m) => m.onTimePct)} />} />
+        <Tile href="/reports" label={`Empty km · ${perf.month}`} value={perf.km + perf.emptyKm ? `${perf.emptyPct}%` : "—"}
+          delta={emptyDelta === null ? undefined : pts(emptyDelta)} deltaTone={emptyDelta === null ? undefined : emptyDelta < 0 ? "ok" : emptyDelta > 0 ? "danger" : "neutral"}
+          hint={perf.km ? `${Math.round(perf.emptyKm).toLocaleString("en-US")} of ${Math.round(perf.km + perf.emptyKm).toLocaleString("en-US")} km unpaid` : "no distance recorded"}
+          spark={<Spark data={months.map((m) => m.emptyPct)} />} />
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-3">
-        <Card title="Live fleet" className="xl:col-span-2" bodyClassName="p-2"
-          actions={<Link href="/tracking" className="text-xs font-medium text-blue-600 hover:underline">Open control tower →</Link>}>
+      {/* 4 · Live fleet + queues */}
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <Card title="Live fleet" className="xl:col-span-2" bodyClassName="p-1.5"
+          actions={<><FleetLegend counts={legend} /><MoreLink href="/tracking">Live map</MoreLink></>}>
           <LiveFleetMini initial={fleet} />
         </Card>
-        <Card title={`Needs attention (${alerts.length})`} bodyClassName="p-0">
-          <ul className="max-h-[392px] divide-y divide-slate-100 overflow-y-auto">
-            {alerts.length === 0 && <li className="p-6 text-center text-sm text-slate-500">All clear 🎉</li>}
-            {alerts.map((a, i) => (
-              <li key={i}>
-                <Link href={a.href} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50">
-                  <AlertTriangle className={a.level === "critical" ? "mt-0.5 h-4 w-4 shrink-0 text-rose-500" : "mt-0.5 h-4 w-4 shrink-0 text-amber-500"} />
-                  <span>
-                    <span className="block text-sm font-medium text-slate-800">{a.title}</span>
-                    <span className="block text-xs text-slate-500">{a.detail}</span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-3">
-        <Card title="Upcoming pickups" className="xl:col-span-2" bodyClassName="p-0"
-          actions={<Link href="/loads?view=board" className="text-xs font-medium text-blue-600 hover:underline">Dispatch board →</Link>}>
-          <ul className="divide-y divide-slate-100">
-            {upcoming.map((l) => (
-              <li key={l.id}>
-                <Link href={`/loads/${l.id}`} className="grid grid-cols-[1fr_auto] items-center gap-2 px-5 py-3 hover:bg-slate-50 sm:grid-cols-[110px_1fr_160px_auto]">
-                  <span className="font-semibold text-slate-900">{l.reference}</span>
-                  <span className="hidden text-sm sm:block">
-                    {l.originCity} → {l.destCity}
-                    <span className="block text-xs text-slate-500">{l.customer.name} · {l.commodity}</span>
-                  </span>
-                  <span className="hidden text-xs text-slate-600 sm:flex sm:items-center sm:gap-1"><Clock className="h-3 w-3" />{dateTime(l.pickupAt)}</span>
-                  <span className="flex items-center gap-2 justify-self-end">
-                    {l.priority !== "NORMAL" && <Badge value={l.priority} />}
-                    {l.truck ? <span className="text-xs text-slate-500">{l.truck.unitNumber} · {l.driver?.name.split(" ")[0]}</span> : <Badge value="PLANNED" label="Unassigned" />}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <Card title="Recent activity" bodyClassName="p-0">
-          <ul className="divide-y divide-slate-100">
-            {events.map((e) => (
-              <li key={e.id} className="px-5 py-3">
-                <p className="text-sm text-slate-800">
-                  <Link href={`/loads/${e.load.id}`} className="font-medium text-blue-700 hover:underline">{e.load.reference}</Link>{" "}{e.message}
-                </p>
-                <p className="text-xs text-slate-500">{e.user?.name ?? "System"} · {ago(e.createdAt)}</p>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </div>
-
-      {showMoney && (
-        <div className="mt-6 grid gap-6 xl:grid-cols-3">
-          <Card title="Revenue vs. direct costs — last 6 months" className="xl:col-span-2">
-            <RevenueChart data={months} />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+          <Card title="Billing queue" actions={<MoreLink href={showMoney ? "/finance" : "/loads?status=DELIVERED"}>{showMoney ? "Finance" : "Delivered loads"}</MoreLink>} bodyClassName="px-4 py-2.5">
+            <BillingQueue queue={queue} overdue={overdue} showMoney={showMoney} />
           </Card>
-          <Card title="This month">
-            <div className="space-y-4">
-              {[
-                ["Loads delivered", String(thisMonth.loads)],
-                ["Gross margin", money(thisMonth.margin)],
-                ["Revenue / km", `$${thisMonth.revPerKm.toFixed(2)}`],
-                ["On-time delivery", `${thisMonth.onTimePct}%`],
-              ].map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between border-b border-slate-100 pb-3 text-sm last:border-0">
-                  <span className="text-slate-500">{k}</span><span className="font-semibold">{v}</span>
-                </div>
-              ))}
-              <div>
-                <p className="mb-1 text-xs text-slate-500">Margin %</p>
-                <Progress value={thisMonth.revenue ? thisMonth.margin / thisMonth.revenue : 0} />
-              </div>
-            </div>
+          <Card title="This week" actions={<MoreLink href="/dispatch/weekly">Weekly board</MoreLink>}>
+            <WeekProduction week={week} showMoney={showMoney} />
+          </Card>
+        </div>
+      </div>
+
+      {/* 5 · Upcoming + activity */}
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <Card title="Upcoming pickups" className="xl:col-span-2" flush
+          actions={<><span className="num text-[11px] text-fg-subtle">next 24 h</span><MoreLink href="/dispatch">Dispatch board</MoreLink></>}>
+          <UpcomingPickups loads={upcoming} now={now} canEdit={canEdit} />
+        </Card>
+        <Card title="Recent activity" flush actions={can(user.role, "audit.view") ? <MoreLink href="/admin/audit">Audit log</MoreLink> : <MoreLink href="/loads">Loads</MoreLink>}>
+          <RecentActivity events={events} />
+        </Card>
+      </div>
+
+      {/* 6 · Money */}
+      {showMoney && (
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          <Card title="Revenue vs direct costs" className="xl:col-span-2" actions={<><span className="text-[11px] text-fg-subtle">last 6 months · the gap is gross margin</span><MoreLink href="/reports">Reports</MoreLink></>}>
+            <RevenueChart data={months} height={240} />
+          </Card>
+          <Card title={`${current.month} so far`} actions={<MoreLink href="/finance">Finance</MoreLink>}>
+            <MonthSoFar month={current} />
           </Card>
         </div>
       )}

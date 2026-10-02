@@ -1,11 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, Camera } from "lucide-react";
-import { buttonClass, inputClass } from "../ui";
+import { Camera, Loader2, Upload } from "lucide-react";
+import { buttonClass, cn, inputClass } from "../ui";
 
 const MAX_BYTES = 4 * 1024 * 1024;
+const ACCEPT = ".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt,.csv";
 
 /** Shrink phone photos (often 4–8 MB) to ≤2000px JPEG before upload. */
 async function compressImage(file: File): Promise<File> {
@@ -22,6 +23,12 @@ async function compressImage(file: File): Promise<File> {
   return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
 }
 
+type Status = { tone: "ok" | "err" | "busy"; text: string };
+
+/**
+ * Compact uploader: kind select, optional expiry date, Upload button, and a camera button
+ * only when `camera` is set (driver phones). The whole block is a drop target.
+ */
 export function DocumentUploader({ target, kinds, labels, defaultKind, withExpiry, camera }: {
   target: { type: string; id: string };
   kinds: readonly string[];
@@ -34,56 +41,80 @@ export function DocumentUploader({ target, kinds, labels, defaultKind, withExpir
   const fileRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState(defaultKind ?? kinds[0]);
   const [expiresAt, setExpiresAt] = useState("");
-  const [status, setStatus] = useState<{ tone: "ok" | "err" | "busy"; text: string } | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const busy = status?.tone === "busy";
 
   async function upload(files: FileList | null) {
-    if (!files?.length) return;
-    for (const original of Array.from(files)) {
-      setStatus({ tone: "busy", text: `Uploading ${original.name}…` });
+    const list = files ? Array.from(files) : [];
+    if (!list.length) return;
+    let done = 0;
+    const failed: string[] = [];
+    for (const original of list) {
+      setStatus({ tone: "busy", text: list.length > 1 ? `Uploading ${done + failed.length + 1} of ${list.length}: ${original.name}` : `Uploading ${original.name}…` });
       const file = await compressImage(original);
-      if (file.size > MAX_BYTES) { setStatus({ tone: "err", text: `${original.name} is over 4 MB` }); continue; }
+      if (file.size > MAX_BYTES) { failed.push(`${original.name} is over 4 MB`); continue; }
       const fd = new FormData();
       fd.set("file", file);
       fd.set("kind", kind);
       fd.set(`${target.type}Id`, target.id);
       if (expiresAt) fd.set("expiresAt", expiresAt);
       const res = await fetch("/api/documents", { method: "POST", body: fd }).catch(() => null);
-      const data = res ? await res.json().catch(() => ({})) : { error: "Network error" };
-      if (!res?.ok) { setStatus({ tone: "err", text: data.error ?? "Upload failed" }); return; }
+      const data = res ? await res.json().catch(() => ({})) : { error: "network error" };
+      if (!res?.ok) { failed.push(`${original.name}: ${data.error ?? "upload failed"}`); continue; }
+      done++;
     }
-    setStatus({ tone: "ok", text: "Uploaded" });
     if (fileRef.current) fileRef.current.value = "";
-    router.refresh();
+    if (failed.length) setStatus({ tone: "err", text: (done ? `${done} uploaded. ` : "") + failed.join(" · ") });
+    else setStatus({ tone: "ok", text: done === 1 ? "Uploaded" : `${done} files uploaded` });
+    if (done) { setExpiresAt(""); router.refresh(); }
   }
 
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    if (!busy) void upload(e.dataTransfer.files);
+  };
+
+  const size = camera ? "md" : "sm";
+  const hint = withExpiry
+    ? "Drop files here. Add an expiry date to get a reminder 30 days before it lapses."
+    : "Drop files here. PDF, images and Office files up to 4 MB.";
+
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-2">
-        <select value={kind} onChange={(e) => setKind(e.target.value)} className={`${inputClass} w-auto flex-1`} aria-label="Document type">
+    <div
+      onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+      className={cn("rounded-md border border-dashed p-2 transition-colors", dragging ? "border-accent bg-accent-soft" : "border-line-strong")}
+    >
+      <div className={cn("flex flex-wrap items-center gap-2", camera && "flex-col items-stretch")}>
+        <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Document type"
+          className={cn(inputClass, camera ? "w-full" : "h-7 w-auto min-w-0 flex-1 text-[12px]")}>
           {kinds.map((k) => <option key={k} value={k}>{labels[k] ?? k}</option>)}
         </select>
         {withExpiry && (
-          <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className={`${inputClass} w-auto`} aria-label="Expiry date" title="Expiry date (optional)" />
+          <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} aria-label="Expiry date" title="Expiry date (optional)"
+            className={cn(inputClass, camera ? "w-full" : "h-7 w-[9.5rem] text-[12px]")} />
         )}
-      </div>
-      <div className="flex gap-2">
-        <label className={`${buttonClass("secondary")} flex-1 cursor-pointer`}>
-          <Upload className="h-4 w-4" /> Choose files
-          <input ref={fileRef} type="file" multiple className="sr-only" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt,.csv"
-            disabled={status?.tone === "busy"} onChange={(e) => upload(e.target.files)} />
-        </label>
-        {camera && (
-          <label className={`${buttonClass("primary")} flex-1 cursor-pointer`}>
-            <Camera className="h-4 w-4" /> Take photo
-            <input type="file" accept="image/*" capture="environment" className="sr-only"
-              disabled={status?.tone === "busy"} onChange={(e) => upload(e.target.files)} />
+        <div className={cn("flex gap-2", camera && "w-full")}>
+          <label className={cn(buttonClass("secondary", size), "cursor-pointer", camera && "flex-1", busy && "pointer-events-none opacity-50")}>
+            {busy ? <Loader2 className="animate-spin" /> : <Upload />} Upload
+            <input ref={fileRef} type="file" multiple className="sr-only" accept={ACCEPT} disabled={busy} onChange={(e) => upload(e.target.files)} />
           </label>
-        )}
+          {camera && (
+            <label className={cn(buttonClass("primary", size), "flex-1 cursor-pointer", busy && "pointer-events-none opacity-50")}>
+              <Camera /> Take photo
+              <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={busy} onChange={(e) => upload(e.target.files)} />
+            </label>
+          )}
+        </div>
       </div>
-      {withExpiry && <p className="text-xs text-slate-400">Set an expiry date to get reminded 30 days before it lapses.</p>}
-      {status && (
-        <p className={`text-xs ${status.tone === "err" ? "text-rose-600" : status.tone === "ok" ? "text-emerald-600" : "text-slate-500"}`}>{status.text}</p>
-      )}
+      <p role={status?.tone === "err" ? "alert" : "status"}
+        className={cn("mt-1.5 truncate text-[11px]", status?.tone === "err" ? "text-danger" : status?.tone === "ok" ? "text-ok" : "text-fg-subtle")}
+        title={status?.text}>
+        {status?.text ?? hint}
+      </p>
     </div>
   );
 }

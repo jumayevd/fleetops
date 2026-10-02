@@ -1,103 +1,244 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Lock, Sparkles } from "lucide-react";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Card, Field, Input, Select, Textarea } from "@/components/ui";
-import { CITIES, EQUIPMENT, EQUIPMENT_LABELS, PRIORITIES } from "@/lib/constants";
-import { roadKm } from "@/lib/geo";
-import { toLocalInput } from "@/lib/format";
+import { Card, Checkbox, Field, Input, LinkButton, Select, Textarea, cn } from "@/components/ui";
+import { EQUIPMENT, EQUIPMENT_LABELS, LOAD_STATUS_LABELS, PRIORITIES, type LoadStatus } from "@/lib/constants";
+import { routeKm } from "@/lib/geo";
+import { money, number } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
+import type { AssignmentOptions } from "./options";
+import { fmtRpk, optLabel, ratePerKm, suggestedRate } from "./shared";
+import { StopsEditor, newStop, stopCoords, toDraft, type StopDefault, type StopDraft } from "./stops-editor";
 
-type Opt = { id: string; label: string; disabled?: boolean };
-type Defaults = Partial<Record<string, string | number | boolean | Date | null>>;
+export type LoadDefaults = Partial<{
+  status: string; customerId: string | null; brokerId: string | null; customerRef: string | null; teamId: string | null; priority: string;
+  distanceKm: number | null; emptyKm: number | null; commodity: string; weightKg: number | null; pallets: number | null; equipment: string;
+  temperatureC: number | null; hazmat: boolean; rate: number | null; driverPay: number | null; fuelCost: number | null; otherCost: number | null;
+  notes: string | null; truckId: string | null; driverId: string | null; trailerId: string | null;
+}>;
 
-export function LoadForm({ action, customers, trucks, drivers, trailers, defaults = {}, submitLabel = "Create load" }: {
+const FUEL_PER_KM = 0.3;
+const s = (v: string | number | boolean | null | undefined) => (v == null ? "" : String(v));
+
+/**
+ * Multi-stop booking form. Distance, driver pay, fuel and the market rate are estimated live from the
+ * stops and the chosen driver; every estimate is editable and blank fields fall back to the server's defaults.
+ */
+export function LoadForm({ action, options, defaults = {}, stops: initialStops, locked = false, submitLabel = "Create load", cancelHref = "/loads" }: {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
-  customers: Opt[]; trucks: Opt[]; drivers: Opt[]; trailers: Opt[];
-  defaults?: Defaults; submitLabel?: string;
+  options: AssignmentOptions;
+  defaults?: LoadDefaults;
+  stops?: StopDefault[];
+  /** In transit or later: stops and the unit can't change here (use Arrive / Complete and Recover on the load). */
+  locked?: boolean;
+  submitLabel?: string;
+  cancelHref?: string;
 }) {
-  const [origin, setOrigin] = useState(String(defaults.originCity ?? "Tashkent"));
-  const [dest, setDest] = useState(String(defaults.destCity ?? "Samarkand"));
-  const [rate, setRate] = useState(defaults.rate != null ? String(defaults.rate) : "");
-  const [equipment, setEquipment] = useState(String(defaults.equipment ?? "DRY_VAN"));
+  const [stops, setStops] = useState<StopDraft[]>(() =>
+    initialStops && initialStops.length > 0
+      ? initialStops.map(toDraft)
+      : [newStop("PICKUP", { city: "Tashkent" }), newStop("DELIVERY", { city: "Samarkand" })],
+  );
+  const [equipment, setEquipment] = useState(defaults.equipment ?? "DRY_VAN");
+  const [rate, setRate] = useState(s(defaults.rate));
+  const [distance, setDistance] = useState(s(defaults.distanceKm));
+  const [emptyKm, setEmptyKm] = useState(s(defaults.emptyKm ?? ""));
+  const [driverPay, setDriverPay] = useState(s(defaults.driverPay));
+  const [fuel, setFuel] = useState(s(defaults.fuelCost));
+  const [other, setOther] = useState(s(defaults.otherCost));
+  const [truckId, setTruckId] = useState(s(defaults.truckId));
+  const [driverId, setDriverId] = useState(s(defaults.driverId));
+  const [trailerId, setTrailerId] = useState(s(defaults.trailerId));
+  const [teamId, setTeamId] = useState(s(defaults.teamId));
 
-  const distance = useMemo(() => {
-    const a = CITIES.find((c) => c.name === origin);
-    const b = CITIES.find((c) => c.name === dest);
-    return a && b ? roadKm(a, b) : null;
-  }, [origin, dest]);
-  const suggestedRate = distance ? Math.round((distance * 1.6 + 150) / 10) * 10 : null;
-  const d = (k: string) => (defaults[k] == null ? undefined : String(defaults[k]));
-  const cityOpts = CITIES.map((c) => ({ value: c.name, label: `${c.name} (${c.country})` }));
-  const opts = (xs: Opt[]) => xs.map((x) => ({ value: x.id, label: x.label + (x.disabled ? " — busy" : "") }));
+  const points = useMemo(() => stops.map(stopCoords), [stops]);
+  const known = points.filter((p): p is NonNullable<typeof p> => p != null);
+  const estimate = known.length >= 2 ? routeKm(known) : null;
+  const estimateComplete = estimate != null && known.length === points.length;
+
+  const dist = Number(distance) > 0 ? Number(distance) : estimate ?? 0;
+  const emptyN = Math.max(0, Number(emptyKm) || 0);
+  const rateN = Math.max(0, Number(rate) || 0);
+  const driver = options.drivers.find((d) => d.id === driverId);
+  const driverPayN = driverPay !== "" ? Number(driverPay) || 0 : driver ? Math.round(dist * driver.payPerKm) : 0;
+  const fuelN = fuel !== "" ? Number(fuel) || 0 : Math.round(dist * FUEL_PER_KM);
+  const otherN = Number(other) || 0;
+  const margin = rateN - driverPayN - fuelN - otherN;
+  const marginPct = rateN ? Math.round((margin / rateN) * 100) : null;
+  const suggest = suggestedRate(dist);
+  const rpk = ratePerKm(rateN, dist, emptyN);
+  const pickups = stops.filter((x) => x.type === "PICKUP").length;
+  const deliveries = stops.length - pickups;
+
+  const onTruck = (id: string) => {
+    setTruckId(id);
+    const t = options.trucks.find((x) => x.id === id);
+    if (t?.pairedDriverId && !driverId) setDriverId(t.pairedDriverId);
+  };
+  const onDriver = (id: string) => {
+    setDriverId(id);
+    const d = options.drivers.find((x) => x.id === id);
+    if (d?.pairedTruckId && !truckId) setTruckId(d.pairedTruckId);
+    if (d?.teamId && !teamId) setTeamId(d.teamId);
+  };
+  const opt = (xs: { id: string; label: string; note?: string }[]) => xs.map((x) => ({ value: x.id, label: optLabel(x) }));
+  const status = defaults.status as LoadStatus | undefined;
 
   return (
-    <ActionForm action={action} className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
-          <Card title="Customer & route">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Customer *" className="sm:col-span-2">
-                <Select name="customerId" required defaultValue={d("customerId")} placeholder="Select customer…" options={customers.map((c) => ({ value: c.id, label: c.label }))} />
+    <ActionForm action={action} className="space-y-4">
+      {locked && (
+        <p className="flex items-start gap-2 rounded-md border border-line bg-sunken/60 px-3 py-2 text-[12px] text-fg-muted">
+          <Lock className="mt-px h-3.5 w-3.5 shrink-0 text-fg-subtle" />
+          <span>
+            This load is <b className="font-medium text-fg">{status ? LOAD_STATUS_LABELS[status] : "in progress"}</b>, so its stops and unit are locked here.
+            Mark stops arrived or complete on the load page, and use <b className="font-medium text-fg">Recover</b> to move it to another truck. Cargo, pricing and references can still be edited.
+          </span>
+        </p>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="space-y-4 xl:col-span-2">
+          <Card title="Customer & commercial">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="Customer" required className="lg:col-span-2">
+                <Select name="customerId" required defaultValue={s(defaults.customerId)} placeholder="Select the shipper…" options={opt(options.customers)} />
               </Field>
-              <Field label="Pickup city *"><Select name="originCity" value={origin} onChange={(e) => setOrigin(e.target.value)} options={cityOpts} /></Field>
-              <Field label="Delivery city *"><Select name="destCity" value={dest} onChange={(e) => setDest(e.target.value)} options={cityOpts} /></Field>
-              <Field label="Pickup location / address"><Input name="originName" defaultValue={d("originName")} placeholder={`${origin} warehouse`} /></Field>
-              <Field label="Delivery location / address"><Input name="destName" defaultValue={d("destName")} placeholder={`${dest} customer site`} /></Field>
-              <Field label="Pickup time *"><Input type="datetime-local" name="pickupAt" required defaultValue={defaults.pickupAt ? toLocalInput(defaults.pickupAt as Date) : undefined} /></Field>
-              <Field label="Delivery deadline *"><Input type="datetime-local" name="deliveryAt" required defaultValue={defaults.deliveryAt ? toLocalInput(defaults.deliveryAt as Date) : undefined} /></Field>
-              <Field label="Distance (km)" hint={distance ? `Estimated road distance: ${distance} km` : undefined}>
-                <Input type="number" name="distanceKm" step="1" min="1" defaultValue={d("distanceKm")} placeholder={distance ? String(distance) : ""} key={`${origin}-${dest}`} />
+              <Field label="Broker" hint="Who pays when the load came through a broker." className="lg:col-span-2">
+                <Select name="brokerId" defaultValue={s(defaults.brokerId)} placeholder="Direct — no broker" options={opt(options.brokers)} />
               </Field>
-              <Field label="Priority"><Select name="priority" defaultValue={d("priority") ?? "NORMAL"} options={PRIORITIES} /></Field>
+              <Field label="Customer reference" hint="Their PO or booking number."><Input name="customerRef" defaultValue={s(defaults.customerRef)} placeholder="PO-48213" className="num" /></Field>
+              <Field label="Team">
+                <Select name="teamId" value={teamId} onChange={(e) => setTeamId(e.target.value)} placeholder="Follows the driver" options={options.teams.map((t) => ({ value: t.id, label: t.name }))} />
+              </Field>
+              <Field label="Priority">
+                <Select name="priority" defaultValue={defaults.priority ?? "NORMAL"} options={PRIORITIES.map((p) => ({ value: p, label: p === "NORMAL" ? "Normal" : p === "LOW" ? "Low" : p === "HIGH" ? "High" : "Urgent" }))} />
+              </Field>
             </div>
+          </Card>
+
+          <Card title="Stops" flush actions={
+            <span className="num text-[11px] text-fg-subtle">
+              {pickups} pickup{pickups === 1 ? "" : "s"} · {deliveries} deliver{deliveries === 1 ? "y" : "ies"}{estimate != null && ` · ≈ ${number(estimate)} km`}
+            </span>
+          }>
+            <StopsEditor stops={stops} onChange={setStops} locked={locked} />
           </Card>
 
           <Card title="Cargo">
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Commodity *" className="sm:col-span-2"><Input name="commodity" required defaultValue={d("commodity")} placeholder="e.g. Cotton yarn" /></Field>
-              <Field label="Equipment"><Select name="equipment" value={equipment} onChange={(e) => setEquipment(e.target.value)} options={EQUIPMENT.map((e) => ({ value: e, label: EQUIPMENT_LABELS[e] }))} /></Field>
-              <Field label="Weight (kg)"><Input type="number" name="weightKg" min="0" defaultValue={d("weightKg")} /></Field>
-              <Field label="Pallets"><Input type="number" name="pallets" min="0" defaultValue={d("pallets")} /></Field>
-              {equipment === "REEFER"
-                ? <Field label="Temperature (°C)"><Input type="number" name="temperatureC" step="0.5" defaultValue={d("temperatureC")} /></Field>
-                : <div />}
-              <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-3">
-                <input type="checkbox" name="hazmat" defaultChecked={Boolean(defaults.hazmat)} className="h-4 w-4 rounded border-slate-300" />
-                Hazardous materials (ADR)
-              </label>
-              <Field label="Notes / instructions" className="sm:col-span-3"><Textarea name="notes" defaultValue={d("notes")} placeholder="Dock number, contact on site, customs docs…" /></Field>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="Commodity" required className="lg:col-span-2"><Input name="commodity" required defaultValue={s(defaults.commodity)} placeholder="Cotton yarn, beverages, machinery…" /></Field>
+              <Field label="Equipment">
+                <Select name="equipment" value={equipment} onChange={(e) => setEquipment(e.target.value)} options={EQUIPMENT.map((e) => ({ value: e, label: EQUIPMENT_LABELS[e] }))} />
+              </Field>
+              {equipment === "REEFER" ? (
+                <Field label="Temperature (°C)" required><Input type="number" name="temperatureC" step="0.5" required defaultValue={s(defaults.temperatureC)} placeholder="-18" className="num" /></Field>
+              ) : <div className="hidden lg:block" />}
+              <Field label="Weight (kg)"><Input type="number" name="weightKg" min={0} step={10} defaultValue={s(defaults.weightKg)} placeholder="0" className="num" /></Field>
+              <Field label="Pallets"><Input type="number" name="pallets" min={0} defaultValue={s(defaults.pallets)} placeholder="—" className="num" /></Field>
+              <div className="flex items-end pb-1.5 lg:col-span-2">
+                <Checkbox name="hazmat" defaultChecked={Boolean(defaults.hazmat)} label={<span>Hazardous materials <span className="text-fg-subtle">(ADR paperwork required)</span></span>} />
+              </div>
+              <Field label="Notes and instructions" className="sm:col-span-2 lg:col-span-4">
+                <Textarea name="notes" defaultValue={s(defaults.notes)} placeholder="Dock number, contact on site, customs documents, seal requirements…" />
+              </Field>
             </div>
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           <Card title="Pricing">
-            <div className="space-y-4">
-              <Field label="Customer rate (USD) *" hint={suggestedRate ? `Market guide ≈ $${suggestedRate.toLocaleString()} for this lane` : undefined}>
-                <Input type="number" name="rate" required min="0" step="10" value={rate} onChange={(e) => setRate(e.target.value)} />
+            <div className="space-y-3">
+              <Field label="Customer rate (USD)" required hint={suggest ? <>Lane guide ≈ {money(suggest)} for {number(dist)} km</> : "Add two stops to see a lane guide."}>
+                <div className="flex gap-1.5">
+                  <Input type="number" name="rate" required min={0} step={10} value={rate} onChange={(e) => setRate(e.target.value)} placeholder={suggest ? String(suggest) : "0"} className="num" />
+                  {suggest && Number(rate) !== suggest && (
+                    <button type="button" onClick={() => setRate(String(suggest))} title="Use the lane guide" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line px-2 text-[12px] font-medium text-accent-text hover:bg-accent-soft">
+                      <Sparkles className="h-3.5 w-3.5" />Use
+                    </button>
+                  )}
+                </div>
               </Field>
-              {suggestedRate && !rate && (
-                <button type="button" onClick={() => setRate(String(suggestedRate))} className="text-xs font-medium text-blue-600 hover:underline">Use suggested rate</button>
-              )}
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Driver pay" hint="auto from driver rate"><Input type="number" name="driverPay" min="0" defaultValue={d("driverPay")} /></Field>
-                <Field label="Fuel est." hint="auto from distance"><Input type="number" name="fuelCost" min="0" defaultValue={d("fuelCost")} /></Field>
-                <Field label="Other costs" hint="tolls, permits"><Input type="number" name="otherCost" min="0" defaultValue={d("otherCost")} /></Field>
+                <Field label="Loaded km" hint={estimate != null ? `Estimate ${number(estimate)} km${estimateComplete ? "" : " (partial)"}` : "Estimated from the stops"}>
+                  <div className="flex gap-1.5">
+                    <Input type="number" name="distanceKm" min={1} step={1} value={distance} onChange={(e) => setDistance(e.target.value)} placeholder={estimate != null ? String(estimate) : "—"} className="num" />
+                    {estimate != null && distance !== "" && Number(distance) !== estimate && (
+                      <button type="button" onClick={() => setDistance("")} title="Use the estimate" className="inline-flex h-8 shrink-0 items-center rounded-md border border-line px-2 text-[12px] font-medium text-fg-muted hover:bg-raised">Reset</button>
+                    )}
+                  </div>
+                </Field>
+                <Field label="Empty km" hint="Repositioning to the pickup.">
+                  <Input type="number" name="emptyKm" min={0} step={1} value={emptyKm} onChange={(e) => setEmptyKm(e.target.value)} placeholder="0" className="num" />
+                </Field>
+                <Field label="Driver pay" hint={driver ? `${driver.label.split(" ")[0]} · $${driver.payPerKm.toFixed(2)}/km` : "Auto from the driver's rate"}>
+                  <Input type="number" name="driverPay" min={0} value={driverPay} onChange={(e) => setDriverPay(e.target.value)} placeholder={String(driverPayN)} className="num" />
+                </Field>
+                <Field label="Fuel estimate" hint={`≈ $${FUEL_PER_KM.toFixed(2)} per loaded km`}>
+                  <Input type="number" name="fuelCost" min={0} value={fuel} onChange={(e) => setFuel(e.target.value)} placeholder={String(fuelN)} className="num" />
+                </Field>
+                <Field label="Other costs" hint="Tolls, permits, lumper." className="col-span-2">
+                  <Input type="number" name="otherCost" min={0} value={other} onChange={(e) => setOther(e.target.value)} placeholder="0" className="num" />
+                </Field>
               </div>
+              <dl className="grid grid-cols-3 gap-2 rounded-md bg-sunken/60 px-3 py-2">
+                <div><dt className="text-[11px] text-fg-subtle">Rate per km</dt><dd className="num text-[13px] font-medium text-fg">{fmtRpk(rpk)}</dd></div>
+                <div><dt className="text-[11px] text-fg-subtle">Costs</dt><dd className="num text-[13px] font-medium text-fg">{money(driverPayN + fuelN + otherN)}</dd></div>
+                <div>
+                  <dt className="text-[11px] text-fg-subtle">Margin</dt>
+                  <dd className={cn("num text-[13px] font-medium", rateN === 0 ? "text-fg-faint" : margin < 0 ? "text-danger" : marginPct != null && marginPct < 15 ? "text-warn" : "text-ok")}>
+                    {rateN ? <>{money(margin)} <span className="text-[11px] font-normal">({marginPct}%)</span></> : "—"}
+                  </dd>
+                </div>
+              </dl>
             </div>
           </Card>
-          <Card title="Assignment (optional)">
-            <div className="space-y-4">
-              <Field label="Truck"><Select name="truckId" defaultValue={d("truckId")} placeholder="— Assign later —" options={opts(trucks)} /></Field>
-              <Field label="Driver"><Select name="driverId" defaultValue={d("driverId")} placeholder="— Assign later —" options={opts(drivers)} /></Field>
-              <Field label="Trailer"><Select name="trailerId" defaultValue={d("trailerId")} placeholder="— None —" options={opts(trailers)} /></Field>
-              <p className="text-xs text-slate-500">Assigning truck + driver moves the load to <b>Assigned</b>. Busy units are rejected.</p>
-            </div>
+
+          <Card title={locked ? "Assignment" : "Assignment (optional)"}>
+            {locked ? (
+              <div className="space-y-2 text-[13px]">
+                <input type="hidden" name="truckId" value={truckId} />
+                <input type="hidden" name="driverId" value={driverId} />
+                <input type="hidden" name="trailerId" value={trailerId} />
+                <Row k="Truck" v={options.trucks.find((t) => t.id === truckId)?.label ?? "—"} />
+                <Row k="Driver" v={options.drivers.find((d) => d.id === driverId)?.label ?? "—"} />
+                <Row k="Trailer" v={options.trailers.find((t) => t.id === trailerId)?.label ?? "—"} />
+                <p className="text-[11px] text-fg-subtle">Use Recover on the load page to move an in-progress load to another unit.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <Field label="Truck"><Select name="truckId" value={truckId} onChange={(e) => onTruck(e.target.value)} placeholder="Assign later" options={opt(options.trucks)} /></Field>
+                <Field label="Driver" hint={driver?.note ? `${driver.label} is ${driver.note} — the server will reject this assignment.` : undefined}>
+                  <Select name="driverId" value={driverId} onChange={(e) => onDriver(e.target.value)} placeholder="Assign later" options={opt(options.drivers)} />
+                </Field>
+                <Field label="Trailer"><Select name="trailerId" value={trailerId} onChange={(e) => setTrailerId(e.target.value)} placeholder="None" options={opt(options.trailers)} /></Field>
+                <p className="text-[11px] text-fg-subtle">Choosing a truck and driver moves the load to Dispatched and notifies the driver. Units marked “busy” are already committed to another active load.</p>
+              </div>
+            )}
           </Card>
-          <SubmitButton className="w-full">{submitLabel}</SubmitButton>
         </div>
       </div>
+
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+        <p className="num text-[12px] text-fg-muted">
+          {stops.length} stops · {number(dist)} km loaded{emptyN ? ` + ${number(emptyN)} empty` : ""} · {money(rateN)} · {fmtRpk(rpk)} per km
+          {rateN > 0 && <> · margin <span className={margin < 0 ? "text-danger" : "text-fg"}>{money(margin)}</span></>}
+        </p>
+        <div className="flex items-center gap-2">
+          <LinkButton href={cancelHref} variant="ghost">Cancel</LinkButton>
+          <SubmitButton pendingText="Saving load…">{submitLabel}</SubmitButton>
+        </div>
+      </footer>
     </ActionForm>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-fg-subtle">{k}</span>
+      <span className="truncate text-right font-medium text-fg">{v}</span>
+    </div>
   );
 }

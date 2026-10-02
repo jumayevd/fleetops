@@ -16,8 +16,10 @@
     "env:pull": "vercel env pull .env.vercel --yes"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.130",
     "@prisma/client": "^6.19.3",
     "@vercel/blob": "^2.8.0",
+    "ai": "^7.0.127",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

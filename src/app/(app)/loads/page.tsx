@@ -1,136 +1,170 @@
 import Link from "next/link";
-import { Plus, LayoutGrid, List } from "lucide-react";
-import type { Prisma } from "@prisma/client";
+import { ArrowRight, Download, LayoutGrid, List, Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { LOAD_STATUSES, LOAD_STATUS_LABELS, type LoadStatus } from "@/lib/constants";
-import { money, dateTime, km, daysAgo } from "@/lib/format";
-import { loadProgress } from "@/lib/telemetry";
-import { Badge, Card, LinkButton, PageHeader, Table, Progress, inputClass, buttonClass } from "@/components/ui";
+import { BILLING_STAGE_LABELS, LOAD_STATUSES, LOAD_STATUS_LABELS, type BillingStage, type LoadStatus } from "@/lib/constants";
+import { money, dateTime, number } from "@/lib/format";
+import { estimatedArrival } from "@/lib/telemetry";
+import { Badge, Card, Cell, Chip, FilterPills, LinkButton, PageHeader, STATUS_TONE, Segmented, Stat, Table, cn } from "@/components/ui";
+import { LIST_INCLUDE, hasActiveFilters, loadWhere, loadsHref, parseLoadFilters, periodLabel } from "./query";
+import { PRIORITY_TONE, fmtRpk, lateness, ratePerKm } from "./shared";
+import { LoadFilterBar } from "./filters";
+import { LoadRowMenu } from "./row-menu";
+import { LoadBoard } from "./board";
 
-export const metadata = { title: "Loads & dispatch" };
+export const metadata = { title: "Loads" };
 
-const BOARD: LoadStatus[] = ["PLANNED", "ASSIGNED", "IN_TRANSIT", "DELIVERED"];
+const TAKE = 200;
 
 export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
   const user = await requireUser("loads.view");
-  const sp = await searchParams;
-  const view = sp.view === "board" ? "board" : "table";
-  const status = typeof sp.status === "string" && LOAD_STATUSES.includes(sp.status as LoadStatus) ? sp.status : undefined;
-  const q = typeof sp.q === "string" ? sp.q.trim() : "";
-  const showMoney = can(user.role, "finance.view") || can(user.role, "loads.edit");
+  const f = parseLoadFilters(await searchParams);
+  const board = f.view === "board";
+  const canEdit = can(user.role, "loads.edit");
+  const canClaim = can(user.role, "claims.edit");
+  const showMoney = can(user.role, "finance.view") || canEdit;
+  const where = loadWhere(f);
+  // Soonest first when triaging booked / dispatched work; otherwise newest pickups first.
+  const asc = board || f.status === "PLANNED" || f.status === "ASSIGNED";
 
-  const like = { contains: q, mode: "insensitive" as const };
-  const filters: Prisma.LoadWhereInput[] = [];
-  if (view === "board") filters.push({ OR: [{ status: { in: ["PLANNED", "ASSIGNED", "IN_TRANSIT"] } }, { status: "DELIVERED", deliveredAt: { gte: daysAgo(7) } }] });
-  if (status && view === "table") filters.push({ status });
-  if (q) filters.push({ OR: [
-    { reference: like }, { originCity: like }, { destCity: like }, { commodity: like },
-    { customer: { name: like } }, { driver: { name: like } }, { truck: { unitNumber: like } },
-  ] });
-  const where: Prisma.LoadWhereInput = { AND: filters };
-
-  const [loads, counts] = await Promise.all([
-    db.load.findMany({
-      where,
-      orderBy: view === "board" ? { pickupAt: "asc" } : { pickupAt: "desc" },
-      take: view === "board" ? 200 : 150,
-      include: { customer: { select: { name: true } }, truck: { select: { unitNumber: true } }, driver: { select: { name: true } } },
+  const [loads, total, byStatus, kpi, parties, teams] = await Promise.all([
+    db.load.findMany({ where, orderBy: { pickupAt: asc ? "asc" : "desc" }, take: TAKE, include: LIST_INCLUDE }),
+    db.load.count({ where }),
+    db.load.groupBy({ by: ["status"], where: loadWhere({ ...f, view: "table" }, { withStatus: false }), _count: true }),
+    db.load.aggregate({
+      where: { AND: [where, { status: { not: "CANCELLED" } }] },
+      _count: true, _sum: { rate: true, distanceKm: true, emptyKm: true, driverPay: true, fuelCost: true, otherCost: true },
     }),
-    db.load.groupBy({ by: ["status"], _count: true }),
+    db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, kind: true } }),
+    db.team.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true, name: true } }),
   ]);
-  const countOf = (s: string) => counts.find((c) => c.status === s)?._count ?? 0;
-  const qs = (patch: Record<string, string | undefined>) => {
-    const p = new URLSearchParams();
-    const merged = { view, status, q: q || undefined, ...patch };
-    for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
-    return `/loads?${p}`;
-  };
+
+  const countOf = (s: string) => byStatus.find((c) => c.status === s)?._count ?? 0;
+  const allCount = byStatus.reduce((a, c) => a + c._count, 0);
+  const sum = kpi._sum;
+  const revenue = sum.rate ?? 0;
+  const loaded = sum.distanceKm ?? 0;
+  const empty = sum.emptyKm ?? 0;
+  const totalKm = loaded + empty;
+  const cost = (sum.driverPay ?? 0) + (sum.fuelCost ?? 0) + (sum.otherCost ?? 0);
+  const marginPct = revenue ? Math.round(((revenue - cost) / revenue) * 100) : 0;
+  const emptyPct = totalKm ? Math.round((empty / totalKm) * 100) : 0;
+  const billable = kpi._count;
+  const period = periodLabel(f);
+
+  const party = (c: { id: string; name: string }) => ({ id: c.id, label: c.name });
+  const customers = parties.filter((c) => c.kind !== "BROKER").map(party);
+  const brokers = parties.filter((c) => c.kind !== "SHIPPER").map(party);
 
   return (
     <>
       <PageHeader
-        title="Loads & dispatch"
-        subtitle="Plan, assign and follow every shipment from booking to invoice."
+        eyebrow="Dispatch"
+        title="Loads"
+        subtitle={`${number(total)} ${total === 1 ? "load" : "loads"}${hasActiveFilters(f) ? " match the current filters" : ""} · ${period}`}
         actions={
           <>
-            <div className="flex rounded-lg bg-white p-0.5 ring-1 ring-slate-300">
-              <Link href={qs({ view: "table" })} className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium ${view === "table" ? "bg-slate-900 text-white" : "text-slate-600"}`}><List className="h-3.5 w-3.5" />Table</Link>
-              <Link href={qs({ view: "board", status: undefined })} className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium ${view === "board" ? "bg-slate-900 text-white" : "text-slate-600"}`}><LayoutGrid className="h-3.5 w-3.5" />Board</Link>
-            </div>
-            {can(user.role, "loads.edit") && <LinkButton href="/loads/new"><Plus className="h-4 w-4" />New load</LinkButton>}
+            <Segmented active={f.view} items={[
+              { key: "table", href: loadsHref(f, { view: undefined }), label: <><List className="h-3.5 w-3.5" />Table</> },
+              { key: "board", href: loadsHref(f, { view: "board", status: undefined }), label: <><LayoutGrid className="h-3.5 w-3.5" />Board</> },
+            ]} />
+            <LinkButton href={loadsHref({ ...f, view: "table" }, {}, "/loads/export")} variant="secondary" prefetch={false}><Download className="h-4 w-4" />Export CSV</LinkButton>
+            {canEdit && <LinkButton href="/loads/new"><Plus className="h-4 w-4" />New load</LinkButton>}
           </>
         }
       />
 
-      <form className="mb-4 flex flex-wrap gap-2" action="/loads">
-        <input type="hidden" name="view" value={view} />
-        {status && <input type="hidden" name="status" value={status} />}
-        <input name="q" defaultValue={q} placeholder="Search reference, city, customer, driver, truck…" className={`${inputClass} max-w-md`} />
-        <button className={buttonClass("secondary")}>Search</button>
-      </form>
+      <div className={cn("mb-4 grid grid-cols-2 gap-3", showMoney ? "md:grid-cols-3 xl:grid-cols-5" : "md:grid-cols-3")}>
+        <Stat label="Loads" value={number(total)} hint={`${number(countOf("PLANNED") + countOf("ASSIGNED") + countOf("IN_TRANSIT"))} active · ${number(countOf("DELIVERED") + countOf("INVOICED"))} completed`} />
+        {showMoney && <Stat label="Revenue" value={money(revenue)} hint={`${marginPct}% margin after driver, fuel and other costs`} tone={marginPct < 15 ? "warn" : "ok"} />}
+        {showMoney && <Stat label="Avg rate" value={money(billable ? revenue / billable : 0)} hint={`per load, ${number(billable)} billable`} />}
+        {showMoney && <Stat label="Avg $/km" value={fmtRpk(ratePerKm(revenue, loaded, empty))} hint="revenue over loaded + empty km" />}
+        <Stat label="Empty km" value={`${emptyPct}%`} hint={`${number(empty)} of ${number(totalKm)} km`} tone={emptyPct > 20 ? "warn" : emptyPct > 12 ? "neutral" : "ok"} />
+        {!showMoney && <Stat label="Loaded km" value={number(loaded)} hint={`${number(billable)} loads excl. cancelled`} />}
+      </div>
 
-      {view === "table" ? (
-        <>
-          <div className="mb-4 flex flex-wrap gap-2">
-            <Link href={qs({ status: undefined })} className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${!status ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200"}`}>All</Link>
-            {LOAD_STATUSES.map((s) => (
-              <Link key={s} href={qs({ status: s })} className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${status === s ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200"}`}>
-                {LOAD_STATUS_LABELS[s]} <span className="opacity-60">{countOf(s)}</span>
-              </Link>
-            ))}
-          </div>
-          <Card bodyClassName="p-0">
-            <Table head={["Load", "Status", "Customer", "Route", "Pickup", "Delivery", "Truck / Driver", ...(showMoney ? ["Rate"] : [])]} empty={loads.length === 0}>
-              {loads.map((l) => (
-                <tr key={l.id}>
-                  <td><Link href={`/loads/${l.id}`} className="font-semibold text-blue-700 hover:underline">{l.reference}</Link>
-                    {l.priority !== "NORMAL" && <Badge value={l.priority} className="ml-2" />}</td>
-                  <td><Badge value={l.status} label={LOAD_STATUS_LABELS[l.status as LoadStatus]} /></td>
-                  <td className="max-w-44 truncate">{l.customer.name}</td>
-                  <td className="whitespace-nowrap">{l.originCity} → {l.destCity}<span className="block text-xs text-slate-500">{km(l.distanceKm)} · {l.commodity}</span></td>
-                  <td className="whitespace-nowrap text-slate-600">{dateTime(l.pickupAt)}</td>
-                  <td className="whitespace-nowrap text-slate-600">{dateTime(l.deliveryAt)}</td>
-                  <td className="whitespace-nowrap">{l.truck ? <>{l.truck.unitNumber}<span className="block text-xs text-slate-500">{l.driver?.name}</span></> : <span className="text-amber-600">Unassigned</span>}</td>
-                  {showMoney && <td className="font-medium">{money(l.rate)}</td>}
-                </tr>
-              ))}
-            </Table>
-          </Card>
-        </>
+      <div className="mb-3 space-y-2.5">
+        <LoadFilterBar values={f} teams={teams} customers={customers} brokers={brokers} />
+        {!board && (
+          <FilterPills active={f.status ?? "ALL"} items={[
+            { key: "ALL", href: loadsHref(f, { status: undefined }), label: "All", count: allCount },
+            ...LOAD_STATUSES.map((s) => ({ key: s, href: loadsHref(f, { status: s }), label: LOAD_STATUS_LABELS[s], count: countOf(s) })),
+          ]} />
+        )}
+      </div>
+
+      {board ? (
+        <LoadBoard loads={loads} showMoney={showMoney} canEdit={canEdit} />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
-          {BOARD.map((col) => {
-            const items = loads.filter((l) => l.status === col);
-            return (
-              <div key={col} className="rounded-xl bg-slate-100/80 p-3">
-                <div className="mb-3 flex items-center justify-between px-1">
-                  <Badge value={col} label={LOAD_STATUS_LABELS[col]} />
-                  <span className="text-xs font-medium text-slate-500">{items.length}{col === "DELIVERED" && " · last 7d"}</span>
-                </div>
-                <div className="space-y-2">
-                  {items.map((l) => (
-                    <Link key={l.id} href={`/loads/${l.id}`} className="block rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-blue-300 hover:shadow">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-slate-900">{l.reference}</span>
-                        {l.priority !== "NORMAL" ? <Badge value={l.priority} /> : showMoney && <span className="text-xs font-medium text-slate-600">{money(l.rate)}</span>}
-                      </div>
-                      <p className="mt-1 text-sm text-slate-800">{l.originCity} → {l.destCity}</p>
-                      <p className="text-xs text-slate-500">{l.customer.name} · {l.commodity}</p>
-                      <div className="mt-2 flex items-center justify-between text-xs">
-                        <span className="text-slate-500">{col === "DELIVERED" ? `✓ ${dateTime(l.deliveredAt)}` : `⏱ ${dateTime(col === "IN_TRANSIT" ? l.deliveryAt : l.pickupAt)}`}</span>
-                        <span className={l.truck ? "text-slate-600" : "font-medium text-amber-600"}>{l.truck ? `${l.truck.unitNumber} · ${l.driver?.name.split(" ")[0]}` : "Needs truck"}</span>
-                      </div>
-                      {col === "IN_TRANSIT" && <Progress value={loadProgress(l)} className="mt-2" />}
-                    </Link>
-                  ))}
-                  {items.length === 0 && <p className="py-6 text-center text-xs text-slate-400">Empty</p>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <Card flush>
+          <Table dense
+            head={[
+              "Load", "Status", "Customer", "Route", "Pickup", "Delivery", "Driver / truck",
+              <span key="km" className="block text-right">Km loaded · empty</span>,
+              ...(showMoney ? [<span key="rate" className="block text-right">Rate</span>, <span key="rpk" className="block text-right">$/km</span>] : []),
+              "",
+            ]}
+            empty={loads.length === 0}
+            emptyTitle={hasActiveFilters(f) ? "No loads match these filters" : "No loads yet"}
+            emptyDescription={hasActiveFilters(f) ? "Widen the date range, clear the status pill or search for something else." : canEdit ? "Book the first load with “New load” — stops, cargo and pricing take about a minute." : "Loads appear here once a dispatcher books them."}
+          >
+            {loads.map((l) => {
+              const status = l.status as LoadStatus;
+              const eta = status === "IN_TRANSIT" ? estimatedArrival(l) : null;
+              const late = lateness(l, eta);
+              const stops = l._count.stops;
+              return (
+                <tr key={l.id}>
+                  <td>
+                    <div className="flex items-center gap-1.5">
+                      <Link href={`/loads/${l.id}`} className="num font-medium text-fg hover:underline">{l.reference}</Link>
+                      {l.priority !== "NORMAL" && <Chip tone={PRIORITY_TONE[l.priority]}>{l.priority}</Chip>}
+                      {l.hazmat && <Chip tone="danger">Hazmat</Chip>}
+                    </div>
+                    {l.customerRef && <div className="num text-[11px] text-fg-subtle">ref {l.customerRef}</div>}
+                  </td>
+                  <td>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge value={status} label={LOAD_STATUS_LABELS[status]} dot />
+                      {l.billingStage !== "NONE" && <Chip tone={STATUS_TONE[l.billingStage] ?? "neutral"}>{BILLING_STAGE_LABELS[l.billingStage as BillingStage]}</Chip>}
+                    </div>
+                  </td>
+                  <td className="max-w-52"><Cell primary={l.customer.name} secondary={l.broker ? `via ${l.broker.name}` : l.team?.name} /></td>
+                  <td className="max-w-64">
+                    <Cell
+                      primary={<span className="flex items-center gap-1">{l.originCity}<ArrowRight className="h-3 w-3 shrink-0 text-fg-faint" />{l.destCity}{stops > 2 && <span className="num text-[11px] text-fg-subtle">· {stops} stops</span>}</span>}
+                      secondary={l.commodity}
+                    />
+                  </td>
+                  <td className="num whitespace-nowrap text-fg-muted">{dateTime(l.pickupAt)}</td>
+                  <td className="whitespace-nowrap">
+                    <div className={cn("num", late === "late" ? "text-danger" : "text-fg-muted")}>{dateTime(l.deliveredAt ?? l.deliveryAt)}</div>
+                    {late === "late" && <div className="text-[11px] text-danger">Late · due {dateTime(l.deliveryAt)}</div>}
+                    {late === "eta-late" && <div className="text-[11px] text-warn">ETA {dateTime(eta)} · late</div>}
+                    {!late && l.deliveredAt && <div className="text-[11px] text-ok">On time</div>}
+                  </td>
+                  <td className="whitespace-nowrap">
+                    {l.truck || l.driver ? (
+                      <Cell primary={l.driver?.name ?? "—"} secondary={<span className="num">{l.truck?.unitNumber ?? "—"}{l.trailer && ` · ${l.trailer.unitNumber}`}</span>} />
+                    ) : status === "PLANNED" ? (
+                      canEdit ? <Link href={`/loads/${l.id}#assign`} className="font-medium text-warn hover:underline">Needs truck</Link> : <span className="font-medium text-warn">Needs truck</span>
+                    ) : <span className="text-fg-faint">—</span>}
+                  </td>
+                  <td className="num whitespace-nowrap text-right">{number(l.distanceKm)} <span className="text-fg-subtle">· {number(l.emptyKm)}</span></td>
+                  {showMoney && <td className="num text-right font-medium">{money(l.rate)}</td>}
+                  {showMoney && <td className="num text-right text-fg-muted">{fmtRpk(ratePerKm(l.rate, l.distanceKm, l.emptyKm))}</td>}
+                  <td className="w-8 text-right"><LoadRowMenu id={l.id} reference={l.reference} status={status} canEdit={canEdit} canClaim={canClaim} /></td>
+                </tr>
+              );
+            })}
+          </Table>
+          {total > loads.length && (
+            <p className="border-t border-line px-4 py-2 text-[12px] text-fg-muted">
+              Showing the first {number(loads.length)} of {number(total)} loads — narrow the date range or search to see the rest, or export the full set as CSV.
+            </p>
+          )}
+        </Card>
       )}
     </>
   );

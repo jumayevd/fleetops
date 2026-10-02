@@ -1,17 +1,13 @@
 import { requireUser } from "@/lib/auth";
 import { fleetSnapshot } from "@/lib/telemetry";
-import { PageHeader } from "@/components/ui";
 import { TrackingBoard } from "@/components/live-fleet";
 
 export const metadata = { title: "Live tracking" };
 
-export default async function TrackingPage() {
+export default async function TrackingPage({ searchParams }: PageProps<"/tracking">) {
   await requireUser("tracking.view");
+  const sp = await searchParams;
+  const truck = typeof sp.truck === "string" ? sp.truck : null;
   const fleet = await fleetSnapshot();
-  return (
-    <>
-      <PageHeader title="Live tracking" subtitle="Control tower — every truck, route and ETA. Refreshes every 10 seconds." />
-      <TrackingBoard initial={fleet} />
-    </>
-  );
+  return <TrackingBoard initial={fleet} at={new Date().toISOString()} selectedId={truck} />;
 }

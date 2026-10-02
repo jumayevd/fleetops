@@ -195,11 +195,11 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
             {opts && (
               <ActionForm action={assignLoad.bind(null, id)} className="space-y-3 border-t border-slate-100 pt-4">
                 <Field label="Truck"><Select name="truckId" required defaultValue={load.truckId ?? ""} placeholder="Select truck…"
-                  options={opts.trucks.map((t) => ({ value: t.id, label: t.label + (t.disabled ? " — busy" : "") }))} /></Field>
+                  options={opts.trucks.map((t) => ({ value: t.id, label: t.label + (t.note ? ` — ${t.note}` : "") }))} /></Field>
                 <Field label="Driver"><Select name="driverId" required defaultValue={load.driverId ?? ""} placeholder="Select driver…"
-                  options={opts.drivers.map((t) => ({ value: t.id, label: t.label + (t.disabled ? " — busy" : "") }))} /></Field>
+                  options={opts.drivers.map((t) => ({ value: t.id, label: t.label + (t.note ? ` — ${t.note}` : "") }))} /></Field>
                 <Field label="Trailer"><Select name="trailerId" defaultValue={load.trailerId ?? ""} placeholder="— None —"
-                  options={opts.trailers.map((t) => ({ value: t.id, label: t.label + (t.disabled ? " — busy" : "") }))} /></Field>
+                  options={opts.trailers.map((t) => ({ value: t.id, label: t.label + (t.note ? ` — ${t.note}` : "") }))} /></Field>
                 <SubmitButton className="w-full">{load.truckId ? "Reassign" : "Assign & dispatch"}</SubmitButton>
               </ActionForm>
             )}
