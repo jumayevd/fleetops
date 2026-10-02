@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { attempt, fields, FormError, type ActionState } from "@/lib/action";
-import { transitionLoad } from "@/lib/workflow";
+import { arriveAtStop, clearDriverBoardOverride, completeStop, setDriverBoardStatus, transitionLoad } from "@/lib/workflow";
 
 /** Drivers can only move their own loads forward: ASSIGNED → IN_TRANSIT → DELIVERED. */
 export async function driverUpdateLoad(loadId: string, _: ActionState, fd: FormData): Promise<ActionState> {
@@ -20,15 +20,28 @@ export async function driverUpdateLoad(loadId: string, _: ActionState, fd: FormD
       podSignedBy: f.str("podSignedBy"), lat: f.num("lat") ?? undefined, lng: f.num("lng") ?? undefined,
     });
     revalidatePath("/driver");
-    return { ok: to === "IN_TRANSIT" ? "Trip started — drive safe!" : "Delivery confirmed. Great job!" };
+    return { ok: to === "IN_TRANSIT" ? "Trip started — drive safe" : "Delivery confirmed. Great job" };
   });
 }
 
+/** Arrived / loaded / unloaded at a stop. Completing the last delivery stop does not deliver the load — the POD form does. */
+export async function driverStopAction(loadId: string, stopId: string, action: "arrive" | "complete", pos?: { lat?: number; lng?: number }) {
+  const me = await requireUser("driver.portal");
+  const load = await db.load.findUniqueOrThrow({ where: { id: loadId } });
+  if (!me.driver || load.driverId !== me.driver.id) throw new Error("This load isn't assigned to you");
+  if (action === "arrive") await arriveAtStop(loadId, stopId, me.id, pos);
+  else await completeStop(loadId, stopId, me.id, pos);
+  revalidatePath("/driver");
+}
+
+/** Driver sets their own availability when not on a trip: READY (back to automatic), REST, HOME. */
 export async function setDriverStatus(status: string) {
   const me = await requireUser("driver.portal");
-  if (!me.driver || !["AVAILABLE", "OFF_DUTY", "ON_DUTY"].includes(status)) return;
-  const driving = await db.load.count({ where: { driverId: me.driver.id, status: "IN_TRANSIT" } });
-  if (driving) return; // stays DRIVING while on a trip
-  await db.driver.update({ where: { id: me.driver.id }, data: { status } });
+  if (!me.driver || !["READY", "REST", "HOME"].includes(status)) return;
+  const onTrip = await db.load.count({ where: { driverId: me.driver.id, status: "IN_TRANSIT" } });
+  if (onTrip) return; // the board follows the trip while driving
+  if (status === "READY") await clearDriverBoardOverride(me.driver.id, me.id);
+  else await setDriverBoardStatus(me.driver.id, status as "REST" | "HOME", me.id, "set by driver");
   revalidatePath("/driver");
+  revalidatePath("/dispatch");
 }

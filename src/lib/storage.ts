@@ -37,6 +37,8 @@ export async function saveFile(key: string, data: Buffer, contentType: string) {
 }
 
 export async function readFileStream(key: string): Promise<ReadableStream<Uint8Array> | null> {
+  // Demo documents have no bytes in storage; render a placeholder so links work everywhere.
+  if (key.startsWith("seed/")) return new Blob([placeholderPdf(key)]).stream();
   if (blobEnabled()) {
     const res = await get(key, { access: "private" });
     return res?.statusCode === 200 ? res.stream : null;
@@ -52,9 +54,30 @@ export async function readFileStream(key: string): Promise<ReadableStream<Uint8A
 }
 
 export async function deleteFile(key: string) {
+  if (key.startsWith("seed/")) return;
   if (blobEnabled()) {
     await del(key).catch(() => undefined);
     return;
   }
   await unlink(path.join(LOCAL_DIR, key)).catch(() => undefined);
+}
+
+/** Minimal single-page PDF with a title line — used for seeded demo documents. */
+export function placeholderPdf(key: string) {
+  const title = key.split("/").pop()?.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ") ?? "Document";
+  const text = (s: string) => s.replace(/[()\\]/g, (c) => `\\${c}`);
+  const content = `BT /F1 20 Tf 60 740 Td (${text(title)}) Tj 0 -30 Td /F1 11 Tf (FleetOps demo document - placeholder generated for the sample company.) Tj 0 -18 Td (Storage key: ${text(key)}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((o, i) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf);
 }

@@ -16,10 +16,10 @@ export default async function MaintenancePage() {
   const editable = can(user.role, "fleet.edit");
   const since = daysAgo(180);
   const [open, done, trucks, spend] = await Promise.all([
-    db.maintenanceRecord.findMany({ where: { status: { not: "DONE" } }, orderBy: { scheduledAt: "asc" }, include: { truck: true } }),
-    db.maintenanceRecord.findMany({ where: { status: "DONE" }, orderBy: { completedAt: "desc" }, take: 25, include: { truck: true } }),
+    db.workOrder.findMany({ where: { status: { not: "DONE" } }, orderBy: { scheduledAt: "asc" }, include: { truck: true } }),
+    db.workOrder.findMany({ where: { status: "DONE" }, orderBy: { completedAt: "desc" }, take: 25, include: { truck: true } }),
     db.truck.findMany({ orderBy: { unitNumber: "asc" } }),
-    db.maintenanceRecord.aggregate({ where: { status: "DONE", completedAt: { gte: since } }, _sum: { cost: true }, _count: true }),
+    db.workOrder.aggregate({ where: { status: "DONE", completedAt: { gte: since } }, _sum: { cost: true }, _count: true }),
   ]);
   const dueSoon = trucks
     .filter((t) => t.nextServiceKm != null && t.nextServiceKm - t.odometerKm < 5000)
@@ -42,8 +42,8 @@ export default async function MaintenancePage() {
               {open.map((m) => (
                 <tr key={m.id}>
                   <td className="whitespace-nowrap">{date(m.scheduledAt)}</td>
-                  <td><Link href={`/fleet/${m.truckId}`} className="font-medium text-blue-700 hover:underline">{m.truck.unitNumber}</Link></td>
-                  <td className="whitespace-nowrap text-xs">{m.type.replace("_", " ")}</td>
+                  <td><Link href={`/fleet/${m.truckId}`} className="font-medium text-blue-700 hover:underline">{m.truck?.unitNumber ?? "—"}</Link></td>
+                  <td className="whitespace-nowrap text-xs">{m.category.replace("_", " ")}</td>
                   <td>{m.description}</td>
                   <td className="text-slate-600">{m.vendor ?? "—"}</td>
                   <td>{money(m.cost)}</td>
@@ -73,7 +73,7 @@ export default async function MaintenancePage() {
               {done.map((m) => (
                 <tr key={m.id}>
                   <td>{date(m.completedAt)}</td>
-                  <td><Link href={`/fleet/${m.truckId}`} className="text-blue-700 hover:underline">{m.truck.unitNumber}</Link></td>
+                  <td><Link href={`/fleet/${m.truckId}`} className="text-blue-700 hover:underline">{m.truck?.unitNumber ?? "—"}</Link></td>
                   <td>{m.description}</td><td className="text-slate-600">{m.vendor ?? "—"}</td><td>{money(m.cost)}</td>
                 </tr>
               ))}

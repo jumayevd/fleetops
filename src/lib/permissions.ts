@@ -18,6 +18,13 @@ export const PERMISSIONS = {
   "users.manage": ["OWNER", "ADMIN"],
   "audit.view": ["OWNER", "ADMIN"],
   "driver.portal": ["DRIVER"],
+  "claims.view": ["OWNER", "ADMIN", "DISPATCHER", "FLEET_MANAGER", "ACCOUNTANT"],
+  "claims.edit": ["OWNER", "ADMIN", "DISPATCHER", "FLEET_MANAGER"],
+  "chat.view": ["OWNER", "ADMIN", "DISPATCHER", "FLEET_MANAGER", "ACCOUNTANT", "DRIVER"],
+  "announcements.manage": ["OWNER", "ADMIN"],
+  "company.manage": ["OWNER", "ADMIN"],
+  "board.edit": ["OWNER", "ADMIN", "DISPATCHER"],
+  "assistant.use": ["OWNER", "ADMIN", "DISPATCHER", "FLEET_MANAGER", "ACCOUNTANT"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

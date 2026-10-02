@@ -53,3 +53,6 @@ prisma/*.db-journal
 
 # production demo credentials (never commit)
 DEMO-CREDENTIALS.local.txt
+
+# local postgres cluster
+.pgdata

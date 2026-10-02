@@ -2,27 +2,54 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { notifyLoadAssigned, notifyLoadIssue } from "@/lib/notify";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { attempt, fields, FormError, type ActionState } from "@/lib/action";
 import { CITIES, LOAD_STATUSES, type LoadStatus } from "@/lib/constants";
-import { roadKm } from "@/lib/geo";
-import { assertAvailable, nextLoadReference, transitionLoad } from "@/lib/workflow";
+import { routeKm } from "@/lib/geo";
+import { notifyLoadAssigned, notifyLoadIssue } from "@/lib/notify";
+import { arriveAtStop, assertAvailable, completeStop, nextLoadReference, routeSummaryFromStops, syncDriverBoardStatus, transitionLoad } from "@/lib/workflow";
 
-function resolvePlace(f: ReturnType<typeof fields>, prefix: "origin" | "dest") {
-  const cityName = f.req(`${prefix}City`, prefix === "origin" ? "Pickup city" : "Delivery city");
-  const known = CITIES.find((c) => c.name.toLowerCase() === cityName.toLowerCase());
-  const lat = f.num(`${prefix}Lat`) ?? known?.lat;
-  const lng = f.num(`${prefix}Lng`) ?? known?.lng;
-  if (lat == null || lng == null) throw new FormError(`Unknown city "${cityName}" — pick from the list or enter coordinates`);
-  return {
-    city: known?.name ?? cityName,
-    name: f.str(`${prefix}Name`) ?? `${known?.name ?? cityName}`,
-    lat, lng,
-  };
+type StopInput = { seq: number; type: string; name: string; address: string | null; city: string; lat: number; lng: number; windowStart: Date | null; windowEnd: Date | null; notes: string | null };
+
+/**
+ * Stops arrive as parallel arrays (stopType[], stopCity[], …) from the load form.
+ * Backwards compatible with the simple originCity / destCity form.
+ */
+function parseStops(fd: FormData, f: ReturnType<typeof fields>): StopInput[] {
+  const types = fd.getAll("stopType").map(String);
+  if (types.length === 0) {
+    const place = (prefix: "origin" | "dest", type: string, seq: number): StopInput => {
+      const cityName = f.req(`${prefix}City`, prefix === "origin" ? "Pickup city" : "Delivery city");
+      const known = CITIES.find((c) => c.name.toLowerCase() === cityName.toLowerCase());
+      const lat = f.num(`${prefix}Lat`) ?? known?.lat;
+      const lng = f.num(`${prefix}Lng`) ?? known?.lng;
+      if (lat == null || lng == null) throw new FormError(`Unknown city "${cityName}" — pick from the list or enter coordinates`);
+      const when = f.date(prefix === "origin" ? "pickupAt" : "deliveryAt");
+      return { seq, type, name: f.str(`${prefix}Name`) ?? known?.name ?? cityName, address: null, city: known?.name ?? cityName, lat, lng,
+        windowStart: type === "PICKUP" ? when : null, windowEnd: type === "DELIVERY" ? when : null, notes: null };
+    };
+    return [place("origin", "PICKUP", 1), place("dest", "DELIVERY", 2)];
+  }
+  const get = (k: string) => fd.getAll(k).map((v) => (typeof v === "string" ? v.trim() : ""));
+  const names = get("stopName"), cities = get("stopCity"), lats = get("stopLat"), lngs = get("stopLng"), starts = get("stopWindowStart"), ends = get("stopWindowEnd"), addrs = get("stopAddress"), notes = get("stopNotes");
+  const stops = types.map((type, i): StopInput => {
+    if (type !== "PICKUP" && type !== "DELIVERY") throw new FormError("Each stop must be a pickup or a delivery");
+    const cityName = cities[i];
+    if (!cityName) throw new FormError(`Stop ${i + 1}: city is required`);
+    const known = CITIES.find((c) => c.name.toLowerCase() === cityName.toLowerCase());
+    const lat = lats[i] ? Number(lats[i]) : known?.lat;
+    const lng = lngs[i] ? Number(lngs[i]) : known?.lng;
+    if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) throw new FormError(`Stop ${i + 1}: unknown city "${cityName}"`);
+    const ws = starts[i] ? new Date(starts[i]) : null;
+    const we = ends[i] ? new Date(ends[i]) : null;
+    if ((ws && Number.isNaN(ws.getTime())) || (we && Number.isNaN(we.getTime()))) throw new FormError(`Stop ${i + 1}: invalid time`);
+    return { seq: i + 1, type, name: names[i] || known?.name || cityName, address: addrs[i] || null, city: known?.name ?? cityName, lat, lng, windowStart: ws, windowEnd: we, notes: notes[i] || null };
+  });
+  if (!stops.some((s) => s.type === "PICKUP") || !stops.some((s) => s.type === "DELIVERY")) throw new FormError("A load needs at least one pickup and one delivery");
+  return stops;
 }
 
 export async function saveLoad(loadId: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
@@ -30,27 +57,30 @@ export async function saveLoad(loadId: string | null, _: ActionState, fd: FormDa
   let id = loadId;
   const res = await attempt(async () => {
     const f = fields(fd);
-    const origin = resolvePlace(f, "origin");
-    const dest = resolvePlace(f, "dest");
-    const pickupAt = f.date("pickupAt");
-    const deliveryAt = f.date("deliveryAt");
-    if (!pickupAt || !deliveryAt) throw new FormError("Pickup and delivery times are required");
-    if (deliveryAt <= pickupAt) throw new FormError("Delivery must be after pickup");
+    const stops = parseStops(fd, f);
+    const summary = routeSummaryFromStops(stops.map((s) => ({ ...s })));
+    if (summary.deliveryAt <= summary.pickupAt) throw new FormError("Delivery must be after pickup");
 
     const truckId = f.str("truckId");
     const driverId = f.str("driverId");
     const trailerId = f.str("trailerId");
     await assertAvailable(loadId, { truckId, driverId, trailerId });
 
-    const distanceKm = f.num("distanceKm") ?? roadKm(origin, dest);
+    const distanceKm = f.num("distanceKm") ?? routeKm(stops);
     const driver = driverId ? await db.driver.findUnique({ where: { id: driverId } }) : null;
+    const brokerId = f.str("brokerId");
+    const customerId = f.req("customerId", "Customer");
+    if (brokerId === customerId) throw new FormError("Broker and customer can't be the same company");
 
     const data = {
-      customerId: f.req("customerId", "Customer"),
+      customerId,
+      brokerId,
+      customerRef: f.str("customerRef"),
+      teamId: f.str("teamId") ?? driver?.teamId ?? null,
       priority: f.str("priority") ?? "NORMAL",
-      originName: origin.name, originCity: origin.city, originLat: origin.lat, originLng: origin.lng,
-      destName: dest.name, destCity: dest.city, destLat: dest.lat, destLng: dest.lng,
-      pickupAt, deliveryAt, distanceKm,
+      ...summary,
+      distanceKm,
+      emptyKm: f.num("emptyKm") ?? 0,
       commodity: f.req("commodity", "Commodity"),
       weightKg: f.num("weightKg") ?? 0,
       pallets: f.num("pallets"),
@@ -67,24 +97,31 @@ export async function saveLoad(loadId: string | null, _: ActionState, fd: FormDa
 
     if (loadId) {
       const existing = await db.load.findUniqueOrThrow({ where: { id: loadId } });
-      if (["DELIVERED", "INVOICED"].includes(existing.status) && (truckId !== existing.truckId || driverId !== existing.driverId)) {
-        throw new FormError("Cannot change assignment of a completed load");
-      }
+      const locked = !["PLANNED", "ASSIGNED"].includes(existing.status);
+      if (locked && (truckId !== existing.truckId || driverId !== existing.driverId)) throw new FormError("Use “Recover” to move an in-progress load to another unit");
       const status = existing.status === "PLANNED" && truckId && driverId ? "ASSIGNED" : existing.status;
       await db.load.update({ where: { id: loadId }, data: { ...data, status } });
-      await db.loadEvent.create({ data: { loadId, type: "NOTE", message: "Load details updated", userId: me.id } });
+      if (!locked) {
+        await db.stop.deleteMany({ where: { loadId } });
+        await db.stop.createMany({ data: stops.map((s) => ({ ...s, loadId })) });
+      }
+      await db.loadEvent.create({ data: { loadId, type: "EDIT", message: "Load details updated", userId: me.id } });
+      if (existing.driverId && existing.driverId !== driverId) await syncDriverBoardStatus(existing.driverId, me.id, { force: true });
+      if (driverId) await syncDriverBoardStatus(driverId, me.id, { force: true });
+      if (trailerId && status === "ASSIGNED") await db.trailer.update({ where: { id: trailerId }, data: { status: "IN_USE", statusSince: new Date(), truckId } });
       await audit(me.id, "update", "load", loadId, existing.reference);
     } else {
       const reference = await nextLoadReference();
       const assigned = Boolean(truckId && driverId);
       const load = await db.load.create({
-        data: { ...data, reference, status: assigned ? "ASSIGNED" : "PLANNED", dispatcherId: me.id },
+        data: { ...data, reference, status: assigned ? "ASSIGNED" : "PLANNED", dispatcherId: me.id, stops: { create: stops } },
       });
       id = load.id;
-      await db.loadEvent.create({ data: { loadId: load.id, type: "CREATED", message: `Load created for ${data.commodity}`, userId: me.id } });
+      await db.loadEvent.create({ data: { loadId: load.id, type: "CREATED", message: `Load created for ${data.commodity} (${stops.length} stops)`, userId: me.id } });
       if (assigned) {
         await db.loadEvent.create({ data: { loadId: load.id, type: "ASSIGNED", message: "Truck, trailer and driver assigned", userId: me.id } });
-        await db.driver.update({ where: { id: driverId! }, data: { status: "ON_DUTY" } });
+        await syncDriverBoardStatus(driverId!, me.id, { force: true });
+        if (trailerId) await db.trailer.update({ where: { id: trailerId }, data: { status: "IN_USE", statusSince: new Date(), truckId } });
         after(() => notifyLoadAssigned(load.id));
       }
       await audit(me.id, "create", "load", load.id, reference);
@@ -92,6 +129,7 @@ export async function saveLoad(loadId: string | null, _: ActionState, fd: FormDa
   });
   if (res?.error) return res;
   revalidatePath("/loads");
+  revalidatePath("/dispatch");
   redirect(`/loads/${id}`);
 }
 
@@ -103,23 +141,53 @@ export async function assignLoad(loadId: string, _: ActionState, fd: FormData): 
     const driverId = f.req("driverId", "Driver");
     const trailerId = f.str("trailerId");
     const load = await db.load.findUniqueOrThrow({ where: { id: loadId } });
-    if (!["PLANNED", "ASSIGNED"].includes(load.status)) throw new FormError("Only planned or assigned loads can be (re)assigned");
+    if (!["PLANNED", "ASSIGNED"].includes(load.status)) throw new FormError("Only booked or dispatched loads can be (re)assigned — use Recover for loads in transit");
     await assertAvailable(loadId, { truckId, driverId, trailerId });
-    if (load.driverId && load.driverId !== driverId) await db.driver.update({ where: { id: load.driverId }, data: { status: "AVAILABLE" } });
     const [truck, driver] = await Promise.all([
       db.truck.findUniqueOrThrow({ where: { id: truckId } }),
       db.driver.findUniqueOrThrow({ where: { id: driverId } }),
     ]);
+    if (load.trailerId && load.trailerId !== trailerId) await db.trailer.update({ where: { id: load.trailerId }, data: { status: "EMPTY", statusSince: new Date() } });
     await db.load.update({
       where: { id: loadId },
-      data: { truckId, driverId, trailerId, status: "ASSIGNED", driverPay: Math.round(load.distanceKm * driver.payPerKm) },
+      data: { truckId, driverId, trailerId, status: "ASSIGNED", teamId: load.teamId ?? driver.teamId, driverPay: Math.round(load.distanceKm * driver.payPerKm) },
     });
-    await db.driver.update({ where: { id: driverId }, data: { status: "ON_DUTY" } });
+    if (trailerId) await db.trailer.update({ where: { id: trailerId }, data: { status: "IN_USE", statusSince: new Date(), truckId } });
+    if (load.driverId && load.driverId !== driverId) await syncDriverBoardStatus(load.driverId, me.id, { force: true });
+    await syncDriverBoardStatus(driverId, me.id, { force: true });
     await db.loadEvent.create({ data: { loadId, type: "ASSIGNED", message: `Assigned ${truck.unitNumber} · ${driver.name}`, userId: me.id } });
     after(() => notifyLoadAssigned(loadId));
     await audit(me.id, "assign", "load", loadId, `${load.reference} → ${truck.unitNumber}/${driver.name}`);
     revalidatePath(`/loads/${loadId}`);
+    revalidatePath("/dispatch");
     return { ok: "Assignment saved" };
+  });
+}
+
+/** Move a load (even one in transit) to another truck/driver — breakdown, HOS, swap at a yard. */
+export async function recoverLoad(loadId: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  const me = await requireUser("loads.edit");
+  return attempt(async () => {
+    const f = fields(fd);
+    const truckId = f.req("truckId", "Truck");
+    const driverId = f.req("driverId", "Driver");
+    const trailerId = f.str("trailerId");
+    const reason = f.str("reason");
+    const load = await db.load.findUniqueOrThrow({ where: { id: loadId }, include: { truck: true, driver: true } });
+    if (!["ASSIGNED", "IN_TRANSIT"].includes(load.status)) throw new FormError("Only dispatched or in-transit loads can be recovered");
+    await assertAvailable(loadId, { truckId, driverId, trailerId: trailerId ?? undefined });
+    const [truck, driver] = await Promise.all([db.truck.findUniqueOrThrow({ where: { id: truckId } }), db.driver.findUniqueOrThrow({ where: { id: driverId } })]);
+    await db.load.update({ where: { id: loadId }, data: { truckId, driverId, trailerId: trailerId ?? load.trailerId, driverPay: Math.round(load.distanceKm * driver.payPerKm) } });
+    const finalTrailer = trailerId ?? load.trailerId;
+    if (finalTrailer) await db.trailer.update({ where: { id: finalTrailer }, data: { status: "IN_USE", statusSince: new Date(), truckId } });
+    if (load.driverId) await syncDriverBoardStatus(load.driverId, me.id, { force: true });
+    await syncDriverBoardStatus(driverId, me.id, { force: true });
+    const from = `${load.truck?.unitNumber ?? "—"} · ${load.driver?.name ?? "—"}`;
+    await db.loadEvent.create({ data: { loadId, type: "ASSIGNED", message: `Recovered: moved from ${from} to ${truck.unitNumber} · ${driver.name}${reason ? ` — ${reason}` : ""}`, userId: me.id } });
+    await audit(me.id, "recover", "load", loadId, `${load.reference}: ${from} → ${truck.unitNumber}/${driver.name}`);
+    revalidatePath(`/loads/${loadId}`);
+    revalidatePath("/dispatch");
+    return { ok: `Moved to ${truck.unitNumber} · ${driver.name}` };
   });
 }
 
@@ -128,11 +196,28 @@ export async function setLoadStatus(loadId: string, _: ActionState, fd: FormData
   return attempt(async () => {
     const to = String(fd.get("status")) as LoadStatus;
     if (!LOAD_STATUSES.includes(to)) throw new FormError("Invalid status");
-    await transitionLoad(loadId, to, me.id, { podSignedBy: fields(fd).str("podSignedBy") });
+    const f = fields(fd);
+    await transitionLoad(loadId, to, me.id, { podSignedBy: f.str("podSignedBy"), reason: f.str("reason") });
     revalidatePath(`/loads/${loadId}`);
     revalidatePath("/loads");
+    revalidatePath("/dispatch");
     return { ok: "Status updated" };
   });
+}
+
+/** Dispatcher marks a stop arrived / completed on behalf of the driver. */
+export async function updateStop(loadId: string, stopId: string, action: "arrive" | "complete") {
+  const me = await requireUser("loads.edit");
+  if (action === "arrive") await arriveAtStop(loadId, stopId, me.id);
+  else {
+    const last = await completeStop(loadId, stopId, me.id);
+    if (last) {
+      const load = await db.load.findUniqueOrThrow({ where: { id: loadId } });
+      if (load.status === "IN_TRANSIT") await transitionLoad(loadId, "DELIVERED", me.id);
+    }
+  }
+  revalidatePath(`/loads/${loadId}`);
+  revalidatePath("/dispatch");
 }
 
 export async function addLoadEvent(loadId: string, _: ActionState, fd: FormData): Promise<ActionState> {
@@ -157,7 +242,7 @@ export async function addLoadEvent(loadId: string, _: ActionState, fd: FormData)
 export async function deleteLoad(loadId: string) {
   const me = await requireUser("users.manage");
   const load = await db.load.findUniqueOrThrow({ where: { id: loadId } });
-  if (!["PLANNED", "CANCELLED"].includes(load.status)) throw new Error("Only planned or cancelled loads can be deleted");
+  if (!["PLANNED", "CANCELLED"].includes(load.status)) throw new Error("Only booked or cancelled loads can be deleted");
   await db.load.delete({ where: { id: loadId } });
   await audit(me.id, "delete", "load", loadId, load.reference);
   revalidatePath("/loads");

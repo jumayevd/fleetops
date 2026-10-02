@@ -49,7 +49,7 @@ const safe = (fn: () => Promise<void>) => fn().catch((e) => console.error("[noti
 export const notifyLoadStatus = (loadId: string, to: LoadStatus) => safe(async () => {
   const l = await db.load.findUnique({ where: { id: loadId }, include: { driver: { select: { name: true, userId: true } }, truck: { select: { unitNumber: true } }, customer: { select: { name: true } } } });
   if (!l) return;
-  const icon = { IN_TRANSIT: "🚚", DELIVERED: "✅", CANCELLED: "❌", INVOICED: "🧾", PLANNED: "↩️", ASSIGNED: "📋" }[to];
+  const icon = { IN_TRANSIT: "🚚", DELIVERED: "✅", CANCELLED: "❌", INVOICED: "🧾", PLANNED: "↩️", ASSIGNED: "📋", TONU: "🚫" }[to];
   const html = `${icon} <b>${esc(l.reference)}</b> — ${esc(LOAD_STATUS_LABELS[to])}\n${esc(l.originCity)} → ${esc(l.destCity)} · ${esc(l.customer.name)}`
     + (l.truck ? `\n${esc(l.truck.unitNumber)} · ${esc(l.driver?.name)}` : "")
     + (to === "DELIVERED" && l.podSignedBy ? `\nPOD signed by ${esc(l.podSignedBy)}` : "");
@@ -103,12 +103,14 @@ export const notifyInvoicePaid = (invoiceId: string) => safe(async () => {
 });
 
 export const notifyMaintenance = (recordId: string, status: string) => safe(async () => {
-  const m = await db.maintenanceRecord.findUnique({ where: { id: recordId }, include: { truck: { select: { unitNumber: true, id: true } } } });
+  const m = await db.workOrder.findUnique({ where: { id: recordId }, include: { truck: { select: { unitNumber: true, id: true } }, trailer: { select: { unitNumber: true } } } });
   if (!m) return;
+  const unit = m.truck?.unitNumber ?? m.trailer?.unitNumber ?? "Unit";
   const html = status === "DONE"
-    ? `🔧 <b>${esc(m.truck.unitNumber)}</b> back in service — ${esc(m.description)} done (${esc(money(m.cost))})`
-    : `🔧 <b>${esc(m.truck.unitNumber)}</b> in the shop — ${esc(m.description)}${m.vendor ? ` @ ${esc(m.vendor)}` : ""}`;
-  await broadcast(await chatsFor(["FLEET_MANAGER", "OWNER", "ADMIN", "DISPATCHER"]), html, { text: "Open truck", url: appUrl(`/fleet/${m.truck.id}`) });
+    ? `🔧 <b>${esc(unit)}</b> back in service — ${esc(m.title)} done (${esc(money(m.cost))})`
+    : `🔧 <b>${esc(unit)}</b> in the shop — ${esc(m.title)}${m.vendor ? ` @ ${esc(m.vendor)}` : ""}`;
+  const url = m.truck ? appUrl(`/fleet/${m.truck.id}`) : appUrl(`/maintenance/work-orders/${m.id}`);
+  await broadcast(await chatsFor(["FLEET_MANAGER", "OWNER", "ADMIN", "DISPATCHER"]), html, { text: "Open work order", url });
 });
 
 // ---------- Daily digest (cron) ----------

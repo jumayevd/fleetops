@@ -26,7 +26,7 @@ export default async function TruckDetail({ params }: PageProps<"/fleet/[id]">) 
     where: { id },
     include: {
       driver: true,
-      maintenance: { orderBy: { scheduledAt: "desc" } },
+      workOrders: { orderBy: { scheduledAt: "desc" } },
       fuelLogs: { orderBy: { date: "desc" }, take: 15 },
       loads: { orderBy: { pickupAt: "desc" }, take: 12, include: { customer: { select: { name: true } } } },
     },
@@ -37,7 +37,7 @@ export default async function TruckDetail({ params }: PageProps<"/fleet/[id]">) 
   const [agg90, fuel90, maint90] = await Promise.all([
     db.load.aggregate({ where: { truckId: id, status: { in: ["DELIVERED", "INVOICED"] }, deliveredAt: { gte: since } }, _sum: { rate: true, distanceKm: true }, _count: true }),
     db.fuelLog.aggregate({ where: { truckId: id, date: { gte: since } }, _sum: { cost: true, liters: true } }),
-    db.maintenanceRecord.aggregate({ where: { truckId: id, scheduledAt: { gte: since }, status: "DONE" }, _sum: { cost: true } }),
+    db.workOrder.aggregate({ where: { truckId: id, scheduledAt: { gte: since }, status: "DONE" }, _sum: { cost: true } }),
   ]);
   const kms = agg90._sum.distanceKm ?? 0;
   const svc = truck.nextServiceKm != null ? truck.nextServiceKm - truck.odometerKm : null;
@@ -74,11 +74,11 @@ export default async function TruckDetail({ params }: PageProps<"/fleet/[id]">) 
           </Card>
 
           <Card title="Maintenance history" bodyClassName="p-0">
-            <Table head={["Date", "Type", "Description", "Vendor", "Cost", "Status", ""]} empty={truck.maintenance.length === 0}>
-              {truck.maintenance.map((m) => (
+            <Table head={["Date", "Type", "Description", "Vendor", "Cost", "Status", ""]} empty={truck.workOrders.length === 0}>
+              {truck.workOrders.map((m) => (
                 <tr key={m.id}>
                   <td className="whitespace-nowrap">{date(m.completedAt ?? m.scheduledAt)}</td>
-                  <td><Badge value="NORMAL" label={m.type.replace("_", " ").toLowerCase()} /></td>
+                  <td><Badge value="NORMAL" label={m.category.replace("_", " ").toLowerCase()} /></td>
                   <td>{m.description}</td>
                   <td className="text-slate-600">{m.vendor ?? "—"}</td>
                   <td>{money(m.cost)}</td>

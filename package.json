@@ -3,14 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev-db.mjs && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "db:seed": "dotenv -e .env.local -- prisma db seed",
-    "setup": "vercel env pull .env.local --yes && npm run db:migrate",
+    "setup": "node scripts/dev-db.mjs && npm run db:migrate && npm run db:seed",
     "postinstall": "prisma generate",
-    "db:migrate": "dotenv -e .env.local -- prisma migrate deploy"
+    "db:migrate": "dotenv -e .env.local -- prisma migrate deploy",
+    "db:migrate:dev": "dotenv -e .env.local -- prisma migrate dev",
+    "db:stop": "node scripts/dev-db.mjs stop",
+    "env:pull": "vercel env pull .env.vercel --yes"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

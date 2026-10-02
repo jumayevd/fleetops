@@ -5,32 +5,47 @@ export const ROLE_LABELS: Record<Role, string> = {
   OWNER: "Owner",
   ADMIN: "Administrator",
   DISPATCHER: "Dispatcher",
-  FLEET_MANAGER: "Fleet Manager",
+  FLEET_MANAGER: "Fleet manager",
   ACCOUNTANT: "Accountant",
   DRIVER: "Driver",
 };
 
-export const LOAD_STATUSES = ["PLANNED", "ASSIGNED", "IN_TRANSIT", "DELIVERED", "INVOICED", "CANCELLED"] as const;
+/* ------------------------------------------------------------------ */
+/* Loads                                                               */
+/* ------------------------------------------------------------------ */
+
+export const LOAD_STATUSES = ["PLANNED", "ASSIGNED", "IN_TRANSIT", "DELIVERED", "INVOICED", "CANCELLED", "TONU"] as const;
 export type LoadStatus = (typeof LOAD_STATUSES)[number];
 
 export const LOAD_STATUS_LABELS: Record<LoadStatus, string> = {
-  PLANNED: "Planned",
-  ASSIGNED: "Assigned",
+  PLANNED: "Booked",
+  ASSIGNED: "Dispatched",
   IN_TRANSIT: "In transit",
   DELIVERED: "Delivered",
   INVOICED: "Invoiced",
   CANCELLED: "Cancelled",
+  TONU: "TONU",
 };
 
-// Allowed next statuses from each status (the dispatch workflow).
+/** Allowed next statuses from each status (the dispatch workflow). TONU = truck ordered, not used. */
 export const LOAD_TRANSITIONS: Record<LoadStatus, LoadStatus[]> = {
   PLANNED: ["ASSIGNED", "CANCELLED"],
-  ASSIGNED: ["IN_TRANSIT", "PLANNED", "CANCELLED"],
+  ASSIGNED: ["IN_TRANSIT", "PLANNED", "CANCELLED", "TONU"],
   IN_TRANSIT: ["DELIVERED"],
   DELIVERED: ["INVOICED"],
   INVOICED: [],
   CANCELLED: ["PLANNED"],
+  TONU: ["INVOICED"],
 };
+
+export const BILLING_STAGES = ["NONE", "MISSING_DOCS", "READY_TO_INVOICE", "INVOICED", "PAID"] as const;
+export type BillingStage = (typeof BILLING_STAGES)[number];
+export const BILLING_STAGE_LABELS: Record<BillingStage, string> = {
+  NONE: "—", MISSING_DOCS: "Missing docs", READY_TO_INVOICE: "Ready to invoice", INVOICED: "Invoiced", PAID: "Paid",
+};
+
+/** Documents a load needs before it can be billed. */
+export const REQUIRED_LOAD_DOCS = ["RC", "POD"] as const;
 
 export const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"] as const;
 export const EQUIPMENT = ["DRY_VAN", "REEFER", "FLATBED", "TANKER", "CONTAINER"] as const;
@@ -42,11 +57,80 @@ export const EQUIPMENT_LABELS: Record<string, string> = {
   CONTAINER: "Container",
 };
 
-export const TRUCK_STATUSES = ["ACTIVE", "MAINTENANCE", "OUT_OF_SERVICE"] as const;
-export const DRIVER_STATUSES = ["AVAILABLE", "ON_DUTY", "DRIVING", "OFF_DUTY", "ON_LEAVE"] as const;
-export const MAINTENANCE_TYPES = ["PREVENTIVE", "REPAIR", "INSPECTION", "TIRES", "OIL_CHANGE"] as const;
-export const MAINTENANCE_STATUSES = ["SCHEDULED", "IN_PROGRESS", "DONE"] as const;
+export const STOP_TYPES = ["PICKUP", "DELIVERY"] as const;
+export const STOP_STATUSES = ["PENDING", "ARRIVED", "DONE"] as const;
+
+export const CUSTOMER_KINDS = ["SHIPPER", "BROKER", "BOTH"] as const;
+export const CUSTOMER_KIND_LABELS: Record<string, string> = { SHIPPER: "Shipper", BROKER: "Broker", BOTH: "Shipper & broker" };
+
+/* ------------------------------------------------------------------ */
+/* Fleet                                                               */
+/* ------------------------------------------------------------------ */
+
+export const TRUCK_STATUSES = ["ACTIVE", "MAINTENANCE", "OUT_OF_SERVICE", "INACTIVE"] as const;
+export const OWNERSHIP = ["COMPANY", "OWNER_OPERATOR", "LEASED"] as const;
+export const OWNERSHIP_LABELS: Record<string, string> = { COMPANY: "Company", OWNER_OPERATOR: "Owner-operator", LEASED: "Leased" };
+
+export const TRAILER_STATUSES = ["IN_USE", "EMPTY", "DROPPED", "YARD", "SHOP", "OUT_OF_SERVICE"] as const;
+export const TRAILER_STATUS_LABELS: Record<string, string> = {
+  IN_USE: "In use", EMPTY: "Empty", DROPPED: "Dropped", YARD: "Yard", SHOP: "Shop", OUT_OF_SERVICE: "Out of service",
+};
+
+export const WORK_ORDER_CATEGORIES = ["PM", "ENGINE", "COOLING", "TIRES", "BRAKES", "ELECTRICAL", "BODY", "TOWING", "INSPECTION", "OTHER"] as const;
+export const WORK_ORDER_CATEGORY_LABELS: Record<string, string> = {
+  PM: "PM service", ENGINE: "Engine & drivetrain", COOLING: "Cooling", TIRES: "Tires & wheels", BRAKES: "Brakes",
+  ELECTRICAL: "Electrical", BODY: "Body / accident", TOWING: "Towing", INSPECTION: "Inspection", OTHER: "Other",
+};
+export const WORK_ORDER_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+export const WORK_ORDER_STATUSES = ["DRAFT", "OPEN", "IN_PROGRESS", "DONE", "CANCELLED"] as const;
+
+/** @deprecated use WORK_ORDER_* */
+export const MAINTENANCE_TYPES = WORK_ORDER_CATEGORIES;
+/** @deprecated use WORK_ORDER_STATUSES */
+export const MAINTENANCE_STATUSES = WORK_ORDER_STATUSES;
+
+/* ------------------------------------------------------------------ */
+/* Drivers                                                             */
+/* ------------------------------------------------------------------ */
+
+/** Employment status. */
+export const DRIVER_STATUSES = ["ACTIVE", "ON_LEAVE", "INACTIVE"] as const;
+export const DRIVER_TYPES = ["COMPANY", "OWNER_OPERATOR", "LEASE"] as const;
+export const DRIVER_TYPE_LABELS: Record<string, string> = { COMPANY: "Company", OWNER_OPERATOR: "Owner-operator", LEASE: "Lease-operator" };
+export const DRIVER_TYPE_SHORT: Record<string, string> = { COMPANY: "C", OWNER_OPERATOR: "OO", LEASE: "LO" };
+
+/** Dispatch-board state. The first five are derived automatically from the driver's load. */
+export const BOARD_STATUSES = ["READY", "DISPATCHED", "AT_PICKUP", "EN_ROUTE", "UNLOADING", "STOP", "REST", "HOME", "VACATION"] as const;
+export type BoardStatus = (typeof BOARD_STATUSES)[number];
+export const BOARD_STATUS_LABELS: Record<BoardStatus, string> = {
+  READY: "Ready", DISPATCHED: "Dispatched", AT_PICKUP: "At pickup", EN_ROUTE: "En route", UNLOADING: "Unloading",
+  STOP: "Stopped", REST: "Rest", HOME: "Home", VACATION: "Vacation",
+};
+/** Statuses a dispatcher sets by hand (the rest are computed from loads). */
+export const MANUAL_BOARD_STATUSES: BoardStatus[] = ["STOP", "REST", "HOME", "VACATION", "READY"];
+/** Order used by the "flat" board view. */
+export const BOARD_STATUS_ORDER: BoardStatus[] = ["DISPATCHED", "AT_PICKUP", "EN_ROUTE", "UNLOADING", "READY", "STOP", "REST", "HOME", "VACATION"];
+
+/* ------------------------------------------------------------------ */
+/* Finance, claims                                                     */
+/* ------------------------------------------------------------------ */
+
 export const INVOICE_STATUSES = ["DRAFT", "SENT", "PAID", "VOID"] as const;
+
+export const CLAIM_TYPES = ["CARGO_DAMAGE", "CARGO_LOSS", "LATE_CARGO", "OSD", "ACCIDENT", "EQUIPMENT_DAMAGE", "INJURY", "OTHER"] as const;
+export const CLAIM_TYPE_LABELS: Record<string, string> = {
+  CARGO_DAMAGE: "Cargo damage", CARGO_LOSS: "Cargo loss", LATE_CARGO: "Late cargo", OSD: "OS&D",
+  ACCIDENT: "Accident / liability", EQUIPMENT_DAMAGE: "Equipment damage", INJURY: "Injury", OTHER: "Other",
+};
+export const CLAIM_SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
+export const CLAIM_STATUSES = ["REPORTED", "UNDER_REVIEW", "DOCS_COLLECTED", "SUBMITTED", "NEGOTIATION", "APPROVED", "DENIED", "PAID", "CLOSED", "DISPUTED", "LITIGATION"] as const;
+export const CLAIM_OPEN_STATUSES = ["REPORTED", "UNDER_REVIEW", "DOCS_COLLECTED", "SUBMITTED", "NEGOTIATION", "DISPUTED", "LITIGATION"] as const;
+export const CLAIM_FAULTS = ["OURS", "THIRD_PARTY", "SHARED", "UNKNOWN"] as const;
+export const CLAIM_FAULT_LABELS: Record<string, string> = { OURS: "Ours", THIRD_PARTY: "Third party", SHARED: "Shared", UNKNOWN: "Unknown" };
+
+/* ------------------------------------------------------------------ */
+/* Helpers & geography                                                 */
+/* ------------------------------------------------------------------ */
 
 export function humanize(value: string | null | undefined) {
   if (!value) return "—";
@@ -56,6 +140,10 @@ export function humanize(value: string | null | undefined) {
     .map((w, i) => (i === 0 ? w[0].toUpperCase() + w.slice(1) : w))
     .join(" ");
 }
+
+export const CURRENCY = "USD";
+export const VAT_RATE = 0.12;
+export const TIMEZONE = "Asia/Tashkent";
 
 // Known depots / cities used for quick route entry and demo data.
 export const CITIES: { name: string; country: string; lat: number; lng: number }[] = [
@@ -80,3 +168,15 @@ export const CITIES: { name: string; country: string; lat: number; lng: number }
   { name: "Khujand", country: "TJ", lat: 40.2826, lng: 69.6222 },
   { name: "Ashgabat", country: "TM", lat: 37.9601, lng: 58.3261 },
 ];
+
+/** Nearest known city for a coordinate — used for "last seen near …" labels. */
+export function nearestCity(lat: number, lng: number) {
+  let best = CITIES[0];
+  let bestD = Infinity;
+  for (const c of CITIES) {
+    const d = (c.lat - lat) ** 2 + ((c.lng - lng) * Math.cos((lat * Math.PI) / 180)) ** 2;
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  const km = Math.sqrt(bestD) * 111;
+  return { city: best, km: Math.round(km), label: km < 15 ? best.name : `${Math.round(km)} km from ${best.name}` };
+}
