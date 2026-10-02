@@ -144,16 +144,24 @@ export function resolveColor(theme: ChartTheme, color: string | undefined, fallb
 /* Formatting                                                          */
 /* ------------------------------------------------------------------ */
 
-/** 1,284 → "1.3k", 12,900 → "13k", 4,200,000 → "4.2M". For axis ticks and sparkline captions. */
-export function fmtCompact(v: number): string {
-  const a = Math.abs(v);
-  const sign = v < 0 ? "-" : "";
-  if (a >= 1e6) return `${sign}${(a / 1e6).toFixed(a >= 1e7 ? 0 : 1)}M`;
-  if (a >= 1e4) return `${sign}${Math.round(a / 1e3)}k`;
-  if (a >= 1e3) return `${sign}${(a / 1e3).toFixed(1)}k`;
-  return `${sign}${Math.round(a)}`;
+// Pure number formatters live in lib/format so server components can use them too; re-exported for existing imports.
+import { fmtCompact, fmtMoneyCompact } from "@/lib/format";
+export { fmtCompact, fmtMoneyCompact };
+
+/** Value formatter: a function (client callers) or a preset name (server components can't pass functions). */
+export type Format = ((v: number) => string) | "money" | "moneyCompact" | "compact" | "number" | "percent" | "km";
+export function resolveFormat(f: Format | undefined, fallback: (v: number) => string): (v: number) => string {
+  if (!f) return fallback;
+  if (typeof f === "function") return f;
+  switch (f) {
+    case "money": return (v) => money(v);
+    case "moneyCompact": return fmtMoneyCompact;
+    case "compact": return fmtCompact;
+    case "percent": return (v) => `${Math.round(v)}%`;
+    case "km": return (v) => `${number(v)} km`;
+    default: return (v) => number(v);
+  }
 }
-export const fmtMoneyCompact = (v: number) => (v < 0 ? "-$" : "$") + fmtCompact(Math.abs(v));
 const fmtDecimal = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 1 });
 
 function legendProps(t: ChartTheme, icon: "square" | "plainline" | "circle" = "plainline") {
@@ -223,12 +231,12 @@ export function SimpleBar({ data, dataKey, nameKey, money: isMoney = false, colo
   /** Category label column width in vertical layout. */
   labelWidth?: number;
   /** Value formatter for ticks and tooltip; defaults to compact numbers / money. */
-  format?: (v: number) => string;
+  format?: Format;
 }) {
   const t = useChartTheme();
   const fill = resolveColor(t, color ?? tone, "info");
-  const tickFmt = format ?? (isMoney ? fmtMoneyCompact : fmtCompact);
-  const fullFmt = format ?? (isMoney ? (v: number) => money(v) : (v: number) => number(v));
+  const tickFmt = resolveFormat(format, isMoney ? fmtMoneyCompact : fmtCompact);
+  const fullFmt = resolveFormat(format, isMoney ? (v: number) => money(v) : (v: number) => number(v));
   if (data.length === 0) return <ChartEmpty height={height} />;
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -260,7 +268,7 @@ export function TrendLine({ data, lines, height = 240, suffix = "", xKey = "mont
   height?: number;
   suffix?: string;
   xKey?: string;
-  format?: (v: number) => string;
+  format?: Format;
 }) {
   const t = useChartTheme();
   if (data.length === 0) return <ChartEmpty height={height} />;
@@ -270,7 +278,7 @@ export function TrendLine({ data, lines, height = 240, suffix = "", xKey = "mont
         <CartesianGrid stroke={t.grid} vertical={false} />
         <XAxis dataKey={xKey} tick={t.tick} axisLine={false} tickLine={false} />
         <YAxis tick={t.tick} axisLine={false} tickLine={false} width={44} unit={suffix} />
-        <Tooltip {...t.tooltip} cursor={t.cursorLine} formatter={(v) => (format ? format(Number(v)) : `${fmtDecimal(Number(v))}${suffix}`)} />
+        <Tooltip {...t.tooltip} cursor={t.cursorLine} formatter={(v) => resolveFormat(format, (x: number) => `${fmtDecimal(x)}${suffix}`)(Number(v))} />
         {lines.length > 1 && <Legend {...legendProps(t)} />}
         {lines.map((l, i) => {
           const c = resolveColor(t, l.color ?? l.tone, SERIES_TONES[i] ?? "neutral");
@@ -395,10 +403,10 @@ export function Spark({ data, tone = "neutral", height = 28, className, fill = t
 export type BarsItem = { label: ReactNode; value: number; hint?: string; tone?: ChartTone; href?: string };
 
 /** Horizontal mini bars for ranking lists (top customers, spend by category). HTML, server-renderable. */
-export function Bars({ data, tone = "info", format = (v) => number(v), max, labelWidth = 120, valueWidth = 64, showValue = true, className }: {
+export function Bars({ data, tone = "info", format, max, labelWidth = 120, valueWidth = 64, showValue = true, className }: {
   data: BarsItem[];
   tone?: ChartTone;
-  format?: (v: number) => string;
+  format?: Format;
   /** Scale top; defaults to the largest value. */
   max?: number;
   labelWidth?: number | string;
@@ -419,7 +427,7 @@ export function Bars({ data, tone = "info", format = (v) => number(v), max, labe
             <span className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-sm bg-sunken">
               <span className="absolute inset-y-0 left-0 rounded-r-sm" style={{ width: `${pct}%`, background: color }} />
             </span>
-            {showValue && <span className="num shrink-0 text-right text-[12px] text-fg" style={{ width: valueWidth }}>{format(d.value)}</span>}
+            {showValue && <span className="num shrink-0 text-right text-[12px] text-fg" style={{ width: valueWidth }}>{resolveFormat(format, (v) => number(v))(d.value)}</span>}
           </>
         );
         const cls = "-mx-1.5 flex items-center gap-3 rounded px-1.5 py-1 hover:bg-raised";

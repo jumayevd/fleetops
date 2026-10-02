@@ -4,7 +4,8 @@ import { maintenanceSummary } from "@/lib/stats";
 import { WORK_ORDER_CATEGORY_LABELS, humanize } from "@/lib/constants";
 import { km, money, money2, number } from "@/lib/format";
 import { Card, Chip, Stat, Table, type Tone } from "@/components/ui";
-import { Bars, Donut, fmtMoneyCompact } from "@/components/charts";
+import { Bars, Donut } from "@/components/charts";
+import { fmtMoneyCompact } from "@/lib/format";
 import { daysBetween, leaseRows, periodRange, PERIODS, type PeriodKey } from "../_lib/data";
 import { maintenanceHref, trailerHref, truckHref } from "../_lib/links";
 
@@ -49,7 +50,7 @@ export async function SummaryTab({ period, trucks, trailers }: { period: PeriodK
               label: v.name, value: v.cost, hint: `${v.count} jobs · avg ${money(v.cost / v.count)}`, tone: "info" as const,
               href: logHref({ vendor: v.name === "Unknown vendor" ? "__none" : v.name }),
             }))}
-            format={money} labelWidth={150} valueWidth={72} />
+            format="money" labelWidth={150} valueWidth={72} />
           {cur.byVendor.length > 0 && <p className="mt-3 text-[11px] text-fg-subtle">Click a vendor to open its jobs in the repair log.</p>}
         </Card>
 

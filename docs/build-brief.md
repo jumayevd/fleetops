@@ -37,3 +37,11 @@ Also curl each of your routes as `dispatch@demo.local`, `fleet@demo.local`, `acc
 ## Report format (your final message)
 
 Return JSON: `{ "module": "...", "files": [...], "routes": [...], "verified": { "tsc": true, "eslint": true, "curl": { "/route": 200 } }, "notes": "anything the integrator must know", "needs": ["cross-module requests, if any"] }`.
+
+## Lessons from the first run (read these)
+
+- A `"use client"` component must never import a module that has `import "server-only"` (or touches Prisma). Keep pure helpers and shared types in a client-safe file (e.g. `shared.ts`) and import data loaders only from server pages. `import type` is fine.
+- Server components cannot pass **functions** to client components (`format={money}` crashes at runtime). Chart components accept preset names instead: `format="money" | "moneyCompact" | "compact" | "number" | "percent" | "km"`. Pre-format strings (`total={fmtMoneyCompact(x)}` from `@/lib/format`) where a label is needed.
+- `fmtCompact` / `fmtMoneyCompact` live in `src/lib/format.ts` (server-safe); `charts.tsx` re-exports them for client code.
+- Turbopack treats a syntax error in any imported file as a build failure for every route that imports it: run `npx tsc --noEmit` *and* curl your routes after every substantial change, not only at the end.
+- Mixing `??` with `||` needs parentheses.
