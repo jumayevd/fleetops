@@ -11,10 +11,12 @@ type Item = { key: string; label: string; icon: ReactNode; href?: string; onSele
  * Row actions for a load. Renders as a fixed-position menu so it never gets clipped by the
  * table's scroll container; closes on outside click, Escape, scroll and resize.
  */
-export function LoadRowMenu({ id, reference, status, canEdit, canClaim, trigger = "icon" }: {
+export function LoadRowMenu({ id, reference, status, canEdit, canClaim, trigger = "icon", context = "list" }: {
   id: string; reference: string; status: string; canEdit: boolean; canClaim: boolean;
   /** `icon` for table rows, `button` for page headers. */
   trigger?: "icon" | "button";
+  /** On the load's own page "Open" and "Edit" are redundant (Edit is a header button), so they are left out. */
+  context?: "list" | "detail";
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -23,9 +25,10 @@ export function LoadRowMenu({ id, reference, status, canEdit, canClaim, trigger 
   const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
+  const onDetail = context === "detail";
   const items: Item[] = [
-    { key: "open", label: "Open", icon: <ExternalLink />, href: `/loads/${id}` },
-    ...(canEdit && status !== "INVOICED" ? [{ key: "edit", label: "Edit", icon: <Pencil />, href: `/loads/${id}/edit` }] : []),
+    ...(onDetail ? [] : [{ key: "open", label: "Open", icon: <ExternalLink />, href: `/loads/${id}` }]),
+    ...(canEdit && !onDetail && status !== "INVOICED" ? [{ key: "edit", label: "Edit", icon: <Pencil />, href: `/loads/${id}/edit` }] : []),
     ...(canEdit && (status === "ASSIGNED" || status === "IN_TRANSIT")
       ? [{ key: "recover", label: "Recover to another unit", icon: <RefreshCw />, href: `/loads/${id}#recover`, hint: "Breakdown, HOS, swap" }]
       : []),

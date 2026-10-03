@@ -9,7 +9,7 @@ const DAY = 86_400_000;
 const shift = (ymd: string, days: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
 
 /** prev / today / next + a native date input. Keeps the other board params (view, team) in the URL. */
-export function DateNav({ date, today, label }: { date: string; today: string; label: string }) {
+export function DateNav({ date, today }: { date: string; today: string }) {
   const router = useRouter();
   const sp = useSearchParams();
   const [pending, start] = useTransition();
@@ -29,7 +29,6 @@ export function DateNav({ date, today, label }: { date: string; today: string; l
         <span className="sr-only">Pick a date</span>
         <input type="date" value={date} onChange={(e) => e.target.value && go(e.target.value)} className={cn(inputClass, "num h-7 w-[150px] text-[12px]")} />
       </label>
-      <span className="ml-1 hidden text-[12px] text-fg-muted md:inline">{label}</span>
     </div>
   );
 }

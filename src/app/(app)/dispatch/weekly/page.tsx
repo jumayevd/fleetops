@@ -18,6 +18,7 @@ export default async function WeeklyPage({ searchParams }: PageProps<"/dispatch/
   const requested = raw && !Number.isNaN(Date.parse(raw)) ? new Date(`${raw.slice(0, 10)}T12:00:00`) : new Date();
   const data = await weeklyProduction(startOfWeek(requested, { weekStartsOn: 1 }));
   const weekYmd = format(data.start, "yyyy-MM-dd");
+  const today = format(new Date(), "yyyy-MM-dd");
   const thisWeekYmd = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
   const canManage = can(user.role, "users.manage");
 
@@ -65,7 +66,7 @@ export default async function WeeklyPage({ searchParams }: PageProps<"/dispatch/
           />
         </Card>
       ) : (
-        <WeeklyBoard groups={data.groups} start={data.start.toISOString()} grand={data.grand} goalTotal={goalTotal} />
+        <WeeklyBoard groups={data.groups} start={data.start.toISOString()} today={today} grand={data.grand} goalTotal={goalTotal} />
       )}
     </>
   );

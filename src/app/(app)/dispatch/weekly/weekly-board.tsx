@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
-import { addDays, format, isToday, isWeekend } from "date-fns";
+import { addDays, format, isWeekend } from "date-fns";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Chip, Progress, cn, type Tone } from "@/components/ui";
 import { DRIVER_TYPE_LABELS, DRIVER_TYPE_SHORT } from "@/lib/constants";
@@ -20,7 +20,7 @@ const planDelta = (d: number) => <span className={cn("num", d >= 0 ? "text-ok" :
 
 type Grand = { total: number; km: number; drivers: number; avgPerTruck: number; rpk: number };
 
-export function WeeklyBoard({ groups, start, grand, goalTotal }: { groups: WeeklyTeamRow[]; start: string; grand: Grand; goalTotal: number }) {
+export function WeeklyBoard({ groups, start, today, grand, goalTotal }: { groups: WeeklyTeamRow[]; start: string; /** YYYY-MM-DD from the server, so the highlighted column matches on both sides of hydration. */ today: string; grand: Grand; goalTotal: number }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(new Date(start), i)), [start]);
   const toggle = (key: string) => setCollapsed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
@@ -35,7 +35,7 @@ export function WeeklyBoard({ groups, start, grand, goalTotal }: { groups: Weekl
             <th scope="col" className="sticky left-0 z-30 h-9 border-b border-line bg-sunken px-3 font-medium" style={{ width: DRIVER_W, minWidth: DRIVER_W }}>Driver</th>
             <th scope="col" className="sticky z-30 h-9 border-b border-r border-line bg-sunken px-2 font-medium" style={{ left: DRIVER_W, width: METRIC_W, minWidth: METRIC_W }}>Metric</th>
             {days.map((d) => (
-              <th key={d.toISOString()} scope="col" className={cn("h-9 border-b border-line bg-sunken px-3 text-right font-medium", isWeekend(d) && "text-fg-faint", isToday(d) && "text-accent-text")}>
+              <th key={d.toISOString()} scope="col" className={cn("h-9 border-b border-line bg-sunken px-3 text-right font-medium", isWeekend(d) && "text-fg-faint", format(d, "yyyy-MM-dd") === today && "text-accent-text")}>
                 <span>{format(d, "EEE")}</span> <span className="num font-normal normal-case tracking-normal">{format(d, "d MMM")}</span>
               </th>
             ))}

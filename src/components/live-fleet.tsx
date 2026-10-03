@@ -125,6 +125,8 @@ type View = {
   lowFuel: boolean;
   eta: Eta | null;
   windowMissed: boolean;
+  /** In transit and at the end of the route: waiting on the delivery to be confirmed. */
+  arrived: boolean;
   teamKey: string;
   haystack: string;
 };
@@ -146,6 +148,7 @@ function derive(t: Truck, now: number): View {
   const windowMissed = Boolean(l?.nextStop?.windowEnd && Date.parse(l.nextStop.windowEnd) < now);
   return {
     t, motion, fixAgeMs, eta, windowMissed,
+    arrived: Boolean(l && l.status === "IN_TRANSIT" && l.progress >= 1),
     inService: t.status !== "ACTIVE",
     stale: fixAgeMs == null || fixAgeMs >= STALE_MS,
     lowFuel: t.fuelPct != null && t.fuelPct < LOW_FUEL_PCT,
@@ -211,6 +214,8 @@ function fixAge(ms: number | null) {
   if (ms < 60_000) return "just now";
   return `${dur(ms)} ago`;
 }
+/** Newest GPS fix in a snapshot: stands in for the server clock when no explicit time is given. */
+const latestPing = (trucks: FleetSnapshot) => trucks.reduce((m, t) => (t.lastPingAt ? Math.max(m, Date.parse(t.lastPingAt)) : m), 0);
 /** Today → "HH:mm", otherwise "dd MMM HH:mm". */
 function clock(iso: string | number, now: number) {
   const d = new Date(iso);
@@ -277,7 +282,7 @@ function Metric({ label, value, hint, tone }: { label: string; value: React.Reac
 /** Compact live map with a small legend, for the dashboard. */
 export function LiveFleetMini({ initial, height = 360 }: { initial: FleetSnapshot; height?: number | string }) {
   const { trucks, offline } = useFleet(initial);
-  const now = useNow(Date.parse(initial.find((t) => t.lastPingAt)?.lastPingAt ?? "") || 0);
+  const now = useNow(latestPing(initial));
   const views = useMemo(() => trucks.map((t) => derive(t, now)), [trucks, now]);
   const n = (f: (v: View) => boolean) => views.filter(f).length;
   const stale = n((v) => v.stale && Boolean(v.t.load));
@@ -335,7 +340,7 @@ export function TrackingBoard({ initial, at, selectedId: initialSelected }: {
 }) {
   const { trucks, updatedAt, offline } = useFleet(initial);
   const mounted = useMounted();
-  const now = useNow(at ? Date.parse(at) : 0);
+  const now = useNow(at ? Date.parse(at) : latestPing(initial));
 
   const [q, setQ] = useState("");
   const [motion, setMotion] = useState<"all" | Motion>("all");
@@ -374,13 +379,13 @@ export function TrackingBoard({ initial, at, selectedId: initialSelected }: {
   };
   const clearFilters = () => { setQ(""); setMotion("all"); setAssign("all"); setTeam("all"); setAttention("all"); };
 
-  // Keyboard: "/" focuses search, ↑↓ move through the list, Esc clears search then selection.
+  // Keyboard: ↑↓ move through the list, Esc clears search then selection.
+  // ("/" and ⌘K are taken by the shell's global search, so they are left alone here.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       const inSearch = el === searchRef.current;
       const typing = Boolean(el && (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA" || el.isContentEditable));
-      if (e.key === "/" && !typing) { e.preventDefault(); searchRef.current?.focus(); return; }
       if (e.key === "Escape") {
         if (inSearch && q) { setQ(""); return; }
         if (selectedId) { select(null); el?.blur(); }
@@ -410,9 +415,10 @@ export function TrackingBoard({ initial, at, selectedId: initialSelected }: {
       }))
     : [];
 
-  const rolling = views.filter((v) => !v.inService && v.motion === "rolling").length;
-  const idle = views.filter((v) => !v.inService && v.motion === "idle").length;
-  const stopped = views.filter((v) => !v.inService && v.motion === "stopped").length;
+  // Same partition the motion filter uses, so the header and the segment counts always agree.
+  const rolling = views.filter((v) => v.motion === "rolling").length;
+  const idle = views.filter((v) => v.motion === "idle").length;
+  const stopped = views.filter((v) => v.motion === "stopped").length;
   const inService = views.filter((v) => v.inService).length;
   const shownAt = updatedAt ?? (at ? Date.parse(at) : null);
 
@@ -423,7 +429,7 @@ export function TrackingBoard({ initial, at, selectedId: initialSelected }: {
         title="Live tracking"
         subtitle={
           <span className="num">
-            {views.length} trucks · {rolling} rolling · {idle} idle · {stopped} stopped{inService ? ` · ${inService} in service` : ""}
+            {views.length} trucks · {rolling} rolling · {idle} idle · {stopped} stopped{inService ? ` (${inService} in service)` : ""}
           </span>
         }
         actions={
@@ -447,9 +453,9 @@ export function TrackingBoard({ initial, at, selectedId: initialSelected }: {
               <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-fg-faint" />
               <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Unit, driver, load, city"
                 aria-label="Search fleet" className={cn(inputClass, "pl-8 pr-8")} />
-              {q
-                ? <button type="button" onClick={() => setQ("")} aria-label="Clear search" className="absolute right-1.5 top-1.5 rounded p-0.5 text-fg-subtle hover:bg-raised hover:text-fg"><X className="h-4 w-4" /></button>
-                : <Kbd className="absolute right-2 top-1.5">/</Kbd>}
+              {q && (
+                <button type="button" onClick={() => setQ("")} aria-label="Clear search" className="absolute right-1.5 top-1.5 rounded p-0.5 text-fg-subtle hover:bg-raised hover:text-fg"><X className="h-4 w-4" /></button>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <Seg label="Motion" value={motion} onChange={setMotion}
@@ -563,7 +569,9 @@ function TruckCard({ v, now, selected, onSelect }: { v: View; now: number; selec
               ? <Badge value={t.status} />
               : v.motion === "rolling"
                 ? <span className="num text-[12px] font-medium text-fg">{speed} <span className="text-[10px] font-normal text-fg-subtle">km/h</span></span>
-                : <span className="text-[11px] text-fg-subtle">{v.motion === "idle" ? (t.engineOn ? "Idle · engine on" : "Idle") : "Stopped"}</span>}
+                : v.arrived
+                  ? <span className="text-[11px] font-medium text-ok">At destination</span>
+                  : <span className="text-[11px] text-fg-subtle">{v.motion === "idle" ? (t.engineOn ? "Idle · engine on" : "Idle") : "Stopped"}</span>}
           </span>
         </div>
 
@@ -610,7 +618,7 @@ function TruckCard({ v, now, selected, onSelect }: { v: View; now: number; selec
                 <span className="num w-7 text-right text-[11px] text-fg-subtle">{Math.round(l.progress * 100)}%</span>
                 {v.eta && (
                   <T className={cn("num shrink-0 text-[11px] font-medium", TONE_TEXT[v.eta.tone])}>
-                    ETA {clock(v.eta.at, now)} · {v.eta.label}
+                    {v.arrived ? "Arrived" : "ETA"} {clock(v.eta.at, now)} · {v.eta.label}
                   </T>
                 )}
               </div>
@@ -640,7 +648,11 @@ function DetailPanel({ v, now, onClose }: { v: View; now: number; onClose: () =>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <Link href={`/fleet/${t.id}`} className="num text-[15px] font-semibold leading-5 text-fg hover:text-accent-text">{t.unitNumber}</Link>
-            {v.inService ? <Badge value={t.status} /> : <Badge value={v.motion.toUpperCase()} tone={motionTone(v)} label={MOTION_LABEL[v.motion]} />}
+            {v.inService
+              ? <Badge value={t.status} />
+              : v.arrived
+                ? <Badge value="DELIVERED" tone="ok" label="At destination" />
+                : <Badge value={v.motion.toUpperCase()} tone={motionTone(v)} label={MOTION_LABEL[v.motion]} />}
             {v.stale && <Chip tone="warn">No signal</Chip>}
           </div>
           <p className="truncate text-[11px] text-fg-subtle">{t.name} · <span className="num">{t.plate}</span></p>
@@ -697,7 +709,7 @@ function DetailPanel({ v, now, onClose }: { v: View; now: number; onClose: () =>
                 <div className="mt-1 flex items-center justify-between text-[11px]">
                   <span className="num text-fg-subtle">{Math.round(l.progress * 100)}% of route</span>
                   {v.eta && (
-                    <T className={cn("num font-medium", TONE_TEXT[v.eta.tone])}>ETA {clock(v.eta.at, now)} · {v.eta.label}</T>
+                    <T className={cn("num font-medium", TONE_TEXT[v.eta.tone])}>{v.arrived ? "Arrived" : "ETA"} {clock(v.eta.at, now)} · {v.eta.label}</T>
                   )}
                 </div>
                 {v.eta && (

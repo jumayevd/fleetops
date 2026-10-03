@@ -284,7 +284,7 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
       {tab === "compliance" && (
         <div className="grid gap-4 xl:grid-cols-3">
           <div className="xl:col-span-2">
-            <DocumentsPanel user={user} target={{ type: "truck", id }} path={`/fleet/${id}?tab=compliance`} withExpiry required={[...REQUIRED_UNIT_DOCS]}
+            <DocumentsPanel user={user} target={{ type: "truck", id }} path={`/fleet/${id}`} withExpiry required={[...REQUIRED_UNIT_DOCS]}
               description="Registration, insurance and technical inspection must be on file for every unit. Set an expiry when you upload so renewals surface as alerts." />
           </div>
           <Card title="Required paperwork" flush>

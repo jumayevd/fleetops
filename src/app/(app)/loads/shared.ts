@@ -114,3 +114,51 @@ export type DriverOpt = Opt & { pairedTruckId: string | null; payPerKm: number; 
 export type TeamOpt = { id: string; name: string; color: string | null };
 /** "T-101 · Volvo FH (Rustam) — busy" */
 export const optLabel = (o: Opt) => (o.note ? `${o.label} — ${o.note}` : o.label);
+
+/* ------------------------------------------------------------------ */
+/* Time helpers (client-safe)                                          */
+/* ------------------------------------------------------------------ */
+
+/** "45 min", "3 h 10 min", "2 d 4 h" — for lateness and dwell times. */
+export function fmtDuration(ms: number) {
+  const m = Math.round(Math.abs(ms) / 60_000);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d} d ${h % 24} h` : `${d} d`;
+}
+
+/** "02 Oct, 08:00 – 12:00" (same day) or "02 Oct, 08:00 – 03 Oct, 18:00"; "No window" when neither is set. */
+export function windowLabel(start: Date | string | null | undefined, end: Date | string | null | undefined) {
+  const s = start ? new Date(start) : null;
+  const e = end ? new Date(end) : null;
+  const dt = (d: Date) => d.toLocaleString("en-GB", { day: "2-digit", month: "short" }).replace(/ /, " ") + ", " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const tm = (d: Date) => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  if (s && e) return s.toDateString() === e.toDateString() ? `${dt(s)} – ${tm(e)}` : `${dt(s)} – ${dt(e)}`;
+  if (s) return `from ${dt(s)}`;
+  if (e) return `by ${dt(e)}`;
+  return "No window";
+}
+
+/** Arrived (or completed) after the appointment window closed. */
+export function stopLateBy(stop: { windowEnd: Date | null; arrivedAt: Date | null; departedAt: Date | null }): number | null {
+  const at = stop.arrivedAt ?? stop.departedAt;
+  if (!at || !stop.windowEnd) return null;
+  const diff = at.getTime() - stop.windowEnd.getTime();
+  return diff > 0 ? diff : null;
+}
+
+/** Labels for the dispatcher's status buttons; only transitions allowed by LOAD_TRANSITIONS are offered. */
+export const TRANSITION_LABEL: Partial<Record<LoadStatus, string>> = {
+  IN_TRANSIT: "Depart — picked up",
+  DELIVERED: "Confirm delivery",
+  INVOICED: "Send to billing",
+  PLANNED: "Unassign",
+  CANCELLED: "Cancel load",
+  TONU: "Truck ordered, not used",
+};
+
+/** GPS fix older than 15 minutes (or none) — the marker is drawn faded on the map. */
+export const pingStale = (lastPingAt: Date | string | null | undefined, maxAgeMs = 15 * 60_000) =>
+  !lastPingAt || Date.now() - new Date(lastPingAt).getTime() > maxAgeMs;

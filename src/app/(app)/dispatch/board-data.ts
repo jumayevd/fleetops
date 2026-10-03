@@ -170,10 +170,11 @@ export async function driverStatusHistory(driverId: string, take = 60): Promise<
   return events.map((e) => ({ id: e.id, status: e.status, source: e.source, note: e.note, user: e.user?.name ?? null, at: e.at.toISOString() }));
 }
 
-/** Loads for the prebook view: booked or dispatched with a pickup more than 24 h out. */
+/** Loads for the prebook view: booked or dispatched with a pickup more than 24 h out. `at` is the timestamp the rule was evaluated at. */
 export async function prebookLoads() {
-  const horizon = new Date(Date.now() + DAY);
-  return db.load.findMany({
+  const at = Date.now();
+  const horizon = new Date(at + DAY);
+  const loads = await db.load.findMany({
     where: { status: { in: ["PLANNED", "ASSIGNED"] }, pickupAt: { gt: horizon } },
     orderBy: { pickupAt: "asc" },
     include: {
@@ -184,4 +185,5 @@ export async function prebookLoads() {
       documents: { select: { kind: true } },
     },
   });
+  return { at, loads };
 }

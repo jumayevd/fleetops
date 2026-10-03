@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Container, Truck as TruckIcon } from "lucide-react";
-import { cn } from "@/components/ui";
+import { humanize } from "@/lib/constants";
+import { Badge, cn } from "@/components/ui";
 import { trailerHref, truckHref } from "../_lib/links";
 
 type Ref = { id: string; unitNumber: string } | null | undefined;
@@ -21,5 +22,9 @@ export function UnitLink({ truck, trailer, secondary, className }: { truck?: Ref
   );
 }
 
-/** Priority as quiet text for the common levels, a badge only when it needs attention. */
-export const PRIORITY_QUIET = new Set(["LOW", "MEDIUM", "NORMAL"]);
+const PRIORITY_QUIET = new Set(["LOW", "MEDIUM", "NORMAL"]);
+
+/** Priority as quiet text for the common levels; a badge only when it needs attention. */
+export function Priority({ value }: { value: string }) {
+  return PRIORITY_QUIET.has(value) ? <span className="text-[12px] text-fg-muted">{humanize(value)}</span> : <Badge value={value} />;
+}

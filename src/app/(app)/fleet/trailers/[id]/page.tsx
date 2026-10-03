@@ -12,7 +12,7 @@ import { Badge, Card, DL, EmptyState, ExpiryBadge, LinkButton, PageHeader, Stat,
 import { LeafletMap } from "@/components/map";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { WorkOrderActions } from "../../work-order-actions";
-import { missingDocs, sinceShort } from "../../lib";
+import { missingDocs, pingStale, sinceShort } from "../../lib";
 import { TrailerStatusControl } from "../status-control";
 
 export async function generateMetadata({ params }: PageProps<"/fleet/trailers/[id]">) {
@@ -115,7 +115,7 @@ export default async function TrailerDetail({ params }: PageProps<"/fleet/traile
           <Card title="Where it is" flush>
             {trailer.lat != null && trailer.lng != null ? (
               <div className="p-2">
-                <LeafletMap height={180} fitKey={id} trucks={[{ id: trailer.id, unitNumber: trailer.unitNumber, lat: trailer.lat, lng: trailer.lng, heading: 0, speedKmh: 0, status: trailer.status === "SHOP" || trailer.status === "OUT_OF_SERVICE" ? "MAINTENANCE" : "ACTIVE", moving: false, stale: !trailer.lastPingAt || Date.now() - trailer.lastPingAt.getTime() > 3_600_000, label: trailer.locationName ?? typeLabel }]} />
+                <LeafletMap height={180} fitKey={id} trucks={[{ id: trailer.id, unitNumber: trailer.unitNumber, lat: trailer.lat, lng: trailer.lng, heading: 0, speedKmh: 0, status: trailer.status === "SHOP" || trailer.status === "OUT_OF_SERVICE" ? "MAINTENANCE" : "ACTIVE", moving: false, stale: pingStale(trailer.lastPingAt), label: trailer.locationName ?? typeLabel }]} />
               </div>
             ) : <p className="px-4 py-5 text-center text-[12px] text-fg-muted">No position yet. Pair it with a tracked tractor or fit a GPS unit.</p>}
             <DL items={[

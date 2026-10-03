@@ -10,7 +10,7 @@ import type { ListLoad } from "./query";
 /** Kanban: Booked → Dispatched → In transit → Delivered (last 7 days). Cards open the load. */
 export function LoadBoard({ loads, showMoney, canEdit }: { loads: ListLoad[]; showMoney: boolean; canEdit: boolean }) {
   return (
-    <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       {BOARD_COLUMNS.map((col) => {
         const items = loads.filter((l) => l.status === col);
         return (

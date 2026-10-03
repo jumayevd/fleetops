@@ -123,6 +123,11 @@ export function sinceShort(d: Date | string | null | undefined) {
   return `${Math.floor(days / 30)}mo`;
 }
 
+/** Whole days since a timestamp (status timers, time in shop). */
+export function daysSince(d: Date | string) {
+  return Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000));
+}
+
 /* ------------------------------------------------------------------ */
 /* Documents & notes                                                   */
 /* ------------------------------------------------------------------ */

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { cn } from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
@@ -11,29 +11,29 @@ import { cn } from "@/components/ui";
 /* ------------------------------------------------------------------ */
 
 export function Popover({ trigger, children, width = 208, align = "end", className }: {
-  trigger: (api: { open: boolean; toggle: () => void; ref: (el: HTMLButtonElement | null) => void }) => ReactNode;
+  /** Render the trigger and wire `toggle` to its onClick — the panel anchors to the element that was clicked. */
+  trigger: (api: { open: boolean; toggle: (e: MouseEvent<HTMLElement>) => void }) => ReactNode;
   children: (close: () => void) => ReactNode;
   width?: number;
   align?: "start" | "end";
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [pos, setPos] = useState<CSSProperties | null>(null);
-  const btnRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => setOpen(false), []);
-  const toggle = useCallback(() => setOpen((o) => !o), []);
-  const setBtn = useCallback((el: HTMLButtonElement | null) => { btnRef.current = el; }, []);
+  const toggle = useCallback((e: MouseEvent<HTMLElement>) => { setAnchor(e.currentTarget); setOpen((o) => !o); }, []);
 
   const place = useCallback(() => {
-    const b = btnRef.current?.getBoundingClientRect();
+    const b = anchor?.getBoundingClientRect();
     if (!b) return;
     const panelH = panelRef.current?.offsetHeight ?? 0;
     const below = window.innerHeight - b.bottom;
     const top = panelH && below < panelH + 8 && b.top > panelH + 8 ? b.top - panelH - 4 : b.bottom + 4;
     const left = Math.max(8, Math.min(align === "end" ? b.right - width : b.left, window.innerWidth - width - 8));
     setPos({ position: "fixed", top, left, width });
-  }, [align, width]);
+  }, [anchor, align, width]);
 
   useLayoutEffect(() => { if (open) place(); }, [open, place]);
 
@@ -41,10 +41,10 @@ export function Popover({ trigger, children, width = 208, align = "end", classNa
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      if (panelRef.current?.contains(t) || anchor?.contains(t)) return;
       close();
     };
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") { close(); btnRef.current?.focus(); } };
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") { close(); anchor?.focus(); } };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", place, true);
@@ -55,11 +55,11 @@ export function Popover({ trigger, children, width = 208, align = "end", classNa
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, close, place]);
+  }, [open, anchor, close, place]);
 
   return (
     <>
-      {trigger({ open, toggle, ref: setBtn })}
+      {trigger({ open, toggle })}
       {open && createPortal(
         <div ref={panelRef} data-no-row-link="" style={pos ?? { position: "fixed", top: -9999, left: -9999, width }}
           className={cn("z-[1000] rounded-md border border-line bg-overlay p-1 text-[13px] text-fg shadow-float", className)}>
@@ -133,8 +133,8 @@ export function DropMenu({ items, children, className, label, width = 208, align
   align?: "start" | "end";
 }) {
   return (
-    <Popover width={width} align={align} trigger={({ open, toggle, ref }) => (
-      <button ref={ref} type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} title={label} onClick={toggle} className={className}>
+    <Popover width={width} align={align} trigger={({ open, toggle }) => (
+      <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} title={label} onClick={toggle} className={className}>
         {children}
       </button>
     )}>

@@ -11,16 +11,16 @@ import { Card, LinkButton, PageHeader, Stat, cn } from "@/components/ui";
 import { RevenueChart, Spark } from "@/components/charts";
 import { LiveFleetMini } from "@/components/live-fleet";
 import { NeedsYou } from "./needs-you";
-import { BillingQueue, FleetLegend, MonthSoFar, MoreLink, RecentActivity, UpcomingPickups, WeekProduction, fleetLegendCounts } from "./panels";
+import { BillingQueue, MonthSoFar, MoreLink, RecentActivity, UpcomingPickups, WeekProduction } from "./panels";
 import { billingQueue, operationalCounts, overdueInvoices, recentEvents, upcomingPickups } from "./queries";
-import { greeting, groupAlerts, longDate, pct, plural, pts, visibleAlerts } from "./lib";
+import { greeting, groupAlerts, longDate, movingTrucks, pct, plural, pts, visibleAlerts } from "./lib";
 
 export const metadata = { title: "Overview" };
 
 /** KPI tile that goes somewhere. */
 function Tile({ href, className, ...stat }: ComponentProps<typeof Stat> & { href: string }) {
   return (
-    <Link href={href} className="block rounded-lg">
+    <Link href={href} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
       <Stat {...stat} className={cn("h-full transition-colors hover:border-line-strong", className)} />
     </Link>
   );
@@ -32,10 +32,10 @@ export default async function Dashboard() {
   const canEdit = can(user.role, "loads.edit");
   const now = new Date();
 
-  const [fleet, rawAlerts, months, ops, upcoming, events, queue, week, rev, ar, overdue] = await Promise.all([
+  const [fleet, rawAlerts, allMonths, ops, upcoming, events, queue, week, rev, ar, overdue] = await Promise.all([
     fleetSnapshot(),
     getAlerts(),
-    monthlyFinancials(6),
+    monthlyFinancials(7),
     operationalCounts(now),
     upcomingPickups(now),
     recentEvents(10),
@@ -48,7 +48,7 @@ export default async function Dashboard() {
 
   const alerts = visibleAlerts(rawAlerts, user.role);
   const groups = groupAlerts(alerts);
-  const legend = fleetLegendCounts(fleet);
+  const moving = movingTrucks(fleet);
 
   // Fleet
   const activeTrucks = fleet.filter((t) => t.status === "ACTIVE");
@@ -57,18 +57,21 @@ export default async function Dashboard() {
   const inShop = fleet.length - activeTrucks.length;
   const runningLate = fleet.filter((t) => t.load?.status === "IN_TRANSIT" && t.load.eta && t.load.eta > t.load.deliveryAt).length;
 
-  // Performance: the latest month with deliveries, so early-month tiles never read 0 %.
-  const current = months.at(-1)!;
-  const perfIdx = current.loads ? months.length - 1 : Math.max(0, months.length - 2);
-  const perf = months[perfIdx];
-  const prev = months[perfIdx - 1];
+  // Performance: six months ending at the latest month with deliveries. A new month with nothing
+  // delivered yet would otherwise read 0 % and drag every sparkline and the revenue chart to zero.
+  const current = allMonths.at(-1)!;
+  const months = current.loads ? allMonths.slice(1) : allMonths.slice(0, -1);
+  const perf = months.at(-1)!;
+  const prev = months.at(-2);
+  const perfIsCurrent = perf.month === current.month;
   const onTimeDelta = prev?.loads ? perf.onTimePct - prev.onTimePct : null;
   const emptyDelta = prev?.loads ? perf.emptyPct - prev.emptyPct : null;
-  const growth = rev && rev.prior ? Math.round(((rev.mtd - rev.prior) / rev.prior) * 100) : null;
-  const overduePct = ar && ar.total ? Math.round((ar.overdue / ar.total) * 100) : 0;
+  const growth = rev && rev.mtd > 0 && rev.prior > 0 ? Math.round(((rev.mtd - rev.prior) / rev.prior) * 100) : null;
+  // Overdue figures come from one query (sent, due date passed) so the tile, the billing queue and /finance?status=overdue agree.
+  const overduePct = ar && overdue && ar.total ? Math.round((overdue.amount / ar.total) * 100) : 0;
 
   const summary = [
-    plural(legend.rolling, "truck") + " moving",
+    plural(moving, "truck") + " moving",
     `${ops.assigned} awaiting pickup`,
     alerts.length === 0 ? "nothing needs you" : alerts.length === 1 ? "1 thing needs you" : `${alerts.length} things need you`,
   ].join(" · ");
@@ -108,11 +111,13 @@ export default async function Dashboard() {
           <>
             <Tile href="/finance" label="Revenue · month to date" value={money(rev.mtd)}
               delta={growth === null ? undefined : pct(growth)} deltaTone={growth === null ? undefined : growth >= 0 ? "ok" : "danger"}
-              hint={rev.prior ? `${money(rev.prior)} same days last month` : "no comparable deliveries last month"}
+              hint={rev.mtd === 0
+                ? (rev.prior ? `no deliveries yet · ${money(rev.prior)} by this day last month` : "no deliveries yet this month")
+                : rev.prior ? `${money(rev.prior)} same days last month` : "no comparable deliveries last month"}
               spark={<Spark data={months.map((m) => m.revenue)} />} />
             <Tile href="/finance?status=overdue" label="Receivables" value={money(ar.total)}
-              delta={ar.overdue ? `${overduePct}% overdue` : undefined} deltaTone="danger"
-              hint={`${plural(ar.count, "open invoice")}${ar.overdue ? ` · ${money(ar.overdue)} past due` : " · none overdue"}`} />
+              delta={overdue?.count ? `${overduePct}% overdue` : undefined} deltaTone="danger"
+              hint={`${plural(ar.count, "open invoice")}${overdue?.count ? ` · ${money(overdue.amount)} past due` : " · none overdue"}`} />
           </>
         ) : (
           <>
@@ -137,7 +142,7 @@ export default async function Dashboard() {
       {/* 4 · Live fleet + queues */}
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Card title="Live fleet" className="xl:col-span-2" bodyClassName="p-1.5"
-          actions={<><FleetLegend counts={legend} /><MoreLink href="/tracking">Live map</MoreLink></>}>
+          actions={<MoreLink href="/tracking">Live map</MoreLink>}>
           <LiveFleetMini initial={fleet} />
         </Card>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
@@ -164,11 +169,12 @@ export default async function Dashboard() {
       {/* 6 · Money */}
       {showMoney && (
         <div className="mt-4 grid gap-4 xl:grid-cols-3">
-          <Card title="Revenue vs direct costs" className="xl:col-span-2" actions={<><span className="text-[11px] text-fg-subtle">last 6 months · the gap is gross margin</span><MoreLink href="/reports">Reports</MoreLink></>}>
+          <Card title="Revenue vs direct costs" className="xl:col-span-2"
+            actions={<><span className="num text-[11px] text-fg-subtle">{months[0].month} – {perf.month} · the gap is gross margin</span><MoreLink href="/reports">Reports</MoreLink></>}>
             <RevenueChart data={months} height={240} />
           </Card>
-          <Card title={`${current.month} so far`} actions={<MoreLink href="/finance">Finance</MoreLink>}>
-            <MonthSoFar month={current} />
+          <Card title={perfIsCurrent ? `${perf.month} so far` : `${perf.month} · last closed month`} actions={<MoreLink href="/finance">Finance</MoreLink>}>
+            <MonthSoFar month={perf} note={perfIsCurrent ? undefined : `Nothing delivered yet in ${current.month}. Figures move here as loads are delivered.`} />
           </Card>
         </div>
       )}

@@ -1,4 +1,5 @@
 import type { Alert } from "@/lib/alerts";
+import type { FleetSnapshot } from "@/lib/telemetry";
 import { can, type Permission } from "@/lib/permissions";
 import { TIMEZONE } from "@/lib/constants";
 import type { Tone } from "@/components/ui";
@@ -40,6 +41,15 @@ export function groupAlerts(alerts: Alert[]): AlertGroup[] {
     })
     .sort((a, b) => b.critical - a.critical || b.items.length - a.items.length);
 }
+
+/* ------------------------------------------------------------------ */
+/* Fleet                                                               */
+/* ------------------------------------------------------------------ */
+
+/** Same threshold the live map uses: above this a truck counts as moving. */
+export const ROLLING_KMH = 5;
+export const movingTrucks = (fleet: Pick<FleetSnapshot[number], "status" | "speedKmh">[]) =>
+  fleet.filter((t) => t.status === "ACTIVE" && t.speedKmh > ROLLING_KMH).length;
 
 /* ------------------------------------------------------------------ */
 /* Activity feed                                                       */

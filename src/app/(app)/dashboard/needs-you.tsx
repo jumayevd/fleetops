@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { StatusDot, cn } from "@/components/ui";
 import type { AlertGroup } from "./lib";
+import { MoreLink } from "./panels";
 
 const SHOW = 3;
 
@@ -17,10 +18,20 @@ export function NeedsYou({ groups }: { groups: AlertGroup[] }) {
       </section>
     );
   }
+  const total = groups.reduce((a, g) => a + g.items.length, 0);
+  const critical = groups.reduce((a, g) => a + g.critical, 0);
   return (
-    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
-      {groups.slice(0, 5).map((g) => <GroupCard key={g.kind} group={g} />)}
-    </div>
+    <section aria-label="Needs you">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="eyebrow">
+          Needs you <span className="num">· {total} open{critical ? ` · ${critical} critical` : ""}</span>
+        </p>
+        <MoreLink href="/dashboard/alerts">All exceptions</MoreLink>
+      </div>
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
+        {groups.slice(0, 5).map((g) => <GroupCard key={g.kind} group={g} />)}
+      </div>
+    </section>
   );
 }
 

@@ -11,12 +11,16 @@ import { Badge, Card, Cell, FilterPills, LinkButton, PageHeader, Stat, Table } f
 import { daysBetween, str } from "../_lib/data";
 import { newWorkOrderHref, workOrderHref, workOrdersHref } from "../_lib/links";
 import { FilterBar } from "../_components/filter-bar";
-import { PRIORITY_QUIET, UnitLink } from "../_components/unit-link";
+import { Priority, UnitLink } from "../_components/unit-link";
 import { WorkOrderStatusButtons } from "../_components/work-order-status";
 
 export const metadata = { title: "Work orders" };
 
 const ACTIVE = ["DRAFT", "OPEN", "IN_PROGRESS"] as const;
+/** Working order for the active list: what is in the shop first, then what is booked, then drafts. */
+const STATUS_RANK: Record<string, number> = { IN_PROGRESS: 0, OPEN: 1, DRAFT: 2 };
+const PRIORITY_RANK: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+const PAGE = 250;
 
 export default async function WorkOrdersPage({ searchParams }: PageProps<"/maintenance/work-orders">) {
   const user = await requireUser("fleet.view");
@@ -29,6 +33,7 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
   const unit = str(sp.unit);
   const validPriority = priority && (WORK_ORDER_PRIORITIES as readonly string[]).includes(priority) ? priority : undefined;
   const validCategory = category && (WORK_ORDER_CATEGORIES as readonly string[]).includes(category) ? category : undefined;
+  const filtered = Boolean(validPriority || validCategory || unit);
 
   const where: Prisma.WorkOrderWhereInput = {
     ...(status === "active" ? { status: { in: [...ACTIVE] } } : status === "all" ? {} : { status }),
@@ -38,11 +43,11 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
   };
   const finished = status === "DONE" || status === "CANCELLED" || status === "all";
 
-  const [rows, byStatus, urgent, month, trucks, trailers] = await Promise.all([
+  const [fetched, byStatus, urgent, month, trucks, trailers] = await Promise.all([
     db.workOrder.findMany({
       where,
-      orderBy: finished ? [{ completedAt: "desc" }, { scheduledAt: "desc" }] : [{ status: "desc" }, { scheduledAt: "asc" }],
-      take: 250,
+      orderBy: finished ? [{ completedAt: "desc" }, { scheduledAt: "desc" }] : { scheduledAt: "asc" },
+      take: PAGE,
       include: { truck: { select: { id: true, unitNumber: true } }, trailer: { select: { id: true, unitNumber: true } } },
     }),
     db.workOrder.groupBy({ by: ["status"], _count: true }),
@@ -51,6 +56,12 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
     db.truck.findMany({ orderBy: { unitNumber: "asc" }, select: { id: true, unitNumber: true, make: true, model: true } }),
     db.trailer.findMany({ orderBy: { unitNumber: "asc" }, select: { id: true, unitNumber: true } }),
   ]);
+  const rows = finished
+    ? fetched
+    : [...fetched].sort((a, b) =>
+        (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9)
+        || (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9)
+        || a.scheduledAt.getTime() - b.scheduledAt.getTime());
   const countOf = (s: string) => byStatus.find((c) => c.status === s)?._count ?? 0;
   const open = countOf("DRAFT") + countOf("OPEN");
   const inProgress = countOf("IN_PROGRESS");
@@ -95,8 +106,8 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
           ]} />
         </div>
         <Table head={["#", "Unit", "Work", "Category", "Priority", "Status", "Vendor", "Scheduled", "In / out", "Cost", ""]} empty={rows.length === 0}
-          emptyTitle={status === "active" && !validPriority && !validCategory && !unit ? "No open work orders" : "Nothing matches these filters"}
-          emptyDescription={status === "active" && !validPriority && !validCategory && !unit
+          emptyTitle={status === "active" && !filtered ? "No open work orders" : "Nothing matches these filters"}
+          emptyDescription={status === "active" && !filtered
             ? (editable ? "Create a work order for a repair, inspection or PM service, or start one from the PM schedule." : "Open work orders will appear here.")
             : "Clear a filter or pick another status."}>
           {rows.map((w) => {
@@ -109,7 +120,7 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
                   <Cell primary={<Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>} secondary={w.description ?? undefined} />
                 </td>
                 <td className="whitespace-nowrap text-fg-muted">{WORK_ORDER_CATEGORY_LABELS[w.category] ?? humanize(w.category)}</td>
-                <td>{PRIORITY_QUIET.has(w.priority) ? <span className="text-[12px] text-fg-muted">{humanize(w.priority)}</span> : <Badge value={w.priority} />}</td>
+                <td><Priority value={w.priority} /></td>
                 <td><Badge value={w.status} dot /></td>
                 <td className="max-w-44 truncate text-fg-muted">{w.vendor ?? <span className="text-fg-faint">In-house</span>}</td>
                 <td className="whitespace-nowrap text-fg-muted">{date(w.scheduledAt)}</td>
@@ -124,7 +135,12 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
             );
           })}
         </Table>
-        {rows.length >= 250 && <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Showing the first 250. Narrow the filters to see the rest.</p>}
+        {rows.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
+            <span>{finished ? "Most recently completed first." : "In progress first, then open and drafts; urgent work at the top of each group."}</span>
+            {rows.length >= PAGE && <span>Showing the first {PAGE}. Narrow the filters to see the rest.</span>}
+          </div>
+        )}
       </Card>
     </>
   );

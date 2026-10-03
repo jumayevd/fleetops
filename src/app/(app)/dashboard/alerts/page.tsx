@@ -7,7 +7,7 @@ import { KINDS, KIND_LABEL, groupAlerts, isKind, plural, visibleAlerts } from ".
 export const metadata = { title: "Needs you" };
 
 /** Every open exception, grouped by kind. The "Needs you" strip on the overview links here. */
-export default async function AlertsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function AlertsPage({ searchParams }: PageProps<"/dashboard/alerts">) {
   const user = await requireUser("dashboard.view");
   const sp = await searchParams;
   const kind = isKind(sp.kind) ? sp.kind : undefined;

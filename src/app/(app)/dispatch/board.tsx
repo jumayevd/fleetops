@@ -412,7 +412,7 @@ function Row({ r, date, now, liveClock, canEdit, focused, selectedCol, draft, no
               <Link href={`/fleet/${r.truck.id}`} className="num text-fg hover:text-accent-text hover:underline">{r.truck.unitNumber}</Link>
               {r.truck.fuelPct != null && r.truck.fuelPct < 15 && <Chip tone="warn" title="Low fuel">Fuel {Math.round(r.truck.fuelPct)}%</Chip>}
             </div>
-            <div className="truncate text-[11px] text-fg-subtle" title={r.truck.lastPingAt ? `Last ping ${ago(r.truck.lastPingAt)}${r.truck.speedKmh ? ` · ${Math.round(r.truck.speedKmh)} km/h` : ""}` : undefined}>
+            <div className="truncate text-[11px] text-fg-subtle" title={liveClock && r.truck.lastPingAt ? `Last ping ${duration(r.truck.lastPingAt, now)} ago${r.truck.speedKmh ? ` · ${Math.round(r.truck.speedKmh)} km/h` : ""}` : undefined}>
               {r.truck.locationName ?? "No position"}
             </div>
           </div>
@@ -452,7 +452,7 @@ function Row({ r, date, now, liveClock, canEdit, focused, selectedCol, draft, no
       </td>
       {/* ETA / next */}
       <td className={cn(cell("eta"), "whitespace-nowrap")}>
-        <EtaCell l={l} />
+        <EtaCell l={l} date={date} />
       </td>
       {/* Km */}
       <td className={cn(cell("km"), "num whitespace-nowrap")}>
@@ -503,11 +503,11 @@ function Row({ r, date, now, liveClock, canEdit, focused, selectedCol, draft, no
   );
 }
 
-function EtaCell({ l }: { l: BoardRow["load"] }) {
+function EtaCell({ l, date }: { l: BoardRow["load"]; date: string }) {
   if (!l) return <span className="text-fg-faint">—</span>;
   if (l.status === "IN_TRANSIT") {
     if (!l.eta) return <span className="text-fg-subtle">—</span>;
-    const sameDay = format(new Date(l.eta), "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
+    const sameDay = format(new Date(l.eta), "yyyy-MM-dd") === date;
     return (
       <div className="flex items-center gap-1.5">
         <span className="text-fg">{l.progress >= 1 ? "Arriving" : <>ETA <span className="num">{hhmm(l.eta)}</span>{!sameDay && <span className="text-fg-subtle"> {format(new Date(l.eta), "dd MMM")}</span>}</>}</span>
@@ -667,7 +667,7 @@ function DriverDrawer({ row, now, onClose }: { row: BoardRow; now: number; onClo
 
         <section>
           <h3 className="eyebrow mb-2">Status history</h3>
-          {error && <p className="text-[12px] text-danger">Couldn't load the history. Try again in a moment.</p>}
+          {error && <p className="text-[12px] text-danger">Could not load the history. Try again in a moment.</p>}
           {!events && !error && <p className="text-[12px] text-fg-subtle">Loading…</p>}
           {events && events.length === 0 && <p className="text-[12px] text-fg-subtle">No status changes recorded yet.</p>}
           {events && events.length > 0 && (

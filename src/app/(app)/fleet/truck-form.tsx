@@ -134,7 +134,7 @@ export function TruckForm({ action, truck, drivers, groups, cancelHref }: {
               <Field label="Insurance expiry"><Input name="insuranceExpiry" type="date" defaultValue={toDateInput(truck?.insuranceExpiry)} /></Field>
               <Field label="Technical inspection expiry"><Input name="inspectionExpiry" type="date" defaultValue={toDateInput(truck?.inspectionExpiry)} /></Field>
               <Field label="Registration expiry"><Input name="registrationExpiry" type="date" defaultValue={toDateInput(truck?.registrationExpiry)} /></Field>
-              <p className="text-[11px] text-fg-subtle">Upload the documents themselves on the truck's Compliance tab.</p>
+              <p className="text-[11px] text-fg-subtle">Upload the documents themselves on the Compliance tab of the truck page.</p>
             </div>
           </Card>
 

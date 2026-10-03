@@ -2,10 +2,9 @@ import Link from "next/link";
 import type { Trailer, Truck } from "@prisma/client";
 import { maintenanceSummary } from "@/lib/stats";
 import { WORK_ORDER_CATEGORY_LABELS, humanize } from "@/lib/constants";
-import { km, money, money2, number } from "@/lib/format";
+import { fmtMoneyCompact, km, money, money2, number } from "@/lib/format";
 import { Card, Chip, Stat, Table, type Tone } from "@/components/ui";
 import { Bars, Donut } from "@/components/charts";
-import { fmtMoneyCompact } from "@/lib/format";
 import { daysBetween, leaseRows, periodRange, PERIODS, type PeriodKey } from "../_lib/data";
 import { maintenanceHref, trailerHref, truckHref } from "../_lib/links";
 

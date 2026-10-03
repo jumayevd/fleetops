@@ -11,7 +11,12 @@ type Data = Awaited<ReturnType<typeof unitCompliance>>;
 function DocCell({ d }: { d: UnitDoc }) {
   if (d.state === "ok") return <span className="num text-[12px] text-fg-muted" title="On file">{d.expiresAt ? date(d.expiresAt) : "On file"}</span>;
   const label = d.state === "expired" ? `Expired ${-(d.days ?? 0)}d ago` : d.state === "expiring" ? `${d.days}d left` : "Missing";
-  return <Badge value={d.state} tone={DOC_STATE_TONE[d.state]} label={label} className="num" />;
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <Badge value={d.state} tone={DOC_STATE_TONE[d.state]} label={label} className="num" />
+      {!d.onFile && d.state !== "missing" && <span className="text-[10px] text-fg-subtle" title="The date comes from the unit record; no file has been uploaded.">no file · date from record</span>}
+    </div>
+  );
 }
 
 function nextStep(r: ComplianceRow) {
@@ -51,7 +56,7 @@ export function ComplianceTab({ data }: { data: Data }) {
               </td>
               <td className="text-right">
                 <Link href={r.href} className="inline-flex items-center gap-0.5 whitespace-nowrap text-[12px] font-medium text-fg-muted hover:text-fg">
-                  Compliance <ChevronRight className="h-3.5 w-3.5" />
+                  {r.type === "truck" ? "Compliance" : "Documents"} <ChevronRight className="h-3.5 w-3.5" />
                 </Link>
               </td>
             </tr>

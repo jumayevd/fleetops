@@ -11,6 +11,10 @@ export default function Loading() {
         </div>
         <div className="h-8 w-24 rounded-md bg-sunken" />
       </div>
+      <div className="mb-2 flex items-center justify-between">
+        <div className="h-3 w-36 rounded bg-sunken" />
+        <div className="h-3 w-20 rounded bg-sunken" />
+      </div>
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
         {Array.from({ length: 4 }).map((_, i) => <div key={i} className={`${block} h-[118px]`} />)}
       </div>

@@ -22,6 +22,8 @@ export type WorkOrderFormValues = {
   notes?: string | null;
 };
 
+type Mode = "truck" | "trailer";
+
 const CATEGORY_OPTIONS = WORK_ORDER_CATEGORIES.map((c) => ({ value: c, label: WORK_ORDER_CATEGORY_LABELS[c] ?? humanize(c) }));
 const STATUS_HINT: Record<string, string> = {
   DRAFT: "Draft: visible in the list, no effect on the unit.",
@@ -43,7 +45,7 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
   submitLabel: string;
   cancelHref: string;
 }) {
-  const [mode, setMode] = useState<"truck" | "trailer">(initial.trailerId && !initial.truckId ? "trailer" : "truck");
+  const [mode, setMode] = useState<Mode>(initial.trailerId && !initial.truckId ? "trailer" : "truck");
   const [truckId, setTruckId] = useState(initial.truckId ?? "");
   const [trailerId, setTrailerId] = useState(initial.trailerId ?? "");
   const [category, setCategory] = useState(initial.category ?? "OTHER");
@@ -60,14 +62,19 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
   const shownTotal = manualTotal ? total : sum ? String(sum) : "";
   const truck = trucks.find((t) => t.id === truckId);
 
+  // The odometer follows the picked truck until the user types a reading of their own.
   const pickTruck = (id: string) => {
     setTruckId(id);
     const t = trucks.find((x) => x.id === id);
-    if (t && !odometerTouched) setOdometer(numOrEmpty(t.odometerKm));
+    if (!odometerTouched) setOdometer(numOrEmpty(t?.odometerKm));
+  };
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    if (!odometerTouched) setOdometer(next === "truck" ? numOrEmpty(truck?.odometerKm) : "");
   };
 
-  const toggle = (next: "truck" | "trailer") => (
-    <button type="button" onClick={() => setMode(next)} aria-pressed={mode === next}
+  const toggle = (next: Mode) => (
+    <button type="button" onClick={() => switchMode(next)} aria-pressed={mode === next}
       className={cn("inline-flex h-7 items-center gap-1.5 rounded px-2.5 text-[12px] font-medium transition-colors",
         mode === next ? "bg-primary text-on-primary" : "text-fg-muted hover:text-fg")}>
       {next === "truck" ? <TruckIcon className="h-3.5 w-3.5" /> : <Container className="h-3.5 w-3.5" />}
@@ -95,7 +102,7 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
         <Card title="Work">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Title" required className="sm:col-span-2">
-              <Input name="title" required defaultValue={initial.title ?? (category === "PM" && !initial.title ? "PM service" : "")} placeholder="e.g. Replace front brake pads" />
+              <Input name="title" required defaultValue={initial.title ?? (category === "PM" ? "PM service" : "")} placeholder="e.g. Replace front brake pads" />
             </Field>
             <Field label="Category">
               <Select name="category" value={category} onChange={(e) => setCategory(e.target.value)} options={CATEGORY_OPTIONS} />

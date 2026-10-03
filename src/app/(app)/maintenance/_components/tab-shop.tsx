@@ -5,9 +5,8 @@ import { date, money } from "@/lib/format";
 import { Badge, Card, Cell, Table } from "@/components/ui";
 import { daysBetween, shopTone } from "../_lib/data";
 import { workOrderHref, workOrdersHref } from "../_lib/links";
-import { UnitLink } from "./unit-link";
+import { Priority, UnitLink } from "./unit-link";
 import { WorkOrderStatusButtons } from "./work-order-status";
-import { PRIORITY_QUIET } from "./unit-link";
 
 export async function ShopTab({ editable }: { editable: boolean }) {
   const rows = (await db.workOrder.findMany({
@@ -36,7 +35,7 @@ export async function ShopTab({ editable }: { editable: boolean }) {
               <Cell primary={<Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>}
                 secondary={<span><span className="num">#{w.number}</span> · {WORK_ORDER_CATEGORY_LABELS[w.category] ?? humanize(w.category)}</span>} />
             </td>
-            <td>{PRIORITY_QUIET.has(w.priority) ? <span className="text-[12px] text-fg-muted">{humanize(w.priority)}</span> : <Badge value={w.priority} />}</td>
+            <td><Priority value={w.priority} /></td>
             <td className="max-w-44 truncate text-fg-muted">{w.vendor ?? <span className="text-fg-faint">In-house</span>}</td>
             <td className="whitespace-nowrap text-fg-muted">{date(w.since)}</td>
             <td>{w.days > 7 ? <Badge value="SHOP" tone={shopTone(w.days)} label={`${w.days}d`} className="num" /> : <span className="num text-fg-muted">{w.days}d</span>}</td>

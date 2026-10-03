@@ -48,7 +48,7 @@ export default async function DispatchPage({ searchParams }: PageProps<"/dispatc
         subtitle={view === "prebook" ? "Loads with a pickup more than 24 hours out, by team. Reserve drivers here without occupying them today." : <>{dayLabel} <span className="text-fg-subtle">· {dayHint}</span></>}
         actions={
           <>
-            {view !== "prebook" && <DateNav date={date} today={today} label="" />}
+            {view !== "prebook" && <DateNav date={date} today={today} />}
             <Segmented active={view} items={[
               { key: "teams", label: "Teams", href: qs({ view: undefined }) },
               { key: "flat", label: "Flat", href: qs({ view: "flat" }) },
@@ -75,7 +75,7 @@ export default async function DispatchPage({ searchParams }: PageProps<"/dispatc
       {board && (
         <DispatchBoard key={`${date}:${team ?? ""}:${view}`} initial={board} view={view === "flat" ? "flat" : "teams"} canEdit={canEdit} team={team} initialQ={q} focusDriverId={focusDriver} />
       )}
-      {prebook && <PrebookView loads={prebook} teams={teams} canAssign={can(user.role, "loads.edit")} showMoney={can(user.role, "finance.view") || can(user.role, "loads.edit")} />}
+      {prebook && <PrebookView loads={prebook.loads} now={prebook.at} teams={teams} canAssign={can(user.role, "loads.edit")} showMoney={can(user.role, "finance.view") || can(user.role, "loads.edit")} />}
     </>
   );
 }

@@ -173,7 +173,14 @@ export const DOC_STATE_RANK: Record<DocState, number> = { expired: 0, expiring: 
 export const DOC_STATE_TONE: Record<DocState, Tone> = { expired: "danger", expiring: "warn", missing: "info", ok: "ok" };
 export const DOC_STATE_LABEL: Record<DocState, string> = { expired: "Expired", expiring: "Expiring", missing: "Missing", ok: "On file" };
 
-export type UnitDoc = { kind: string; state: DocState; expiresAt: Date | null; days: number | null };
+export type UnitDoc = {
+  kind: string;
+  state: DocState;
+  expiresAt: Date | null;
+  days: number | null;
+  /** A file is uploaded. When false the state comes from the date on the unit record. */
+  onFile: boolean;
+};
 export type ComplianceRow = {
   type: "truck" | "trailer";
   id: string;
@@ -187,6 +194,7 @@ export type ComplianceRow = {
   soonest: number;
 };
 
+/** Expiry recorded on the unit itself (the fleet form fields), used when no uploaded file carries one. */
 function fieldExpiry(unit: Truck | Trailer, type: "truck" | "trailer", kind: string): Date | null {
   if (kind === "INSURANCE") return unit.insuranceExpiry ?? null;
   if (kind === "INSPECTION") return unit.inspectionExpiry ?? null;
@@ -215,10 +223,15 @@ export async function unitCompliance(trucks: Truck[], trailers: Trailer[]) {
     const prefix = type === "truck" ? "t" : "r";
     const unitDocs: UnitDoc[] = REQUIRED_UNIT_DOCS.map((kind) => {
       const key = `${prefix}:${unit.id}:${kind}`;
-      if (!latest.has(key)) return { kind, state: "missing", expiresAt: null, days: null };
-      const expiresAt = latest.get(key) ?? fieldExpiry(unit, type, kind);
+      const onFile = latest.has(key);
+      const recorded = fieldExpiry(unit, type, kind);
+      // Same rule as the unit page: the file's own expiry, else the date recorded on the unit.
+      const expiresAt = onFile ? (latest.get(key) ?? recorded) : recorded;
       const days = daysUntil(expiresAt);
-      return { kind, state: stateOf(days), expiresAt, days };
+      const byDate = stateOf(days);
+      // No file on record: an expired or expiring recorded date outranks "missing" because the renewal is the real problem.
+      const state: DocState = onFile ? byDate : byDate === "ok" ? "missing" : byDate;
+      return { kind, state, expiresAt, days, onFile };
     });
     const worst = unitDocs.reduce<DocState>((w, d) => (DOC_STATE_RANK[d.state] < DOC_STATE_RANK[w] ? d.state : w), "ok");
     const soonest = Math.min(...unitDocs.map((d) => d.days ?? Infinity));
@@ -227,7 +240,7 @@ export async function unitCompliance(trucks: Truck[], trailers: Trailer[]) {
 
   const rows = [
     ...trucks.filter((t) => t.status !== "INACTIVE").map((t) => build(t, "truck", `${t.make} ${t.model}`)),
-    ...trailers.filter((t) => t.status !== "OUT_OF_SERVICE").map((t) => build(t, "trailer", `${t.type.replace("_", " ").toLowerCase()} trailer`)),
+    ...trailers.filter((t) => t.status !== "OUT_OF_SERVICE").map((t) => build(t, "trailer", `${(EQUIPMENT_LABELS[t.type] ?? t.type).toLowerCase()} trailer`)),
   ].sort((a, b) => DOC_STATE_RANK[a.worst] - DOC_STATE_RANK[b.worst] || a.soonest - b.soonest || a.unitNumber.localeCompare(b.unitNumber));
 
   const units: Record<DocState, number> = { expired: 0, expiring: 0, missing: 0, ok: 0 };

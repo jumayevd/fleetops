@@ -1,10 +1,10 @@
 /** URL helpers shared by the maintenance pages (server and client safe). */
 
 export const truckHref = (id: string) => `/fleet/${id}`;
-/** Trailers have no detail page yet; the list accepts ?unit= to focus a row. */
-export const trailerHref = (id: string) => `/fleet/trailers?unit=${id}`;
+export const trailerHref = (id: string) => `/fleet/trailers/${id}`;
+/** The unit's paperwork: trucks have a compliance tab, trailers a documents section. */
 export const unitComplianceHref = (type: "truck" | "trailer", id: string) =>
-  type === "truck" ? `/fleet/${id}?tab=compliance` : `/fleet/trailers?unit=${id}&tab=compliance`;
+  type === "truck" ? `/fleet/${id}?tab=compliance` : `/fleet/trailers/${id}#documents`;
 export const workOrderHref = (id: string) => `/maintenance/work-orders/${id}`;
 
 type Query = Record<string, string | number | null | undefined>;

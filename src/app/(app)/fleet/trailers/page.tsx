@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { Plus, Truck as TruckIcon, Container, FileCheck } from "lucide-react";
 import { requireUser } from "@/lib/auth";
@@ -11,19 +12,21 @@ import { syncSimulatedPositions } from "@/lib/telemetry";
 import { Badge, Card, Cell, EmptyState, ExpiryBadge, FilterPills, LinkButton, PageHeader, Segmented, STATUS_TONE, Stat, Table, cn } from "@/components/ui";
 import { ListFilters } from "../filters";
 import { LinkRow } from "../link-row";
-import { docsByUnit, missingDocs, sinceShort } from "../lib";
+import { daysSince, docsByUnit, missingDocs, sinceShort } from "../lib";
 import { TrailerStatusControl } from "./status-control";
 import { TrailerRowMenu } from "./row-menu";
 
 export const metadata = { title: "Trailers" };
 
 const str = (v: string | string[] | undefined) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
-const DAY = 86_400_000;
 
 export default async function TrailersPage({ searchParams }: PageProps<"/fleet/trailers">) {
   const user = await requireUser("fleet.view");
   const editable = can(user.role, "fleet.edit");
   const sp = await searchParams;
+  // Other modules link a trailer as /fleet/trailers?unit=<id>[&tab=compliance]; send those to the detail page.
+  const unit = str(sp.unit);
+  if (unit) redirect(`/fleet/trailers/${unit}${str(sp.tab) === "compliance" ? "#documents" : ""}`);
   const status = TRAILER_STATUSES.includes(str(sp.status) as never) ? str(sp.status) : undefined;
   const type = EQUIPMENT.includes(str(sp.type) as never) ? str(sp.type) : undefined;
   const q = str(sp.q);
@@ -60,7 +63,6 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
 
   const byStatus = (s: string) => all.filter((t) => t.status === s);
   const oldest = (s: string) => byStatus(s).sort((a, b) => a.statusSince.getTime() - b.statusSince.getTime())[0];
-  const days = (d: Date) => Math.floor((Date.now() - d.getTime()) / DAY);
   const incomplete = all.filter((t) => missingFor(t.id).length > 0).length;
   const shopOldest = oldest("SHOP");
   const dropOldest = oldest("DROPPED");
@@ -98,9 +100,9 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
         {tile(status || docsFilter || type || q ? "/fleet/trailers" : qs({}), <Stat className={tileClass} label="Trailers" value={all.length} hint={`${truckCount} tractors`} icon={<Container />} />)}
         {statusTile("IN_USE", "on a load")}
         {statusTile("EMPTY", "ready to pair")}
-        {statusTile("DROPPED", dropOldest ? `oldest ${days(dropOldest.statusSince)}d · ${dropOldest.unitNumber}` : "at customer sites")}
+        {statusTile("DROPPED", dropOldest ? `oldest ${daysSince(dropOldest.statusSince)}d · ${dropOldest.unitNumber}` : "at customer sites")}
         {statusTile("YARD", "parked, available")}
-        {statusTile("SHOP", shopOldest ? `${shopOldest.unitNumber} in ${days(shopOldest.statusSince)}d` : "none in repair")}
+        {statusTile("SHOP", shopOldest ? `${shopOldest.unitNumber} in ${daysSince(shopOldest.statusSince)}d` : "none in repair")}
         {statusTile("OUT_OF_SERVICE", "needs decision")}
         {tile(qs({ docs: "incomplete", status: undefined }), <Stat className={tileClass} label="Docs incomplete" value={incomplete} hint="registration, insurance, inspection" tone={incomplete ? "warn" : "ok"} icon={<FileCheck />} />)}
       </div>

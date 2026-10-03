@@ -26,9 +26,9 @@ export function TrailerStatusControl({ id, status, locationName, editable, since
     );
   }
   return (
-    <Popover width={232} align="start" trigger={({ open, toggle, ref }) => (
+    <Popover width={232} align="start" trigger={({ open, toggle }) => (
       <span className="inline-flex items-center gap-1.5">
-        <button ref={ref} type="button" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title="Change status"
+        <button type="button" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title="Change status"
           className={cn("inline-flex items-center gap-1 rounded-md py-0.5 pl-0.5 pr-1 transition-colors hover:bg-raised focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40", open && "bg-raised")}>
           <Badge value={status} label={TRAILER_STATUS_LABELS[status] ?? status} dot />
           <ChevronDown className="h-3 w-3 text-fg-subtle" />

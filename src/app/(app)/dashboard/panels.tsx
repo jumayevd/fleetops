@@ -1,9 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge, Chip, EmptyState, LinkButton, Progress, StatusDot, Table, cn } from "@/components/ui";
-import { ago, dateTime, km, money } from "@/lib/format";
+import { ago, dateTime, km, money, money2 } from "@/lib/format";
 import { humanize } from "@/lib/constants";
-import type { FleetSnapshot } from "@/lib/telemetry";
 import type { monthlyFinancials, weeklyProduction } from "@/lib/stats";
 import type { billingQueue, RecentEvent, UpcomingPickup } from "./queries";
 import { EVENT_TONE, plural } from "./lib";
@@ -15,40 +14,6 @@ type Billing = Awaited<ReturnType<typeof billingQueue>>;
 /** Quiet "see more" link for card headers. */
 export function MoreLink({ href, children }: { href: string; children: ReactNode }) {
   return <Link href={href} className="text-[12px] font-medium text-fg-muted hover:text-fg">{children} →</Link>;
-}
-
-/* ------------------------------------------------------------------ */
-/* Live fleet legend                                                   */
-/* ------------------------------------------------------------------ */
-
-/** Counts colour-matched to the map markers: rolling = violet, idle = blue, stopped (shop / out of service) = orange. */
-export function fleetLegendCounts(fleet: FleetSnapshot) {
-  return {
-    rolling: fleet.filter((t) => t.status === "ACTIVE" && t.speedKmh > 1).length,
-    idle: fleet.filter((t) => t.status === "ACTIVE" && t.speedKmh <= 1).length,
-    stopped: fleet.filter((t) => t.status !== "ACTIVE").length,
-    stale: fleet.filter((t) => t.lastPingAt && Date.now() - new Date(t.lastPingAt).getTime() > 3_600_000).length,
-  };
-}
-
-export function FleetLegend({ counts }: { counts: ReturnType<typeof fleetLegendCounts> }) {
-  const items: { label: string; n: number; tone: "progress" | "info" | "warn"; title: string }[] = [
-    { label: "Rolling", n: counts.rolling, tone: "progress", title: "Moving now" },
-    { label: "Idle", n: counts.idle, tone: "info", title: "Active, not moving" },
-    { label: "Stopped", n: counts.stopped, tone: "warn", title: "In shop or out of service" },
-  ];
-  return (
-    <ul className="flex items-center gap-3 text-[11px] text-fg-muted">
-      {items.map((i) => (
-        <li key={i.label} title={i.title} className="flex items-center gap-1.5">
-          <StatusDot tone={i.tone} />
-          <span className="num font-medium text-fg">{i.n}</span>
-          <span>{i.label}</span>
-        </li>
-      ))}
-      {counts.stale > 0 && <li className="text-fg-subtle" title="No GPS fix in the last hour">· {counts.stale} stale</li>}
-    </ul>
-  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -94,7 +59,7 @@ export function WeekProduction({ week, showMoney }: { week: Weekly; showMoney: b
   const reachPct = Math.round(reach * 100);
   const tone = reach >= 1 ? "ok" : reach >= 0.6 ? "progress" : "warn";
   const cells: [string, ReactNode][] = showMoney
-    ? [["Revenue", money(week.grand.total)], ["Distance", km(week.grand.km)], ["Per km", `$${week.grand.rpk.toFixed(2)}`], ["Per driver", money(week.grand.avgPerTruck)]]
+    ? [["Revenue", money(week.grand.total)], ["Distance", km(week.grand.km)], ["Per km", money2(week.grand.rpk)], ["Per driver", money(week.grand.avgPerTruck)]]
     : [["Distance", km(week.grand.km)], ["Loads", String(rows.reduce((a, r) => a + r.days.reduce((b, d) => b + d.loads.length, 0), 0))]];
   return (
     <div>
@@ -121,12 +86,13 @@ export function WeekProduction({ week, showMoney }: { week: Weekly; showMoney: b
 /* Month so far (finance)                                              */
 /* ------------------------------------------------------------------ */
 
-export function MonthSoFar({ month }: { month: Month }) {
+export function MonthSoFar({ month, note }: { month: Month; note?: string }) {
   const marginPct = month.revenue ? month.margin / month.revenue : 0;
+  const foot = note ?? (month.loads ? null : "No deliveries recorded. Figures fill in as loads are delivered.");
   const cells: [string, ReactNode][] = [
     ["Loads delivered", String(month.loads)],
     ["Gross margin", month.loads ? money(month.margin) : "—"],
-    ["Revenue per km", month.km ? `$${month.revPerKm.toFixed(2)}` : "—"],
+    ["Revenue per km", month.km ? money2(month.revPerKm) : "—"],
     ["On time", month.loads ? `${month.onTimePct}%` : "—"],
   ];
   return (
@@ -146,7 +112,7 @@ export function MonthSoFar({ month }: { month: Month }) {
         </div>
         <Progress value={marginPct} tone={marginPct >= 0.25 ? "ok" : marginPct >= 0.12 ? "progress" : "warn"} />
       </div>
-      {!month.loads && <p className="mt-3 text-[11px] text-fg-subtle">No deliveries yet this month. Figures fill in as loads are delivered.</p>}
+      {foot && <p className="mt-3 text-[11px] text-fg-subtle">{foot}</p>}
     </div>
   );
 }

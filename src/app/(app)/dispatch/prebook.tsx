@@ -5,14 +5,18 @@ import { LOAD_STATUS_LABELS, DRIVER_TYPE_SHORT, type LoadStatus } from "@/lib/co
 import { dateTime, ago, money, number } from "@/lib/format";
 import { Badge, Card, Chip, EmptyState, LinkButton, Stat, Table } from "@/components/ui";
 
-type PrebookLoad = Awaited<ReturnType<typeof prebookLoads>>[number];
+type PrebookLoad = Awaited<ReturnType<typeof prebookLoads>>["loads"][number];
 type Team = { id: string; name: string; color: string | null };
 
 const DAY = 86_400_000;
 
 /** Prebook: booked / dispatched loads with a pickup more than 24 h away, grouped by team. */
-export function PrebookView({ loads, teams, canAssign, showMoney }: { loads: PrebookLoad[]; teams: Team[]; canAssign: boolean; showMoney: boolean }) {
-  const now = Date.now();
+export function PrebookView({ loads, now, teams, canAssign, showMoney }: {
+  loads: PrebookLoad[];
+  /** Server timestamp (ms) the list was computed at — passed in so render stays pure. */
+  now: number;
+  teams: Team[]; canAssign: boolean; showMoney: boolean;
+}) {
   const unassigned = loads.filter((l) => !l.driverId);
   const soon = loads.filter((l) => l.pickupAt.getTime() - now < 2 * DAY);
   const groups: { key: string; name: string; color: string | null; loads: PrebookLoad[] }[] = [
@@ -31,7 +35,7 @@ export function PrebookView({ loads, teams, canAssign, showMoney }: { loads: Pre
 
       <p className="flex items-start gap-2 rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-fg-muted">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-subtle" />
-        <span>Only loads whose pickup is more than 24 hours away are listed. Assigning a driver here reserves them without occupying them on today's board — once the pickup is inside 24 hours the load appears on the daily board automatically.</span>
+        <span>Only loads whose pickup is more than 24 hours away are listed. Assigning a driver here reserves them without occupying them on the daily board for today — once the pickup is inside 24 hours the load appears on the daily board automatically.</span>
       </p>
 
       {groups.length === 0 && (
