@@ -1,95 +1,201 @@
 import Link from "next/link";
+import { Check, LogIn, Pencil, Send, ShieldCheck, UserCheck, Users } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ROLES, ROLE_LABELS, type Role } from "@/lib/constants";
 import { PERMISSIONS, type Permission } from "@/lib/permissions";
-import { ago } from "@/lib/format";
+import { ago, daysAgo } from "@/lib/format";
 import { createUser } from "@/app/actions/people";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Badge, Card, Field, Input, PageHeader, Select, Table } from "@/components/ui";
+import { Badge, Card, Cell, Chip, Field, FilterPills, Input, LinkButton, PageHeader, Select, Stat, Table, cn } from "@/components/ui";
+import { ROLE_TONE, TeamLabel } from "../shared";
 
 export const metadata = { title: "Users & roles" };
 
-const PERM_LABELS: Partial<Record<Permission, string>> = {
-  "dashboard.view": "Dashboard", "loads.view": "View loads", "loads.edit": "Create / dispatch loads", "tracking.view": "Live tracking",
-  "fleet.view": "View fleet", "fleet.edit": "Manage fleet & maintenance", "drivers.view": "View drivers", "drivers.edit": "Manage drivers",
-  "customers.view": "View customers", "customers.edit": "Manage customers", "finance.view": "View finance", "finance.edit": "Invoice & payments",
-  "reports.view": "Reports", "users.manage": "Manage users", "audit.view": "Audit log", "driver.portal": "Driver app",
+/* Permission labels and the area each belongs to, for the matrix. */
+const PERM_LABELS: Record<Permission, string> = {
+  "dashboard.view": "Overview dashboard", "loads.view": "View loads", "loads.edit": "Create and dispatch loads", "board.edit": "Edit the dispatch board",
+  "tracking.view": "Live map", "fleet.view": "View trucks and trailers", "fleet.edit": "Manage fleet and maintenance",
+  "drivers.view": "View drivers", "drivers.edit": "Manage drivers", "customers.view": "View customers and brokers", "customers.edit": "Manage customers and brokers",
+  "finance.view": "View finance", "finance.edit": "Invoices and payments", "reports.view": "Reports", "claims.view": "View claims", "claims.edit": "Manage claims",
+  "chat.view": "Chat and announcements", "announcements.manage": "Post announcements", "assistant.use": "Fleet assistant",
+  "company.manage": "Company profile", "users.manage": "Users, teams and Telegram", "audit.view": "Audit log", "driver.portal": "Driver app",
 };
+const AREA_LABELS: Record<string, string> = {
+  dashboard: "Dispatch", loads: "Dispatch", board: "Dispatch", tracking: "Dispatch", fleet: "Fleet", drivers: "People", customers: "People",
+  finance: "Money", reports: "Money", claims: "Safety", chat: "Team", announcements: "Team", assistant: "Team", company: "Company", users: "Company", audit: "Company", driver: "Driver",
+};
+const AREA_ORDER = ["Dispatch", "Fleet", "People", "Money", "Safety", "Team", "Company", "Driver"];
 
 export default async function UsersPage({ searchParams }: PageProps<"/admin/users">) {
   const me = await requireUser("users.manage");
-  const role = (await searchParams).role;
-  const users = await db.user.findMany({
-    where: typeof role === "string" && role ? { role } : {},
-    orderBy: [{ role: "asc" }, { name: "asc" }],
-  });
+  const sp = await searchParams;
+  const role = typeof sp.role === "string" && (ROLES as readonly string[]).includes(sp.role) ? (sp.role as Role) : undefined;
+  const showDisabled = sp.disabled === "1";
+
+  const [all, teams] = await Promise.all([
+    db.user.findMany({
+      orderBy: [{ active: "desc" }, { name: "asc" }],
+      select: { id: true, name: true, email: true, phone: true, role: true, active: true, lastLoginAt: true, createdAt: true, telegramChatId: true, telegramAlerts: true, team: { select: { id: true, name: true, color: true } }, driver: { select: { id: true } } },
+    }),
+    db.team.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true, name: true, color: true } }),
+  ]);
+
+  const roleRank = (r: string) => ROLES.indexOf(r as Role);
+  const users = all
+    .filter((u) => (role ? u.role === role : true) && (showDisabled || u.active))
+    .sort((a, b) => Number(b.active) - Number(a.active) || roleRank(a.role) - roleRank(b.role) || a.name.localeCompare(b.name));
+
+  const active = all.filter((u) => u.active);
+  const staff = active.filter((u) => u.role !== "DRIVER");
+  const disabled = all.length - active.length;
+  const linked = active.filter((u) => u.telegramChatId).length;
+  const recent = active.filter((u) => u.lastLoginAt && u.lastLoginAt >= daysAgo(7)).length;
+  const never = active.filter((u) => !u.lastLoginAt).length;
+  const admins = active.filter((u) => u.role === "OWNER" || u.role === "ADMIN").length;
+
+  const qs = (patch: { role?: string; disabled?: string }) => {
+    const p = new URLSearchParams();
+    const next = { role: role as string | undefined, disabled: showDisabled ? "1" : undefined, ...patch };
+    for (const [k, v] of Object.entries(next)) if (v) p.set(k, v);
+    const s = p.toString();
+    return `/admin/users${s ? `?${s}` : ""}`;
+  };
+  const countFor = (r: Role) => all.filter((u) => u.role === r && (showDisabled || u.active)).length;
   const roleOptions = ROLES.filter((r) => r !== "OWNER" || me.role === "OWNER").map((r) => ({ value: r, label: ROLE_LABELS[r] }));
+
+  const perms = (Object.keys(PERMISSIONS) as Permission[]).map((p) => ({ key: p, area: AREA_LABELS[p.split(".")[0]] ?? "Other" }));
+  const areas = AREA_ORDER.filter((a) => perms.some((p) => p.area === a));
 
   return (
     <>
-      <PageHeader title="Users & roles" subtitle="Who can sign in, and what each role is allowed to do." />
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin/users" className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${!role ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200"}`}>All</Link>
-            {ROLES.map((r) => (
-              <Link key={r} href={`/admin/users?role=${r}`} className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${role === r ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200"}`}>{ROLE_LABELS[r]}</Link>
-            ))}
+      <PageHeader
+        eyebrow="Company"
+        title="Users & roles"
+        subtitle={`${staff.length} staff accounts · ${active.length - staff.length} driver logins · ${admins} with admin rights`}
+        actions={<LinkButton href="/admin/company" variant="secondary"><Users />Teams</LinkButton>}
+      />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label="Active accounts" value={active.length} hint={disabled ? `${disabled} disabled` : "none disabled"} icon={<UserCheck />} tone="ok" />
+        <Stat label="Signed in this week" value={recent} hint={never ? `${never} never signed in` : "everyone has signed in at least once"} icon={<LogIn />} tone={never ? "warn" : "neutral"} />
+        <Stat label="Telegram linked" value={`${linked}/${active.length}`} hint={linked < active.length ? "ask the rest to connect under My account" : "everyone gets alerts"} icon={<Send />} tone={linked ? "info" : "neutral"} />
+        <Stat label="Admin rights" value={admins} hint="owner and administrator accounts" icon={<ShieldCheck />} tone={admins > 3 ? "warn" : "neutral"} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="space-y-4 xl:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterPills active={role ?? "all"} items={[
+              { key: "all", href: qs({ role: undefined }), label: "All", count: all.filter((u) => showDisabled || u.active).length },
+              ...ROLES.map((r) => ({ key: r, href: qs({ role: r }), label: ROLE_LABELS[r], count: countFor(r) })),
+            ]} />
+            <Link href={qs({ disabled: showDisabled ? undefined : "1" })}
+              className={cn("inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors",
+                showDisabled ? "border-primary bg-primary text-on-primary" : "border-line bg-surface text-fg-muted hover:border-line-strong hover:text-fg")}>
+              {showDisabled && <Check className="h-3 w-3" />}Show disabled{disabled > 0 && <span className={cn("num text-[10px]", showDisabled ? "opacity-70" : "text-fg-subtle")}>{disabled}</span>}
+            </Link>
           </div>
-          <Card bodyClassName="p-0">
-            <Table head={["Name", "Email", "Role", "Status", "Last sign-in", ""]}>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td className="font-medium">{u.name}{u.id === me.id && <span className="ml-2 text-xs text-slate-400">(you)</span>}</td>
-                  <td className="text-slate-600">{u.email}</td>
-                  <td><Badge value={u.role === "OWNER" ? "URGENT" : u.role === "ADMIN" ? "HIGH" : "NORMAL"} label={ROLE_LABELS[u.role as Role]} /></td>
-                  <td><Badge value={u.active ? "ACTIVE" : "VOID"} label={u.active ? "Active" : "Disabled"} /></td>
-                  <td className="text-xs text-slate-500">{ago(u.lastLoginAt)}</td>
-                  <td>{(u.role !== "OWNER" || me.role === "OWNER") && <Link href={`/admin/users/${u.id}`} className="text-sm font-medium text-blue-600 hover:underline">Edit</Link>}</td>
-                </tr>
-              ))}
+
+          <Card flush>
+            <Table head={["Name", "Role", "Team", "Status", "Telegram", "Last sign-in", ""]}
+              empty={users.length === 0} emptyTitle="No accounts match" emptyDescription={showDisabled ? "Try another role filter." : "Disabled accounts are hidden — use Show disabled to include them."}>
+              {users.map((u) => {
+                const canEdit = u.role !== "OWNER" || me.role === "OWNER";
+                return (
+                  <tr key={u.id} className={cn(!u.active && "text-fg-muted")}>
+                    <td className="min-w-52">
+                      <Cell
+                        primary={<span className="inline-flex items-center gap-1.5">
+                          {canEdit ? <Link href={`/admin/users/${u.id}`} className="font-medium hover:underline">{u.name}</Link> : <span className="font-medium">{u.name}</span>}
+                          {u.id === me.id && <Chip>You</Chip>}
+                          {u.driver && <Chip tone="info" title="Linked to a driver profile">Driver</Chip>}
+                        </span>}
+                        secondary={<>{u.email}{u.phone && <> · <span className="num">{u.phone}</span></>}</>} />
+                    </td>
+                    <td><Badge value={u.role} tone={ROLE_TONE[u.role as Role] ?? "neutral"} label={ROLE_LABELS[u.role as Role] ?? u.role} /></td>
+                    <td className="text-[12px]"><TeamLabel team={u.team} /></td>
+                    <td>{u.active ? <Badge value="ACTIVE" label="Active" dot /> : <Badge value="INACTIVE" label="Disabled" />}</td>
+                    <td className="text-[12px]">
+                      {u.telegramChatId
+                        ? <span className={cn("inline-flex items-center gap-1", u.telegramAlerts ? "text-fg" : "text-fg-muted")}><Send className="h-3 w-3 text-info" />{u.telegramAlerts ? "Linked" : "Paused"}</span>
+                        : <span className="text-fg-faint">Not linked</span>}
+                    </td>
+                    <td className="whitespace-nowrap text-[12px]">
+                      <span className={cn(!u.lastLoginAt && "text-fg-faint")} title={u.lastLoginAt ? u.lastLoginAt.toISOString() : undefined}>{u.lastLoginAt ? ago(u.lastLoginAt) : "never"}</span>
+                    </td>
+                    <td className="w-16 text-right">
+                      {canEdit && <LinkButton href={`/admin/users/${u.id}`} variant="ghost" size="sm" aria-label={`Edit ${u.name}`}><Pencil />Edit</LinkButton>}
+                    </td>
+                  </tr>
+                );
+              })}
             </Table>
           </Card>
-          <Card title="Role permissions matrix" bodyClassName="p-0">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
+
+          <Card title="What each role can do" flush
+            actions={<span className="text-[11px] text-fg-subtle">Defined in code · ask engineering to change</span>}>
+            <div className="overflow-auto">
+              <table className="w-full min-w-max text-[12px]">
                 <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="px-4 py-2 text-left font-medium text-slate-500">Permission</th>
-                    {ROLES.map((r) => <th key={r} className="px-2 py-2 font-medium text-slate-500">{ROLE_LABELS[r]}</th>)}
+                  <tr className="bg-sunken text-left text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+                    <th className="border-b border-line px-4 py-2 font-medium">Permission</th>
+                    {ROLES.map((r) => <th key={r} className="border-b border-line px-2 py-2 text-center font-medium">{ROLE_LABELS[r]}</th>)}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(Object.keys(PERMISSIONS) as Permission[]).map((p) => (
-                    <tr key={p}>
-                      <td className="px-4 py-2 text-slate-700">{PERM_LABELS[p] ?? p}</td>
-                      {ROLES.map((r) => (
-                        <td key={r} className="px-2 py-2 text-center">
-                          {(PERMISSIONS[p] as readonly string[]).includes(r) ? <span className="text-emerald-600">●</span> : <span className="text-slate-200">○</span>}
-                        </td>
-                      ))}
-                    </tr>
+                <tbody>
+                  {areas.map((area) => (
+                    <AreaRows key={area} area={area} perms={perms.filter((p) => p.area === area).map((p) => p.key)} />
                   ))}
                 </tbody>
               </table>
             </div>
           </Card>
         </div>
+
         <Card title="Invite a team member" className="h-fit">
           <ActionForm action={createUser} resetOnSuccess className="space-y-3">
-            <Field label="Full name *"><Input name="name" required /></Field>
-            <Field label="Email *"><Input name="email" type="email" required /></Field>
-            <Field label="Phone"><Input name="phone" /></Field>
-            <Field label="Role *"><Select name="role" required defaultValue="DISPATCHER" options={roleOptions} /></Field>
-            <Field label="Temporary password *" hint="At least 8 characters. Ask them to change it after first sign-in.">
+            <Field label="Full name" required><Input name="name" required placeholder="As it should appear on the board" /></Field>
+            <Field label="Email" required hint="Used to sign in."><Input name="email" type="email" required placeholder="name@company.uz" /></Field>
+            <Field label="Phone"><Input name="phone" type="tel" placeholder="+998 90 000 00 00" className="num" /></Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Role" required><Select name="role" required defaultValue="DISPATCHER" options={roleOptions} /></Field>
+              <Field label="Team" hint="Dispatchers only."><Select name="teamId" placeholder="No team" options={teams.map((t) => ({ value: t.id, label: t.name }))} /></Field>
+            </div>
+            <Field label="Temporary password" required hint="At least 8 characters. Ask them to change it after the first sign-in.">
               <Input name="password" type="password" minLength={8} required autoComplete="new-password" />
             </Field>
-            <p className="text-xs text-slate-500">To give a driver the mobile app, add them from <Link href="/drivers/new" className="text-blue-600 hover:underline">Drivers</Link> so their profile and login are linked.</p>
-            <SubmitButton className="w-full">Create user</SubmitButton>
+            <SubmitButton className="w-full" pendingText="Creating…">Create account</SubmitButton>
+            <p className="text-[11px] text-fg-subtle">
+              Drivers get their login from <Link href="/drivers/new" className="text-fg-muted hover:text-fg hover:underline">Drivers → Add driver</Link>, so the account is tied to their profile and trips.
+            </p>
           </ActionForm>
         </Card>
       </div>
+    </>
+  );
+}
+
+function AreaRows({ area, perms }: { area: string; perms: Permission[] }) {
+  return (
+    <>
+      <tr>
+        <td colSpan={ROLES.length + 1} className="border-b border-line bg-raised/60 px-4 pb-1 pt-2"><span className="eyebrow">{area}</span></td>
+      </tr>
+      {perms.map((p) => (
+        <tr key={p} className="border-b border-line last:border-b-0 hover:bg-raised">
+          <td className="px-4 py-1.5 text-fg">{PERM_LABELS[p] ?? p}</td>
+          {ROLES.map((r) => {
+            const ok = (PERMISSIONS[p] as readonly string[]).includes(r);
+            return (
+              <td key={r} className="px-2 py-1.5 text-center">
+                <span aria-label={ok ? `${ROLE_LABELS[r]}: allowed` : `${ROLE_LABELS[r]}: not allowed`}
+                  className={cn("inline-block h-2 w-2 rounded-full", ok ? "bg-ok" : "border border-line")} />
+              </td>
+            );
+          })}
+        </tr>
+      ))}
     </>
   );
 }

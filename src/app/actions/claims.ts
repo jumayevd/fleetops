@@ -189,3 +189,16 @@ export async function deleteClaim(claimId: string) {
   revalidateClaim(null, claim.loadId);
   redirect("/claims");
 }
+
+/**
+ * Form-shaped wrapper around setClaimStatus for ActionForm: `status`, optional `amountSettled`
+ * (approved / paid) and an optional `note` that lands in the thread with the new status.
+ */
+export async function moveClaimStatus(claimId: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  const raw = fd.get("amountSettled");
+  const text = typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+  const amountSettled = text === null ? null : Number(text);
+  if (amountSettled !== null && Number.isNaN(amountSettled)) return { error: "Settled amount must be a number" };
+  const note = fd.get("note");
+  return setClaimStatus(claimId, String(fd.get("status") ?? ""), { amountSettled, note: typeof note === "string" ? note : null });
+}

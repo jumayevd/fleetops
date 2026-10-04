@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getBot, telegramConfigured } from "@/lib/telegram";
 import { disconnectTelegram, sendMeTest, setTelegramAlerts, startTelegramLink } from "@/app/actions/telegram";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Badge, Card, buttonClass } from "@/components/ui";
+import { Badge, Card, buttonClass, cn } from "@/components/ui";
 
 const WHAT: Record<string, string> = {
   OWNER: "issues, deliveries, payments, maintenance and the daily brief",
@@ -14,42 +14,52 @@ const WHAT: Record<string, string> = {
   DRIVER: "new trip assignments and cancellations",
 };
 
+/**
+ * Personal Telegram link. Three states: connected (toggle alerts, test, disconnect), link code
+ * issued (deep link to the bot), or not connected (generate a link code).
+ */
 export async function TelegramCard({ userId }: { userId: string }) {
   if (!telegramConfigured()) {
-    return <Card title="Telegram alerts"><p className="text-sm text-slate-500">Telegram alerts haven&apos;t been set up yet. Ask an administrator to configure the bot.</p></Card>;
+    return (
+      <Card title="Telegram alerts">
+        <p className="text-[13px] text-fg-muted">Telegram alerts haven&apos;t been set up for the company yet. Ask an administrator to configure the bot.</p>
+      </Card>
+    );
   }
   const u = await db.user.findUniqueOrThrow({ where: { id: userId } });
   const bot = await getBot().catch(() => null);
+  const on = u.telegramAlerts;
 
   return (
-    <Card title="Telegram alerts" actions={u.telegramChatId ? <Badge value="ACTIVE" label="Connected" /> : null}>
-      <p className="mb-4 text-sm text-slate-600">Get {WHAT[u.role] ?? "alerts"} on Telegram.</p>
+    <Card title="Telegram alerts" actions={u.telegramChatId ? <Badge value="ACTIVE" tone="ok" label="Connected" dot /> : <Badge value="PLANNED" label="Not connected" />}>
+      <p className="mb-4 text-[13px] text-fg-muted">Get {WHAT[u.role] ?? "alerts"} on Telegram.</p>
       {u.telegramChatId ? (
         <div className="space-y-3">
-          <form action={setTelegramAlerts.bind(null, !u.telegramAlerts)}>
-            <label className="flex items-center gap-2 text-sm">
-              <button className={`relative h-5 w-9 rounded-full transition ${u.telegramAlerts ? "bg-blue-600" : "bg-slate-300"}`} aria-label="Toggle alerts">
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${u.telegramAlerts ? "left-4" : "left-0.5"}`} />
-              </button>
-              {u.telegramAlerts ? "Alerts on" : "Alerts paused"}
-            </label>
+          <form action={setTelegramAlerts.bind(null, !on)}>
+            <button type="submit" role="switch" aria-checked={on} className="group inline-flex items-center gap-2.5 text-[13px] text-fg">
+              <span className={cn("relative inline-block h-5 w-9 rounded-full transition-colors", on ? "bg-accent" : "bg-line-strong")}>
+                <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow-sm transition-[left]", on ? "left-[18px]" : "left-0.5")} />
+              </span>
+              <span>{on ? "Alerts on" : "Alerts paused"}</span>
+              <span className="text-[11px] text-fg-subtle group-hover:text-fg-muted">{on ? "click to pause" : "click to resume"}</span>
+            </button>
           </form>
-          <div className="flex flex-wrap gap-2">
-            <ActionForm action={sendMeTest}><SubmitButton variant="secondary" size="sm" pendingText="Sending…">Send test</SubmitButton></ActionForm>
-            <form action={disconnectTelegram}><button className={buttonClass("ghost", "sm") + " text-rose-600"}>Disconnect</button></form>
+          <div className="flex flex-wrap items-center gap-2">
+            <ActionForm action={sendMeTest}><SubmitButton variant="secondary" size="sm" pendingText="Sending…">Send test message</SubmitButton></ActionForm>
+            <form action={disconnectTelegram}><button className={cn(buttonClass("ghost", "sm"), "text-danger hover:bg-danger-soft hover:text-danger")}>Disconnect</button></form>
           </div>
         </div>
       ) : u.telegramLinkCode && bot ? (
         <div className="space-y-3">
           <a href={`https://t.me/${bot.username}?start=${u.telegramLinkCode}`} target="_blank" rel="noreferrer" className={buttonClass("primary")}>
-            <Send className="h-4 w-4" />Open @{bot.username} and press Start
+            <Send />Open @{bot.username} and press Start
           </a>
-          <p className="text-xs text-slate-500">After pressing <b>Start</b> in Telegram, refresh this page. The link works once.</p>
+          <p className="text-[11px] text-fg-subtle">After pressing <b className="font-medium text-fg-muted">Start</b> in Telegram, refresh this page. The link works once.</p>
         </div>
       ) : (
         <form action={startTelegramLink}>
-          <button className={buttonClass("primary")}><Send className="h-4 w-4" />Connect Telegram</button>
-          {!bot && <p className="mt-2 text-xs text-rose-600">Bot is unreachable — check TELEGRAM_BOT_TOKEN.</p>}
+          <button className={buttonClass("primary")} disabled={!bot}><Send />Connect Telegram</button>
+          {!bot && <p className="mt-2 text-[11px] text-danger">The bot is unreachable. An administrator needs to check TELEGRAM_BOT_TOKEN.</p>}
         </form>
       )}
     </Card>

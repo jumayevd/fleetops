@@ -124,3 +124,57 @@ export type LoadOption = ComboOption & {
   deliveredAt: string | null;
 };
 export type PersonOption = { id: string; label: string; hint?: string };
+
+/* ------------------------------------------------------------------ */
+/* URL state (client-safe)                                             */
+/* ------------------------------------------------------------------ */
+
+export const CLAIM_TABS = ["table", "analytics"] as const;
+export type ClaimTab = (typeof CLAIM_TABS)[number];
+
+/** `status` accepts a lifecycle status or one of these groups. */
+export const STATUS_GROUPS = ["open", "closed"] as const;
+
+export type ClaimFilters = {
+  tab: ClaimTab;
+  type?: string;
+  status?: string;
+  severity?: string;
+  fault?: string;
+  q: string;
+};
+
+/** `/claims?…` with the current filters, patched. Pass `undefined` in the patch to drop a key. */
+export function claimsHref(f: Partial<ClaimFilters>, patch: Partial<Record<keyof ClaimFilters, string | undefined>> = {}) {
+  const merged: Record<string, string | undefined> = {
+    tab: f.tab === "analytics" ? "analytics" : undefined, type: f.type, status: f.status, severity: f.severity, fault: f.fault, q: f.q || undefined, ...patch,
+  };
+  if (merged.tab === "table") merged.tab = undefined;
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
+  const s = p.toString();
+  return s ? `/claims?${s}` : "/claims";
+}
+
+export const hasClaimFilters = (f: ClaimFilters) => Boolean(f.type || f.status || f.severity || f.fault || f.q);
+
+/** Lifecycle order for the status funnel (the constants list is already in flow order). */
+export const FUNNEL_ORDER: readonly ClaimStatus[] = CLAIM_STATUSES;
+
+/** Everything the claim form's selects need (loaded server-side in options.ts). */
+export type ClaimFormOptions = {
+  loads: LoadOption[];
+  drivers: ComboOption[];
+  trucks: ComboOption[];
+  trailers: ComboOption[];
+  customers: ComboOption[];
+  assignees: PersonOption[];
+};
+
+/** Form defaults. Dates arrive pre-formatted for <input type="datetime-local"> so no Date crosses the RSC boundary. */
+export type ClaimDefaults = Partial<{
+  type: string; severity: string; fault: string; status: string;
+  incidentAt: string | null; location: string | null; description: string | null;
+  amountClaimed: number | null; amountSettled: number | null;
+  loadId: string | null; driverId: string | null; truckId: string | null; trailerId: string | null; customerId: string | null; assignedToId: string | null;
+}>;

@@ -1,59 +1,116 @@
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { dateTime } from "@/lib/format";
-import { Badge, Card, PageHeader, Table } from "@/components/ui";
+import { ROLE_LABELS, type Role } from "@/lib/constants";
+import { dateTime, daysAgo, number } from "@/lib/format";
+import { Badge, Card, Cell, FilterPills, LinkButton, PageHeader, Table } from "@/components/ui";
+import { AuditFilters } from "./filters";
+import { auditHref, type AuditFilterParams } from "./shared";
+import { actionLabel, actionTone, entityHref, entityLabel } from "./links";
 
 export const metadata = { title: "Audit log" };
 
-const ENTITY_LINK: Record<string, string> = { load: "/loads/", truck: "/fleet/", driver: "/drivers/", customer: "/customers/", invoice: "/finance/invoices/", user: "/admin/users/" };
-const ACTION_TONE: Record<string, string> = { create: "ACTIVE", update: "ASSIGNED", delete: "CANCELLED", status: "IN_TRANSIT", assign: "SENT", login: "NORMAL" };
+const PAGE_SIZE = 50;
+const str = (v: string | string[] | undefined) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+const isoDay = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
 
 export default async function AuditPage({ searchParams }: PageProps<"/admin/audit">) {
   await requireUser("audit.view");
   const sp = await searchParams;
-  const entity = typeof sp.entity === "string" ? sp.entity : undefined;
+  const params: AuditFilterParams = {
+    entity: str(sp.entity), user: str(sp.user), action: str(sp.action), from: isoDay(str(sp.from)), to: isoDay(str(sp.to)), q: str(sp.q),
+  };
   const page = Math.max(1, Number(sp.page) || 1);
-  const size = 50;
-  const where = entity ? { entity } : {};
-  const [rows, total, entities] = await Promise.all([
-    db.auditLog.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * size, take: size, include: { user: { select: { name: true, role: true } } } }),
+
+  const where: Prisma.AuditLogWhereInput = {};
+  if (params.entity) where.entity = params.entity;
+  if (params.action) where.action = params.action;
+  if (params.user === "system") where.userId = null;
+  else if (params.user) where.userId = params.user;
+  if (params.from || params.to) {
+    where.createdAt = {
+      ...(params.from ? { gte: new Date(`${params.from}T00:00:00`) } : {}),
+      ...(params.to ? { lt: new Date(new Date(`${params.to}T00:00:00`).getTime() + 86_400_000) } : {}),
+    };
+  }
+  if (params.q) where.details = { contains: params.q, mode: "insensitive" };
+
+  // Entity counts respect every filter except the entity itself, so the pills stay meaningful.
+  const { entity: _entity, ...whereNoEntity } = where; // eslint-disable-line @typescript-eslint/no-unused-vars
+
+  const [rows, total, entities, actions, users, last24] = await Promise.all([
+    db.auditLog.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE, include: { user: { select: { id: true, name: true, role: true } } } }),
     db.auditLog.count({ where }),
-    db.auditLog.groupBy({ by: ["entity"], _count: true }),
+    db.auditLog.groupBy({ by: ["entity"], where: whereNoEntity, _count: true, orderBy: { _count: { entity: "desc" } } }),
+    db.auditLog.groupBy({ by: ["action"], _count: true, orderBy: { action: "asc" } }),
+    db.user.findMany({ where: { audits: { some: {} } }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.auditLog.count({ where: { createdAt: { gte: daysAgo(1) } } }),
   ]);
-  const pages = Math.ceil(total / size);
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const first = total ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const last = Math.min(total, page * PAGE_SIZE);
+  const filtered = Object.values(params).some(Boolean);
+  const totalForPills = entities.reduce((a, e) => a + e._count, 0);
 
   return (
     <>
-      <PageHeader title="Audit log" subtitle="Every change, who made it and when. Records are append-only." />
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Link href="/admin/audit" className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${!entity ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200"}`}>All</Link>
-        {entities.map((e) => (
-          <Link key={e.entity} href={`/admin/audit?entity=${e.entity}`} className={`rounded-full px-3 py-1 text-xs font-medium capitalize ring-1 ${entity === e.entity ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200"}`}>{e.entity} <span className="opacity-60">{e._count}</span></Link>
-        ))}
-      </div>
-      <Card bodyClassName="p-0">
-        <Table head={["When", "User", "Action", "Entity", "Details"]} empty={rows.length === 0}>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td className="whitespace-nowrap text-xs text-slate-500">{dateTime(r.createdAt)}</td>
-              <td>{r.user?.name ?? "System"}</td>
-              <td><Badge value={ACTION_TONE[r.action] ?? "NORMAL"} label={r.action} /></td>
-              <td className="capitalize">{r.entityId && ENTITY_LINK[r.entity] ? <Link href={ENTITY_LINK[r.entity] + r.entityId} className="text-blue-700 hover:underline">{r.entity}</Link> : r.entity}</td>
-              <td className="text-slate-600">{r.details}</td>
-            </tr>
-          ))}
-        </Table>
-      </Card>
-      {pages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <span className="text-slate-500">Page {page} of {pages} · {total} entries</span>
-          <div className="flex gap-2">
-            {page > 1 && <Link className="text-blue-600 hover:underline" href={`/admin/audit?page=${page - 1}${entity ? `&entity=${entity}` : ""}`}>← Newer</Link>}
-            {page < pages && <Link className="text-blue-600 hover:underline" href={`/admin/audit?page=${page + 1}${entity ? `&entity=${entity}` : ""}`}>Older →</Link>}
-          </div>
+      <PageHeader
+        eyebrow="Company"
+        title="Audit log"
+        subtitle={<>Every change, who made it and when. Append-only. <span className="num">{number(last24)}</span> entries in the last 24 hours.</>}
+        actions={<LinkButton href="/admin/users" variant="secondary">Users &amp; roles</LinkButton>}
+      />
+
+      <div className="mb-3 space-y-2">
+        <FilterPills active={params.entity ?? "all"} items={[
+          { key: "all", href: auditHref(params, { entity: undefined }), label: "All", count: totalForPills },
+          ...entities.map((e) => ({ key: e.entity, href: auditHref(params, { entity: e.entity }), label: entityLabel(e.entity), count: e._count })),
+        ]} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <AuditFilters params={params}
+            users={users.map((u) => ({ value: u.id, label: u.name }))}
+            actions={actions.map((a) => ({ value: a.action, label: `${actionLabel(a.action)} (${a._count})` }))} />
+          <p className="text-[11px] text-fg-subtle">
+            {total ? <>Showing <span className="num">{first}–{last}</span> of <span className="num">{number(total)}</span></> : "No entries"}{filtered && " · filtered"}
+          </p>
         </div>
-      )}
+      </div>
+
+      <Card flush>
+        <Table head={["When", "Who", "Action", "Entity", "Details"]} dense
+          empty={rows.length === 0} emptyTitle={filtered ? "Nothing matches these filters" : "No activity yet"}
+          emptyDescription={filtered ? "Widen the date range or clear a filter." : "Changes made in the app are recorded here automatically."}>
+          {rows.map((r) => {
+            const href = entityHref(r.entity, r.entityId);
+            return (
+              <tr key={r.id}>
+                <td className="num whitespace-nowrap text-[12px] text-fg-muted" title={r.createdAt.toISOString()}>{dateTime(r.createdAt)}</td>
+                <td className="min-w-40">
+                  {r.user ? (
+                    <Cell primary={<Link href={`/admin/users/${r.user.id}`} className="hover:underline">{r.user.name}</Link>} secondary={ROLE_LABELS[r.user.role as Role] ?? r.user.role} />
+                  ) : <span className="text-fg-muted">System</span>}
+                </td>
+                <td><Badge value={r.action} tone={actionTone(r.action)} label={actionLabel(r.action)} /></td>
+                <td className="whitespace-nowrap">
+                  {href ? <Link href={href} className="text-fg hover:underline">{entityLabel(r.entity)}</Link> : <span className="text-fg-muted">{entityLabel(r.entity)}</span>}
+                  {r.entityId && !href && <span className="num ml-1.5 text-[11px] text-fg-faint">{r.entityId.slice(-6)}</span>}
+                </td>
+                <td className="max-w-xl truncate text-fg-muted" title={r.details ?? undefined}>{r.details ?? <span className="text-fg-faint">—</span>}</td>
+              </tr>
+            );
+          })}
+        </Table>
+        {pages > 1 && (
+          <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-2 text-[12px]">
+            <span className="text-fg-subtle">Page <span className="num">{page}</span> of <span className="num">{pages}</span></span>
+            <div className="flex items-center gap-1">
+              {page > 1 ? <LinkButton href={auditHref(params, { page: page - 1 })} variant="secondary" size="sm">Newer</LinkButton> : <span className="h-7" />}
+              {page < pages && <LinkButton href={auditHref(params, { page: page + 1 })} variant="secondary" size="sm">Older</LinkButton>}
+            </div>
+          </div>
+        )}
+      </Card>
     </>
   );
 }

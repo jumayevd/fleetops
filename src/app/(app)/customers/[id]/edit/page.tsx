@@ -14,8 +14,8 @@ export default async function EditCustomer({ params }: PageProps<"/customers/[id
   if (!customer) notFound();
   return (
     <>
-      <PageHeader title={`Edit ${customer.name}`} />
-      <CustomerForm action={saveCustomer.bind(null, id)} customer={customer} />
+      <PageHeader eyebrow="Customers & brokers" title={`Edit ${customer.name}`} subtitle="Changes apply to new invoices and the credit figures immediately." />
+      <CustomerForm action={saveCustomer.bind(null, id)} customer={customer} cancelHref={`/customers/${id}`} />
     </>
   );
 }

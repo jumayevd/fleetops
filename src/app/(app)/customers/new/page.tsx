@@ -9,8 +9,8 @@ export default async function NewCustomer() {
   await requireUser("customers.edit");
   return (
     <>
-      <PageHeader title="Add customer" />
-      <CustomerForm action={saveCustomer.bind(null, null)} />
+      <PageHeader eyebrow="Customers & brokers" title="Add customer" subtitle="A shipper you haul for, a broker who tenders you loads, or both." />
+      <CustomerForm action={saveCustomer.bind(null, null)} cancelHref="/customers" />
     </>
   );
 }
