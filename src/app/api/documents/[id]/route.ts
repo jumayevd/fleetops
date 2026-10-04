@@ -21,7 +21,8 @@ export async function GET(req: Request, ctx: RouteContext<"/api/documents/[id]">
   return new Response(stream, {
     headers: {
       "Content-Type": doc.contentType,
-      "Content-Length": String(doc.size),
+      // Seeded demo documents stream a generated placeholder whose length differs from the stored size.
+      ...(doc.storageKey.startsWith("seed/") ? {} : { "Content-Length": String(doc.size) }),
       "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(doc.name)}`,
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, max-age=300",

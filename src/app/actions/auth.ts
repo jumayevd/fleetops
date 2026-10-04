@@ -8,11 +8,16 @@ import { homeFor } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
 import { attempt, fields, FormError, type ActionState } from "@/lib/action";
 
+// bcrypt hash of a random string; only used to equalise timing for unknown emails.
+const DUMMY_HASH = "$2b$10$Dfob35lSw0BVw8zEqfQSY.8DFhc6CSl6DeU4B3W3T1BW03c0vUecO";
+
 export async function login(_: ActionState, fd: FormData): Promise<ActionState> {
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const password = String(fd.get("password") ?? "");
   const user = await db.user.findUnique({ where: { email } });
-  if (!user || !user.active || !(await bcrypt.compare(password, user.passwordHash))) {
+  // Always run one bcrypt compare so response time doesn't reveal which emails are registered.
+  const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+  if (!user || !user.active || !ok) {
     return { error: "Invalid email or password." };
   }
   await createSession(user.id);
