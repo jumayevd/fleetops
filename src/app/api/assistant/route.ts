@@ -49,12 +49,17 @@ export async function POST(req: Request) {
   }
   const messages = Array.isArray(body?.messages) ? body.messages : null;
   if (!messages || messages.length === 0) return fail(400, "Send at least one message", "BAD_REQUEST");
+  // Keep the recent window, but start it on a user turn: providers reject transcripts that open with an assistant message.
+  const recent = messages.slice(-HISTORY_LIMIT);
+  const firstUser = recent.findIndex((m) => (m as { role?: unknown } | null)?.role === "user");
+  const uiMessages = firstUser > 0 ? recent.slice(firstUser) : recent;
+  if (firstUser < 0) return fail(400, "Send a message from the user", "BAD_REQUEST");
 
   const agent = createFleetAgent({ role: user.role, name: user.name });
   try {
     return await createAgentUIStreamResponse({
       agent,
-      uiMessages: messages.slice(-HISTORY_LIMIT),
+      uiMessages,
       sendReasoning: false,
       headers: NO_STORE,
       onError: (error) => {
