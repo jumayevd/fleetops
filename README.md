@@ -1,125 +1,114 @@
 # FleetOps — Logistics Platform
 
-One control tower for a trucking / logistics company: dispatch, live tracking, fleet, drivers, customers, documents, billing, Telegram alerts and reporting, with role-based access for every team.
+A control tower for a trucking company: dispatch board, loads with multi-stop routing, live tracking,
+fleet and trailer lifecycle, maintenance and work orders, drivers and dispatcher teams, customers and
+brokers, billing driven by paperwork, claims, team chat, announcements, Telegram alerts, reports and an AI
+fleet assistant — with role-based access for every team and a Day/Night "Graphite" design.
 
 ## Live
 
-- Production: **https://fleetops-ochre.vercel.app** (Vercel project `fleetops`, region `fra1`)
-- Deploys: every push to `main` deploys to production automatically (GitHub ↔ Vercel). Other branches get preview deployments, but those need their own env vars before they work
-- Demo-company logins and their shared password are in `DEMO-CREDENTIALS.local.txt`. That file is git-ignored and never deployed. Change passwords under **My account** after signing in.
+- Production: **https://fleetops-ochre.vercel.app** (Vercel project `fleetops`, region `fra1`). Every push to `main` deploys.
+- Demo-company logins and their shared password are in `DEMO-CREDENTIALS.local.txt` (git-ignored, never deployed).
+  Change passwords under **My account** after signing in.
 
 | Role          | Email                   | What they see |
 |---------------|-------------------------|---------------|
 | Owner         | owner@demo.local        | Everything, including managing other owners |
 | Admin         | admin@demo.local        | Everything except owner accounts |
-| Dispatcher    | dispatch@demo.local     | Loads, dispatch board, tracking, fleet/driver lookup, customers |
-| Fleet manager | fleet@demo.local        | Fleet, maintenance, drivers, tracking, reports |
-| Accountant    | accounting@demo.local   | Finance, invoices, customers, reports |
-| Driver        | driver@demo.local       | Mobile driver portal (their own loads only) |
+| Dispatcher    | dispatch@demo.local     | Board, loads, tracking, drivers, customers, chat, claims |
+| Fleet manager | fleet@demo.local        | Trucks, trailers, maintenance, work orders, drivers, reports |
+| Accountant    | accounting@demo.local   | Finance, billing queue, invoices, customers, claims, reports |
+| Driver        | driver@demo.local       | Mobile driver portal (their own trips), chat, announcements |
 
 ## Local development
 
 ```bash
 npm install
-vercel link        # once: pick the "fleetops" project
-npm run setup      # pulls env vars into .env.local and runs migrations
-npm run dev        # http://localhost:3000
+npm run setup      # starts a local PostgreSQL in ./.pgdata, runs migrations, seeds demo data
+npm run dev        # http://localhost:3000 — one-click demo logins, password demo1234
 ```
 
-> ⚠️ **Local dev uses the production Neon database.** The Vercel integration shares one database across all environments.
-> The seed wipes everything, so it refuses to run unless `CONFIRM_SEED=yes` is set. For safe experiments, create a
-> **branch** in the Neon console and put its connection strings in `.env.local` as `DATABASE_URL` / `DATABASE_URL_UNPOOLED`.
+Development uses a **local PostgreSQL 17** cluster (`scripts/dev-db.mjs`, started automatically by `npm run dev`).
+Production stays on Neon; its credentials are pulled into `.env.vercel` with `npm run env:pull` and are only used
+for deliberate production operations. The seed wipes the database it points at, so it refuses any non-local
+database unless `CONFIRM_SEED=yes` is set.
 
 | Command | What it does |
 |---|---|
-| `npm run db:migrate` | Apply pending migrations from `prisma/migrations` |
-| `CONFIRM_SEED=yes npm run db:seed` | **Wipe** the database and reload demo data. Set `DEMO_PASSWORD` to choose the password (default `demo1234`) |
-| `npx dotenv -e .env.local -- prisma migrate dev --name <change>` | Create a migration after editing the schema (do this against a Neon branch) |
-
-`DEMO_MODE="true"` shows one-click demo logins on the login page. Use it only with demo data that has the `demo1234` password, and never in production.
+| `npm run db:migrate` | Apply pending migrations (`prisma/migrations`) to the local database |
+| `npm run db:seed` | Wipe the local database and reload demo data (`DEMO_PASSWORD` to choose the password) |
+| `npm run db:stop` | Stop the local PostgreSQL |
+| `npx dotenv -e .env.local -- prisma migrate dev --name <change>` | Create a migration after editing the schema |
+| `node scripts/dev-cookie.mjs owner@demo.local` | Print a session cookie for smoke-testing pages with curl |
 
 ## Modules
 
 | Module | Highlights |
 |---|---|
-| **Dashboard** | KPIs (in transit, unassigned, fleet utilization, month-to-date revenue, receivables), live fleet map, exception alerts, upcoming pickups, activity feed |
-| **Loads & Dispatch** | Table and kanban board, case-insensitive search, booking form with auto distance and a suggested rate, assignment with double-booking protection, status workflow, timeline (notes, check calls, issues), per-load margin |
-| **Live Tracking** | Control-tower map with every truck, route lines, progress, ETA, late warnings, and filters for moving/idle/in service. Refreshes every 10 s |
-| **Fleet & Maintenance** | Trucks and trailers, compliance expiries, service intervals, work orders (a truck in the shop is blocked from dispatch), fuel logs, per-truck P&L |
-| **Drivers** | Availability, license/medical expiry, performance, optional app login |
-| **Customers** | Contacts, terms, credit limit against open A/R, load and invoice history |
-| **Documents** | BOL, POD, CMR, customs papers, photos and invoices on loads; registration, insurance and inspection papers on trucks; licenses and medical certificates on drivers; contracts on customers. Files are private (streamed only after a permission check). Phone photos are compressed before upload, and expiry dates feed the alert list |
-| **Telegram alerts** | Each user links their own Telegram, and a company group chat is optional. Alerts cover driver issues, pickups and deliveries, new trips (sent to the driver), uploaded PODs, payments, trucks going into or out of the shop, and a daily 08:00 brief. The bot also answers `/status` |
-| **Finance** | Ready-to-invoice queue, invoices (draft → sent → paid/void), printable invoice / PDF, A/R aging, DSO, margin by month |
-| **Reports** | Revenue vs. cost, on-time trend, top customers, equipment mix, lane profitability, truck and driver performance |
-| **Admin** | Users and roles, password reset, deactivation, permission matrix, Telegram setup, append-only audit log |
-| **Driver portal** | Mobile-first: current trip, navigation links, start trip, POD photo from the camera, check-ins and issue reports, GPS sharing, fuel logging, earnings |
+| **Overview** | "Needs you" insight cards grouped by compliance / dispatch / fleet / money / safety; KPIs with deltas and sparklines; live fleet map; billing queue; this week's production; upcoming pickups; activity |
+| **Dispatch board** | Daily board grouped by dispatcher team: load, driver (hold / type tags), truck, trailer, phones, status, time in status, ETA, next stop, notes. Statuses derive from the load and stop progress (Dispatched → At pickup → En route → Unloading) with manual override (Stop / Rest / Home / Vacation) and history. Row colours and notes per day, flat and prebook (> 24 h) views, date navigation, keyboard navigation, column copy, live refresh |
+| **Weekly production** | Revenue / km / $-per-km / load per driver per weekday, totals, goals per driver type, efficiency, CSV export |
+| **Loads** | Table and kanban board, filters, multi-stop booking form (pickups, intermediate deliveries, windows), broker vs customer, customer reference, empty km, suggested rate; detail with stepper, stops (arrive / complete), documents checklist (RC / BOL / POD → billing stage), recover to another unit, TONU / cancel with reason, activity with filters |
+| **Live tracking** | Control tower: rolling / idle / stopped, on a load / unassigned, team; speed, location, fuel, GPS fix age; routes through stops, ETA and late flags |
+| **Trucks & trailers** | Ownership (company / owner-operator / leased) with lease mileage caps and exposure; PM schedule by odometer; telematics; tabs (overview, maintenance, specs, financial, compliance, loads). Trailers: in use / empty / dropped / yard / shop / out of service with "since", paired truck, location, GPS provider, paperwork |
+| **Maintenance** | Spend summary (cost per km, vendors, categories, flagged units), repair log, PM schedule, lease mileage control, in shop, compliance; work orders with priorities, costs and documents |
+| **Drivers** | Teams, driver types, hold with reason, score, board status with history, performance, licence / medical expiry, documents |
+| **Customers & brokers** | Shippers and brokers, terms, credit exposure, loads as customer or broker, invoices, contracts |
+| **Finance** | Billing queue (missing documents → ready to invoice), invoices (draft / sent / paid / void), aging, DSO, printable invoices with company letterhead |
+| **Reports** | Revenue vs cost, margin, on-time, empty km, lane profitability, broker vs direct, drivers, trucks, claims; CSV export |
+| **Claims** | Cargo, late, OS&D, accident, equipment, injury; full lifecycle with notes, documents, assignee, analytics |
+| **Chat & announcements** | Company room, team rooms, per-load threads; pinned announcements |
+| **Company & admin** | Company profile and documents, teams, users and roles, Telegram alerts, audit log |
+| **Driver portal** | Mobile-first: current trip with stops, POD from the camera, status, GPS sharing, next trips, earnings, fuel |
+| **Fleet assistant** | Ask about the fleet in plain language; answers come from read-only tools over your own data (Vercel AI Gateway) |
 
 ### Load lifecycle
 
 ```
-PLANNED ──assign──▶ ASSIGNED ──pickup──▶ IN_TRANSIT ──POD──▶ DELIVERED ──bill──▶ INVOICED
-   ▲                   │
-   └────unassign───────┘          (PLANNED / ASSIGNED can be CANCELLED)
+PLANNED (booked) ──assign──▶ ASSIGNED (dispatched) ──pickup──▶ IN_TRANSIT ──POD──▶ DELIVERED ──bill──▶ INVOICED
+       ▲                        │          │
+       └────────unassign────────┘          └── TONU (truck ordered, not used) ──▶ INVOICED
 ```
 
-The rules live in `src/lib/workflow.ts`.
+Billing stage follows the paperwork: delivered loads are **Missing docs** until RC and POD are on file, then
+**Ready to invoice**, then **Invoiced** / **Paid**. The rules live in `src/lib/workflow.ts`.
 
-## Telegram setup
+## Design system
 
-1. In Telegram, message **@BotFather**, send `/newbot`, and copy the token it gives you.
-2. Add it to Vercel, then redeploy:
-   ```bash
-   vercel env add TELEGRAM_BOT_TOKEN production --sensitive
-   vercel deploy --prod
-   ```
-3. Sign in as Owner or Admin, open **Admin → Telegram Alerts**, and click **Connect webhook**.
-4. Each person opens **My account → Connect Telegram** and presses **Start** in the bot.
-5. Optional: add the bot to a company group, click **Generate connect code** on the admin page, and send `/connect <code>` in the group.
+"Graphite": graphite surfaces, one amber signal accent, semantic status colours, tabular numerals, compact density,
+Day and Night themes (`data-theme` cookie resolved before first paint). Tokens in `src/app/globals.css`, kit in
+`src/components/ui.tsx`, rules in `docs/design-system.md`. The competitor benchmark and how we exceed it:
+`docs/competitive-analysis.md`.
 
-| Event | Who gets it |
-|---|---|
-| 🚨 Driver reports an issue | Owner, admins, dispatchers, group |
-| 🚚 ✅ ❌ Pickup / delivery / cancellation | Ops team and the load's dispatcher, group (+ accountants on delivery, driver on cancellation) |
-| 📋 New trip assigned | The driver |
-| 📎 POD / CMR / customs uploaded | Ops team (+ accountants for PODs) |
-| 💰 Invoice paid | Owner, accountants |
-| 🔧 Truck into / out of the shop | Fleet managers, ops team |
-| ☀️ Daily brief (08:00 Tashkent) | Owner, admins, dispatchers, fleet managers, group |
+## Telegram alerts
+
+1. Message **@BotFather**, send `/newbot`, copy the token.
+2. `vercel env add TELEGRAM_BOT_TOKEN production --sensitive`, then `vercel deploy --prod` (or push).
+3. **Company → Telegram alerts → Connect webhook** on the live site; each person links under **My account**.
+4. Optional: add the bot to a group and send `/connect <code>` from the admin page.
+
+## Fleet assistant
+
+Needs an AI Gateway credential: on Vercel, OIDC works automatically; locally set `AI_GATEWAY_API_KEY` in `.env.local`.
+`ASSISTANT_MODEL` overrides the default `anthropic/claude-sonnet-5.5`. Without a credential the panel says so.
 
 ## Architecture
 
-- **Next.js 16 (App Router)**: Server Components, Server Actions for mutations, route handlers under `src/app/api`
-- **Prisma + Neon Postgres**: schema in `prisma/schema.prisma`; migrations in `prisma/migrations` are applied on every Vercel build (`prisma migrate deploy`)
-- **Vercel Blob (private)** for documents (`src/lib/storage.ts`). Without `BLOB_READ_WRITE_TOKEN` it falls back to a local `./storage` folder
-- **Telegram Bot API**: client in `src/lib/telegram.ts`, routing rules in `src/lib/notify.ts`. Sends run in `after()`, so a slow or failing Telegram API never blocks a user's action. The webhook is verified with a secret derived from `AUTH_SECRET`
-- **Vercel Cron** (`vercel.json`): `/api/cron/daily-digest` runs at 03:00 UTC, protected by `CRON_SECRET`
-- **Auth**: bcrypt and a signed JWT in an httpOnly cookie (`src/lib/auth.ts`); a permission matrix in `src/lib/permissions.ts`
-- **Maps**: Leaflet + OpenStreetMap (set `NEXT_PUBLIC_MAP_TILE_URL` for a commercial provider). **Charts**: Recharts
-
-### Telemetry
-
-Until GPS/ELD hardware is connected, trucks on in-transit loads are simulated along their route (`src/lib/telemetry.ts`). A real ping from the driver app, or from any device posting to `POST /api/telemetry/ping`, overrides the simulation for 5 minutes.
+- **Next.js 16 (App Router)**: Server Components, Server Actions, route handlers under `src/app/api`
+- **Prisma 6 + PostgreSQL**: schema in `prisma/schema.prisma`; migrations applied on every Vercel build
+- **Vercel Blob (private)** for documents; local `./storage` fallback; seeded documents render a placeholder PDF
+- **Telegram Bot API** (`src/lib/telegram.ts`, routing in `src/lib/notify.ts`), **Vercel Cron** daily brief
+- **AI SDK 7** (`ToolLoopAgent`) for the assistant, gateway string models
+- **Leaflet + OpenStreetMap** (inverted tiles in Night), **Recharts** with theme-aware tokens
 
 ## Environment variables
 
 | Name | Source |
 |---|---|
-| `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | Neon integration (automatic) |
-| `BLOB_READ_WRITE_TOKEN` | Blob store `fleetops-docs` (automatic) |
-| `AUTH_SECRET` | Random 32-byte hex: signs sessions and derives the Telegram webhook secret |
-| `CRON_SECRET` | Random; Vercel Cron sends it as a Bearer token |
-| `DEMO_MODE` | `false` in production |
-| `TELEGRAM_BOT_TOKEN` | From @BotFather. Optional: alerts are off without it |
-| `APP_URL` | Optional base URL for links in alerts (defaults to the production domain) |
-| `NEXT_PUBLIC_MAP_TILE_URL` | Optional commercial map tiles |
-
-## Roadmap ideas
-
-- Multi-stop loads and load consolidation
-- Real routing and ETA (OSRM / GraphHopper / Google Routes)
-- Driver settlements / payroll export, fuel card import
-- Customer portal (tracking link, quotes, invoices)
-- SMS/email alert channels and per-user alert preferences by event type
-- Hours-of-service / rest-time tracking
-- Multi-currency (UZS/USD/KZT) and 1C accounting export
+| `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | Neon integration (production); local cluster (`.env.local`) |
+| `BLOB_READ_WRITE_TOKEN` | Blob store `fleetops-docs` (production) |
+| `AUTH_SECRET`, `CRON_SECRET` | Random 32-byte hex |
+| `DEMO_MODE` | `true` locally, `false` in production |
+| `TELEGRAM_BOT_TOKEN` | Optional, from @BotFather |
+| `AI_GATEWAY_API_KEY`, `ASSISTANT_MODEL` | Optional locally; OIDC on Vercel |
+| `APP_URL`, `NEXT_PUBLIC_MAP_TILE_URL` | Optional |
