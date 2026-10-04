@@ -152,6 +152,17 @@ async function applyWorkOrderSideEffects(id: string, status: string, userId: str
     if (wo.trailerId) await db.trailer.update({ where: { id: wo.trailerId }, data: { status: "SHOP", statusSince: now, truckId: null } });
     after(() => notifyMaintenance(id, status));
   }
+  if (status === "CANCELLED" && wo.inAt && !wo.outAt) {
+    await db.workOrder.update({ where: { id }, data: { outAt: now } });
+    if (wo.truckId) {
+      const open = await db.workOrder.count({ where: { truckId: wo.truckId, status: "IN_PROGRESS", id: { not: id } } });
+      if (!open && wo.truck?.status === "MAINTENANCE") await db.truck.update({ where: { id: wo.truckId }, data: { status: "ACTIVE" } });
+    }
+    if (wo.trailerId) {
+      const open = await db.workOrder.count({ where: { trailerId: wo.trailerId, status: "IN_PROGRESS", id: { not: id } } });
+      if (!open && wo.trailer?.status === "SHOP") await db.trailer.update({ where: { id: wo.trailerId }, data: { status: "YARD", statusSince: now } });
+    }
+  }
   if (status === "DONE") {
     await db.workOrder.update({ where: { id }, data: { outAt: wo.outAt ?? now, completedAt: now } });
     if (wo.truckId) {

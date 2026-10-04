@@ -28,13 +28,13 @@ export function PageHeader({ title, eyebrow, subtitle, actions, children }: {
   );
 }
 
-export function Card({ title, actions, children, className, bodyClassName, flush }: {
-  title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; bodyClassName?: string;
+export function Card({ title, actions, children, className, bodyClassName, flush, id }: {
+  title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; bodyClassName?: string; id?: string;
   /** No body padding (tables, lists, maps). */
   flush?: boolean;
 }) {
   return (
-    <section className={clsx("rounded-lg border border-line bg-surface", className)}>
+    <section id={id} className={clsx("rounded-lg border border-line bg-surface", className)}>
       {(title || actions) && (
         <header className="flex min-h-10 items-center justify-between gap-2 border-b border-line px-4 py-2">
           <h2 className="text-[13px] font-semibold text-fg">{title}</h2>
@@ -57,7 +57,7 @@ const TONE_SOFT: Record<Tone, string> = {
   warn: "bg-warn-soft text-warn", danger: "bg-danger-soft text-danger", info: "bg-info-soft text-info",
   progress: "bg-progress-soft text-progress",
 };
-const TONE_DOT: Record<Tone, string> = {
+export const TONE_DOT: Record<Tone, string> = {
   neutral: "bg-fg-faint", accent: "bg-accent", ok: "bg-ok", warn: "bg-warn", danger: "bg-danger", info: "bg-info", progress: "bg-progress",
 };
 

@@ -114,6 +114,7 @@ export async function saveTeam(teamId: string | null, _: ActionState, fd: FormDa
     const t = teamId ? await db.team.update({ where: { id: teamId }, data }) : await db.team.create({ data });
     await audit(me.id, teamId ? "update" : "create", "team", t.id, t.name);
     revalidatePath("/admin/users");
+    revalidatePath("/admin/company");
     revalidatePath("/dispatch");
     return { ok: `Team ${t.name} saved` };
   });
@@ -124,6 +125,7 @@ export async function deleteTeam(teamId: string) {
   const t = await db.team.delete({ where: { id: teamId } });
   await audit(me.id, "delete", "team", teamId, t.name);
   revalidatePath("/admin/users");
+  revalidatePath("/admin/company");
   revalidatePath("/dispatch");
 }
 

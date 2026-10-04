@@ -421,6 +421,13 @@ async function main() {
       await db.document.create({ data: { kind: k, name: `${t.unitNumber}_${k.toLowerCase()}.pdf`, storageKey: seedKey(`truck/${t.id}`, `${t.unitNumber}_${k}`), contentType: "application/pdf", size: int(120_000, 600_000), truckId: t.id, expiresAt: exp, uploadedById: byRole("FLEET_MANAGER").id, createdAt: ago(int(10, 300)) } });
     }
   }
+  for (const [i, t] of trailers.entries()) {
+    const have = i % 5 === 4 ? ["REGISTRATION"] : i % 7 === 6 ? [] : ["REGISTRATION", "INSURANCE", "INSPECTION"];
+    for (const k of have) {
+      const exp = k === "INSURANCE" ? t.insuranceExpiry : k === "INSPECTION" ? t.inspectionExpiry : new Date(now + int(60, 700) * DAY);
+      await db.document.create({ data: { kind: k, name: `${t.unitNumber}_${k.toLowerCase()}.pdf`, storageKey: seedKey(`trailer/${t.id}`, `${t.unitNumber}_${k}`), contentType: "application/pdf", size: int(100_000, 500_000), trailerId: t.id, expiresAt: exp, uploadedById: byRole("FLEET_MANAGER").id, createdAt: ago(int(10, 300)) } });
+    }
+  }
   for (const [i, d] of drivers.entries()) {
     if (i % 5 !== 4) await db.document.create({ data: { kind: "LICENSE", name: `${d.name.replace(" ", "_")}_licence.pdf`, storageKey: seedKey(`driver/${d.id}`, "licence"), contentType: "application/pdf", size: int(90_000, 300_000), driverId: d.id, expiresAt: d.licenseExpiry, uploadedById: byRole("FLEET_MANAGER").id, createdAt: ago(int(10, 400)) } });
     if (i % 3 !== 2) await db.document.create({ data: { kind: "MEDICAL", name: `${d.name.replace(" ", "_")}_medical.pdf`, storageKey: seedKey(`driver/${d.id}`, "medical"), contentType: "application/pdf", size: int(90_000, 300_000), driverId: d.id, expiresAt: d.medicalExpiry, uploadedById: byRole("FLEET_MANAGER").id, createdAt: ago(int(10, 400)) } });

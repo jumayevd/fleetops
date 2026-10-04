@@ -68,7 +68,7 @@ export async function getAlerts(): Promise<Alert[]> {
   }
   for (const d of docs) {
     const who = d.truck?.unitNumber ?? d.trailer?.unitNumber ?? d.driver?.name ?? d.customer?.name ?? d.load?.reference ?? "Company";
-    const href = d.truckId ? `/fleet/${d.truckId}` : d.trailerId ? `/fleet/trailers` : d.driverId ? `/drivers/${d.driverId}` : d.customerId ? `/customers/${d.customerId}` : d.loadId ? `/loads/${d.loadId}` : "/admin/company";
+    const href = d.truckId ? `/fleet/${d.truckId}` : d.trailerId ? `/fleet/trailers/${d.trailerId}` : d.driverId ? `/drivers/${d.driverId}` : d.customerId ? `/customers/${d.customerId}` : d.loadId ? `/loads/${d.loadId}` : "/admin/company";
     alerts.push({ level: lvl(d.expiresAt!), kind: "compliance", title: `${who}: ${d.name}`, detail: `document ${when(d.expiresAt!)}`, href });
   }
   // Missing required unit paperwork (one alert per unit, not per document — triage, not noise)

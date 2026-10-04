@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     staff ? getAlerts() : Promise.resolve([]),
     can(user.role, "claims.view") ? db.claim.count({ where: { status: { in: [...CLAIM_OPEN_STATUSES] } } }) : Promise.resolve(0),
     can(user.role, "loads.view") ? db.load.count({ where: { status: "PLANNED", pickupAt: { lte: daysAgo(-1) } } }) : Promise.resolve(0),
-    can(user.role, "chat.view") ? db.announcement.count({ where: { pinned: true } }) : Promise.resolve(0),
+    can(user.role, "chat.view") ? db.announcement.count({ where: { pinned: true, OR: [{ expiresAt: null }, { expiresAt: { gt: daysAgo(0) } }] } }) : Promise.resolve(0),
   ]);
   const badges: Record<string, number> = {};
   if (openClaims) badges["/claims"] = openClaims;
