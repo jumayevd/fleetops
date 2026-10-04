@@ -20,7 +20,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (openClaims) badges["/claims"] = openClaims;
   if (unassigned) badges["/dispatch"] = unassigned;
   if (pinned) badges["/announcements"] = pinned;
-  const assistant = can(user.role, "assistant.use") && Boolean(process.env.AI_GATEWAY_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.VERCEL);
+  // Gate by permission only; the panel/API report "not configured" when the AI Gateway key (or Vercel OIDC) is missing.
+  const assistant = can(user.role, "assistant.use");
 
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} alerts={alerts} badges={badges}>
