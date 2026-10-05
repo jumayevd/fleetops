@@ -217,11 +217,11 @@ export function RevenueChart({ data, height = 260 }: { data: { month: string; re
   );
 }
 
-/** Single-series bar chart. `layout="vertical"` for ranked categories (bars grow to the right). */
 /** Integer-only series (counts, whole amounts) get integer ticks: no "0.5 claims" on a small axis. */
 const allIntegers = (data: Record<string, string | number>[], keys: string[]) =>
   data.every((d) => keys.every((k) => typeof d[k] !== "number" || Number.isInteger(d[k])));
 
+/** Single-series bar chart. `layout="vertical"` for ranked categories (bars grow to the right). */
 export function SimpleBar({ data, dataKey, nameKey, money: isMoney = false, color, tone, height = 260, layout = "horizontal", labelWidth = 150, format }: {
   data: Record<string, string | number>[];
   dataKey: string;

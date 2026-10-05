@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { BILLING_STAGE_LABELS, LOAD_STATUS_LABELS, type BillingStage, type LoadStatus } from "@/lib/constants";
+import { BILLING_STAGE_LABELS, LOAD_STATUS_LABELS, humanize, type BillingStage, type LoadStatus } from "@/lib/constants";
 import { ago, dateTime, money, number } from "@/lib/format";
 import { estimatedArrival, loadProgress } from "@/lib/telemetry";
 import { Badge, Chip, LinkButton, Progress, STATUS_TONE, cn } from "@/components/ui";
@@ -66,7 +66,7 @@ function BoardCard({ load: l, column, showMoney }: { load: ListLoad; column: Loa
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="num text-[13px] font-medium text-fg">{l.reference}</span>
-          {l.priority !== "NORMAL" && <Chip tone={PRIORITY_TONE[l.priority]}>{l.priority}</Chip>}
+          {l.priority !== "NORMAL" && <Chip tone={PRIORITY_TONE[l.priority]}>{humanize(l.priority)}</Chip>}
           {l.hazmat && <Chip tone="danger">Hazmat</Chip>}
         </span>
         {showMoney && <span className="num shrink-0 text-[12px] text-fg-muted">{money(l.rate)}</span>}

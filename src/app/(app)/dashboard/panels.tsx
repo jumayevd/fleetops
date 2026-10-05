@@ -1,36 +1,106 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Badge, Chip, EmptyState, LinkButton, Progress, StatusDot, Table, cn, type Tone } from "@/components/ui";
-import { ago, dateTime, km, money, money2 } from "@/lib/format";
-import { LOAD_STATUS_LABELS, humanize, type LoadStatus } from "@/lib/constants";
-import type { monthlyFinancials, weeklyProduction } from "@/lib/stats";
+import { isSameDay, addDays, format } from "date-fns";
+import {
+  ArrowRightLeft, FileText, Pencil, Phone, PackagePlus, Receipt, StickyNote, TriangleAlert, UserCheck, type LucideIcon,
+} from "lucide-react";
+import { Chip, EmptyState, LinkButton, Progress, StatusDot, cn, type Tone } from "@/components/ui";
+import { ago, km, money, money2 } from "@/lib/format";
+import type { weeklyProduction } from "@/lib/stats";
 import type { billingQueue, RecentEvent, UpcomingPickup } from "./queries";
-import { EVENT_TONE, plural, type FleetLegend } from "./lib";
+import { plural, type FleetLegend } from "./lib";
 
 type Weekly = Awaited<ReturnType<typeof weeklyProduction>>;
-type Month = Awaited<ReturnType<typeof monthlyFinancials>>[number];
 type Billing = Awaited<ReturnType<typeof billingQueue>>;
 
 /** Quiet "see more" link for card headers. */
 export function MoreLink({ href, children }: { href: string; children: ReactNode }) {
-  return <Link href={href} className="text-[12px] font-medium text-fg-muted hover:text-fg">{children} →</Link>;
+  return <Link href={href} className="whitespace-nowrap text-[12px] font-medium text-fg-muted hover:text-fg">{children} →</Link>;
+}
+
+const SUB_TONE = { danger: "text-danger", warn: "text-warn", ok: "text-ok" } as const;
+type SubTone = keyof typeof SUB_TONE;
+
+/** Colours just the part of a line that needs a look ("1 on hold"), not the whole line. */
+export function Flag({ tone, children }: { tone?: SubTone; children: ReactNode }) {
+  return <span className={tone ? cn("font-medium", SUB_TONE[tone]) : undefined}>{children}</span>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Key numbers                                                         */
+/* ------------------------------------------------------------------ */
+
+export type Kpi = { label: string; value: ReactNode; sub?: ReactNode; subTone?: SubTone; href?: string };
+
+/** The day in six numbers: one strip, hairline dividers, colour only on the line that needs a look. */
+export function KpiStrip({ items }: { items: Kpi[] }) {
+  return (
+    <section aria-label="Key numbers"
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3 xl:grid-cols-6">
+      {items.map((k) => {
+        const body = (
+          <>
+            <p className="truncate text-[12px] text-fg-muted">{k.label}</p>
+            <p className="num mt-1 truncate text-[22px] font-semibold leading-tight tracking-tight text-fg">{k.value}</p>
+            <p className={cn("mt-0.5 truncate text-[12px]", k.subTone ? SUB_TONE[k.subTone] : "text-fg-subtle")}>{k.sub ?? " "}</p>
+          </>
+        );
+        return k.href ? (
+          <Link key={k.label} href={k.href}
+            className="block min-w-0 bg-surface px-4 py-3 transition-colors hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40">
+            {body}
+          </Link>
+        ) : (
+          <div key={k.label} className="min-w-0 bg-surface px-4 py-3">{body}</div>
+        );
+      })}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Metric list (label · value · note)                                  */
+/* ------------------------------------------------------------------ */
+
+export type Metric = { label: string; value: ReactNode; note?: ReactNode; noteTone?: SubTone; href?: string };
+
+export function MetricList({ items, className }: { items: Metric[]; className?: string }) {
+  return (
+    <dl className={cn("divide-y divide-line", className)}>
+      {items.map((m) => {
+        const row = (
+          <>
+            <dt className="min-w-0 truncate text-[13px] text-fg-muted">{m.label}</dt>
+            <dd className="flex items-baseline gap-2 whitespace-nowrap">
+              {m.note && <span className={cn("num text-[12px]", m.noteTone ? SUB_TONE[m.noteTone] : "text-fg-subtle")}>{m.note}</span>}
+              <span className="num text-[14px] font-semibold text-fg">{m.value}</span>
+            </dd>
+          </>
+        );
+        return m.href ? (
+          <Link key={m.label} href={m.href} className="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-2 transition-colors hover:bg-raised">{row}</Link>
+        ) : (
+          <div key={m.label} className="flex items-center justify-between gap-3 py-2">{row}</div>
+        );
+      })}
+    </dl>
+  );
 }
 
 /* ------------------------------------------------------------------ */
 /* Billing queue                                                       */
 /* ------------------------------------------------------------------ */
 
-function QueueRow({ href, label, hint, count, sum, tone }: { href: string; label: string; hint: string; count: number; sum?: number; tone: "warn" | "info" | "danger" }) {
+function QueueRow({ href, label, hint, count, sum, urgent }: { href: string; label: string; hint: string; count: number; sum?: number; urgent?: boolean }) {
   return (
-    <Link href={href} className="-mx-2 flex items-center gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-raised">
-      <StatusDot tone={count ? tone : "neutral"} />
-      <span className="min-w-0 flex-1">
+    <Link href={href} className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-raised">
+      <span className="min-w-0">
         <span className="block truncate text-[13px] text-fg">{label}</span>
-        <span className="block truncate text-[11px] text-fg-subtle">{hint}</span>
+        <span className="block truncate text-[12px] text-fg-subtle">{hint}</span>
       </span>
-      <span className="text-right">
-        <span className="num block text-[15px] font-semibold leading-none text-fg">{count}</span>
-        {sum !== undefined && <span className="num mt-0.5 block text-[11px] text-fg-muted">{money(sum)}</span>}
+      <span className="shrink-0 text-right">
+        <span className={cn("num block text-[14px] font-semibold", urgent && count ? "text-danger" : count ? "text-fg" : "text-fg-faint")}>{count}</span>
+        {sum !== undefined && <span className="num block text-[12px] text-fg-subtle">{money(sum)}</span>}
       </span>
     </Link>
   );
@@ -39,10 +109,10 @@ function QueueRow({ href, label, hint, count, sum, tone }: { href: string; label
 export function BillingQueue({ queue, overdue, showMoney }: { queue: Billing; overdue: { count: number; amount: number } | null; showMoney: boolean }) {
   // Finance roles work the queue on /finance (its default tab); everyone else gets the loads list filtered by billing stage.
   return (
-    <div className="space-y-0.5">
-      <QueueRow href={showMoney ? "/finance" : "/loads?billing=MISSING_DOCS"} label="Missing documents" hint="delivered, waiting on RC or POD" count={queue.missingDocs.count} sum={showMoney ? queue.missingDocs.sum : undefined} tone="warn" />
-      <QueueRow href={showMoney ? "/finance" : "/loads?billing=READY_TO_INVOICE"} label="Ready to invoice" hint="paperwork complete, not yet billed" count={queue.ready.count} sum={showMoney ? queue.ready.sum : undefined} tone="info" />
-      {overdue && <QueueRow href="/finance?status=overdue" label="Overdue invoices" hint="sent, past due date" count={overdue.count} sum={overdue.amount} tone="danger" />}
+    <div className="divide-y divide-line">
+      <QueueRow href={showMoney ? "/finance" : "/loads?billing=MISSING_DOCS"} label="Missing documents" hint="Delivered, waiting on RC or POD" count={queue.missingDocs.count} sum={showMoney ? queue.missingDocs.sum : undefined} />
+      <QueueRow href={showMoney ? "/finance" : "/loads?billing=READY_TO_INVOICE"} label="Ready to invoice" hint="Paperwork complete, not billed yet" count={queue.ready.count} sum={showMoney ? queue.ready.sum : undefined} />
+      {overdue && <QueueRow href="/finance?status=overdue" label="Overdue invoices" hint="Sent, past the due date" count={overdue.count} sum={overdue.amount} urgent />}
     </div>
   );
 }
@@ -65,10 +135,10 @@ export function FleetSummary({ legend: f }: { legend: FleetLegend }) {
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         {MOTION.map((m) => (
           <div key={m.key} className="min-w-0">
-            <dt className="flex items-center gap-1.5 text-[11px] text-fg-subtle">
+            <dt className="flex items-center gap-1.5 text-[12px] text-fg-muted">
               <StatusDot tone={m.tone} className={cn(m.faded && "opacity-50")} />{m.label}
             </dt>
-            <dd className="num mt-0.5 text-[15px] font-semibold text-fg">{f[m.key]}</dd>
+            <dd className="num mt-0.5 text-[18px] font-semibold text-fg">{f[m.key]}</dd>
           </div>
         ))}
       </dl>
@@ -77,7 +147,7 @@ export function FleetSummary({ legend: f }: { legend: FleetLegend }) {
         {f.late > 0 && <> · <span className="num text-danger">{f.late} running late</span></>}
         {f.noSignal > 0 && <> · <span className="num text-warn">{f.noSignal} no signal</span></>}
       </p>
-      <p className="mt-2 text-[11px] text-fg-subtle">Counts as of this page load. The live map is for dispatch and fleet roles; loads in transit show where each delivery stands.</p>
+      <p className="mt-1 text-[12px] text-fg-subtle">As of this page load.</p>
     </div>
   );
 }
@@ -91,25 +161,25 @@ export function WeekProduction({ week, showMoney }: { week: Weekly; showMoney: b
   const goal = rows.reduce((a, r) => a + r.goal, 0);
   const producing = rows.filter((r) => r.total > 0).length;
   const reach = goal ? week.grand.total / goal : 0;
-  const reachPct = Math.round(reach * 100);
   const tone = reach >= 1 ? "ok" : reach >= 0.6 ? "progress" : "warn";
+  const loads = rows.reduce((a, r) => a + r.days.reduce((b, d) => b + d.loads.length, 0), 0);
   const cells: [string, ReactNode][] = showMoney
     ? [["Revenue", money(week.grand.total)], ["Distance", km(week.grand.km)], ["Per km", money2(week.grand.rpk)], ["Per driver", money(week.grand.avgPerTruck)]]
-    : [["Distance", km(week.grand.km)], ["Loads", String(rows.reduce((a, r) => a + r.days.reduce((b, d) => b + d.loads.length, 0), 0))]];
+    : [["Distance", km(week.grand.km)], ["Loads", String(loads)]];
   return (
     <div>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
         {cells.map(([k, v]) => (
           <div key={k} className="min-w-0">
-            <dt className="text-[11px] text-fg-subtle">{k}</dt>
-            <dd className="num mt-0.5 truncate text-[15px] font-semibold text-fg">{v}</dd>
+            <dt className="text-[12px] text-fg-muted">{k}</dt>
+            <dd className="num mt-0.5 truncate text-[16px] font-semibold text-fg">{v}</dd>
           </div>
         ))}
       </dl>
-      <div className="mt-3">
-        <div className="mb-1 flex items-center justify-between text-[11px]">
-          <span className="text-fg-subtle">Plan reach · {producing} of {plural(week.grand.drivers, "driver")} producing</span>
-          <span className={cn("num font-medium", tone === "ok" ? "text-ok" : tone === "warn" ? "text-warn" : "text-fg")}>{reachPct}%</span>
+      <div className="mt-4">
+        <div className="mb-1.5 flex items-center justify-between gap-2 text-[12px]">
+          <span className="truncate text-fg-muted">Weekly goal · {producing} of {plural(week.grand.drivers, "driver")} producing</span>
+          <span className="num font-medium text-fg">{Math.round(reach * 100)}%</span>
         </div>
         <Progress value={reach} tone={tone} />
       </div>
@@ -118,50 +188,22 @@ export function WeekProduction({ week, showMoney }: { week: Weekly; showMoney: b
 }
 
 /* ------------------------------------------------------------------ */
-/* Month so far (finance)                                              */
-/* ------------------------------------------------------------------ */
-
-export function MonthSoFar({ month, note }: { month: Month; note?: string }) {
-  const marginPct = month.revenue ? month.margin / month.revenue : 0;
-  const foot = note ?? (month.loads ? null : "No deliveries recorded. Figures fill in as loads are delivered.");
-  const cells: [string, ReactNode][] = [
-    ["Loads delivered", String(month.loads)],
-    ["Gross margin", month.loads ? money(month.margin) : "—"],
-    ["Revenue per km", month.km ? money2(month.revPerKm) : "—"],
-    ["On time", month.loads ? `${month.onTimePct}%` : "—"],
-  ];
-  return (
-    <div>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-        {cells.map(([k, v]) => (
-          <div key={k} className="min-w-0">
-            <dt className="text-[11px] text-fg-subtle">{k}</dt>
-            <dd className="num mt-0.5 truncate text-[15px] font-semibold text-fg">{v}</dd>
-          </div>
-        ))}
-      </dl>
-      <div className="mt-4">
-        <div className="mb-1 flex items-center justify-between text-[11px]">
-          <span className="text-fg-subtle">Margin</span>
-          <span className="num font-medium text-fg">{month.loads ? `${Math.round(marginPct * 100)}%` : "—"}</span>
-        </div>
-        <Progress value={marginPct} tone={marginPct >= 0.25 ? "ok" : marginPct >= 0.12 ? "progress" : "warn"} />
-      </div>
-      {foot && <p className="mt-3 text-[11px] text-fg-subtle">{foot}</p>}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Upcoming pickups                                                    */
 /* ------------------------------------------------------------------ */
+
+/** "Today" / "Tomorrow" / "Wed 7 Oct" in company time (the server clock runs in the company zone). */
+const dayLabel = (d: Date, now: Date) => (isSameDay(d, now) ? "Today" : isSameDay(d, addDays(now, 1)) ? "Tomorrow" : format(d, "EEE d MMM"));
+function lateBy(d: Date, now: Date) {
+  const mins = Math.max(1, Math.round((now.getTime() - d.getTime()) / 60_000));
+  return mins < 60 ? `${mins} min late` : mins < 48 * 60 ? `${Math.round(mins / 60)} h late` : `${Math.round(mins / 1440)} d late`;
+}
 
 export function UpcomingPickups({ loads, total, now, canEdit }: { loads: UpcomingPickup[]; total: number; now: Date; canEdit: boolean }) {
   if (loads.length === 0) {
     return (
       <EmptyState
         title="No pickups in the next 24 hours"
-        description="Loads with a later pickup sit on the prebook tab until they are inside the 24-hour window."
+        description="Loads with a later pickup are on the dispatch board's prebook view."
         action={canEdit ? <LinkButton href="/loads/new" variant="secondary" size="sm">New load</LinkButton> : <LinkButton href="/loads" variant="secondary" size="sm">All loads</LinkButton>}
       />
     );
@@ -169,55 +211,54 @@ export function UpcomingPickups({ loads, total, now, canEdit }: { loads: Upcomin
   const more = total - loads.length;
   return (
     <>
-      <Table dense stickyHead={false} head={["Pickup", "Load", "Customer", "Team", "Truck / driver", "Status"]}>
+      <ul className="divide-y divide-line">
         {loads.map((l) => {
           const late = l.pickupAt < now;
           return (
-            <tr key={l.id}>
-              <td className="whitespace-nowrap">
-                <Link href={`/loads/${l.id}`} className="block">
-                  <span className="num block text-fg">{dateTime(l.pickupAt)}</span>
-                  <span className={cn("block text-[11px]", late ? "font-medium text-danger" : "text-fg-subtle")}>{late ? `overdue · ${ago(l.pickupAt)}` : ago(l.pickupAt)}</span>
-                </Link>
-              </td>
-              <td className="min-w-0">
-                <Link href={`/loads/${l.id}`} className="block min-w-0">
-                  <span className="flex items-center gap-1.5">
-                    <span className="num font-medium text-fg">{l.reference}</span>
-                    {l.priority !== "NORMAL" && l.priority !== "LOW" && <Chip tone={l.priority === "URGENT" ? "danger" : "warn"}>{l.priority}</Chip>}
-                    {l.hazmat && <Chip tone="warn">Hazmat</Chip>}
-                  </span>
-                  <span className="block truncate text-[11px] text-fg-subtle">{l.originCity} → {l.destCity} · {l.commodity}</span>
-                </Link>
-              </td>
-              <td className="max-w-44 truncate text-fg-muted">{l.customer.name}</td>
-              <td className="whitespace-nowrap text-fg-muted">
-                {l.team ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    {l.team.color && <span className="h-1.5 w-1.5 rounded-full" style={{ background: l.team.color }} aria-hidden />}
-                    {l.team.name}
-                  </span>
-                ) : <span className="text-fg-faint">—</span>}
-              </td>
-              <td className="whitespace-nowrap">
+            <li key={l.id} className="grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-2 md:grid-cols-[72px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.1fr)]">
+              <Link href={`/loads/${l.id}`} className="min-w-0">
+                <span className="num block text-[13px] font-medium text-fg">{format(l.pickupAt, "HH:mm")}</span>
+                <span className={cn("block truncate text-[12px]", late ? "text-danger" : "text-fg-subtle")}>{late ? lateBy(l.pickupAt, now) : dayLabel(l.pickupAt, now)}</span>
+              </Link>
+              <Link href={`/loads/${l.id}`} className="min-w-0">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="num truncate text-[13px] font-medium text-fg">{l.reference}</span>
+                  {(l.priority === "URGENT" || l.priority === "HIGH") && <Chip tone={l.priority === "URGENT" ? "danger" : "warn"}>{l.priority === "URGENT" ? "Urgent" : "High"}</Chip>}
+                  {l.hazmat && <Chip tone="warn">Hazmat</Chip>}
+                </span>
+                <span className="block truncate text-[12px] text-fg-subtle">{l.originCity} → {l.destCity} · {l.commodity}</span>
+              </Link>
+              <span className="hidden min-w-0 truncate text-[13px] text-fg-muted md:block" title={l.customer.name}>{l.customer.name}</span>
+              <div className="min-w-0 text-right md:text-left">
                 {l.truck ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="num text-fg">{l.truck.unitNumber}</span>
-                    <span className="text-fg-muted">{l.driver?.name ?? "no driver"}</span>
-                    {l.driver?.hold && <Chip tone="warn">Hold</Chip>}
-                  </span>
+                  <>
+                    <span className="flex min-w-0 items-center justify-end gap-1.5 text-[13px] md:justify-start">
+                      <span className="num text-fg">{l.truck.unitNumber}</span>
+                      <span className="truncate text-fg-muted">{l.driver?.name ?? "no driver"}</span>
+                      {l.driver?.hold && <Chip tone="warn">Hold</Chip>}
+                    </span>
+                    {l.team && (
+                      <span className="flex items-center justify-end gap-1.5 truncate text-[12px] text-fg-subtle md:justify-start">
+                        {l.team.color && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: l.team.color }} aria-hidden />}
+                        {l.team.name}
+                      </span>
+                    )}
+                  </>
+                ) : canEdit ? (
+                  <Link href={`/loads/${l.id}/edit`} className="inline-flex h-6 items-center rounded-md border border-line-strong px-2 text-[12px] font-medium text-fg transition-colors hover:bg-raised">
+                    Assign truck
+                  </Link>
                 ) : (
-                  <Link href={canEdit ? `/loads/${l.id}/edit` : `/loads/${l.id}`} className="inline-flex"><Chip tone="warn">Needs truck</Chip></Link>
+                  <span className="text-[12px] text-fg-subtle">No truck yet</span>
                 )}
-              </td>
-              <td><Badge value={l.status} label={LOAD_STATUS_LABELS[l.status as LoadStatus]} /></td>
-            </tr>
+              </div>
+            </li>
           );
         })}
-      </Table>
+      </ul>
       {more > 0 && (
-        <Link href="/dispatch" className="block border-t border-line px-3 py-1.5 text-[11px] text-fg-muted transition-colors hover:bg-raised hover:text-fg">
-          +<span className="num">{plural(more, "more pickup")}</span> · Dispatch board →
+        <Link href="/dispatch" className="block border-t border-line px-4 py-2 text-[12px] text-fg-muted transition-colors hover:bg-raised hover:text-fg">
+          <span className="num">{plural(more, "more pickup")}</span> on the dispatch board
         </Link>
       )}
     </>
@@ -228,22 +269,30 @@ export function UpcomingPickups({ loads, total, now, canEdit }: { loads: Upcomin
 /* Recent activity                                                     */
 /* ------------------------------------------------------------------ */
 
+const EVENT_ICON: Record<string, LucideIcon> = {
+  CREATED: PackagePlus, ASSIGNED: UserCheck, STATUS: ArrowRightLeft, NOTE: StickyNote, CHECK_CALL: Phone,
+  ISSUE: TriangleAlert, DOCUMENT: FileText, BILLING: Receipt, EDIT: Pencil,
+};
+
 export function RecentActivity({ events }: { events: RecentEvent[] }) {
-  if (events.length === 0) return <EmptyState title="No activity yet" description="Load events appear here as dispatchers and drivers update loads." />;
+  if (events.length === 0) return <EmptyState title="No activity yet" description="Load updates from dispatchers and drivers appear here." />;
   return (
     <ul className="divide-y divide-line">
-      {events.map((e) => (
-        <li key={e.id} className="flex items-start gap-3 px-4 py-2">
-          <Badge value={e.type} tone={EVENT_TONE[e.type] ?? "neutral"} label={humanize(e.type)} className="mt-px w-[84px] justify-center" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] text-fg" title={e.message}>
-              <Link href={`/loads/${e.load.id}`} className="num font-medium hover:text-accent-text">{e.load.reference}</Link>
-              <span className="text-fg-muted"> · {e.message}</span>
-            </p>
-            <p className="text-[11px] text-fg-subtle">{e.user?.name ?? "System"} · {ago(e.createdAt)}</p>
-          </div>
-        </li>
-      ))}
+      {events.map((e) => {
+        const Icon = EVENT_ICON[e.type] ?? ArrowRightLeft;
+        return (
+          <li key={e.id} className="flex items-start gap-3 px-4 py-2">
+            <Icon aria-hidden className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", e.type === "ISSUE" ? "text-danger" : "text-fg-subtle")} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] text-fg" title={e.message}>
+                <Link href={`/loads/${e.load.id}`} className="num font-medium hover:text-accent-text">{e.load.reference}</Link>
+                <span className="text-fg-muted"> · {e.message}</span>
+              </p>
+              <p className="text-[12px] text-fg-subtle">{e.user?.name ?? "System"} · {ago(e.createdAt)}</p>
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }

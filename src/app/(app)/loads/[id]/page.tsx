@@ -122,7 +122,7 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
             <span className="num">{load.reference}</span>
             <Badge value={status} label={LOAD_STATUS_LABELS[status]} dot />
             {stage !== "NONE" && <Chip tone={STATUS_TONE[stage] ?? "neutral"}>{BILLING_STAGE_LABELS[stage]}</Chip>}
-            {load.priority !== "NORMAL" && <Chip tone={PRIORITY_TONE[load.priority]}>{load.priority}</Chip>}
+            {load.priority !== "NORMAL" && <Chip tone={PRIORITY_TONE[load.priority]}>{humanize(load.priority)}</Chip>}
             {load.hazmat && <Chip tone="danger">Hazmat</Chip>}
           </span>
         }
@@ -133,7 +133,7 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
               {load.broker && <> via <Link href={`/customers/${load.broker.id}`} className="text-fg hover:underline">{load.broker.name}</Link></>}
             </span>
             {load.customerRef && <span>Ref <span className="num text-fg">{load.customerRef}</span></span>}
-            <span>{load.team ? `Team ${load.team.name}` : "No team"}</span>
+            <span>{load.team ? (load.team.name.toLowerCase().startsWith("team") ? load.team.name : `Team ${load.team.name}`) : "No team"}</span>
             <span>Booked by {load.dispatcher?.name ?? "—"}</span>
             <span>Created <span className="num">{dateTime(load.createdAt)}</span> · {ago(load.createdAt)}</span>
           </span>
@@ -354,7 +354,7 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
             )}
 
             {unitOptions && (status === "ASSIGNED" || status === "IN_TRANSIT") && (
-              <RecoverDetails defaultOpen={inTransit} summary={
+              <RecoverDetails defaultOpen={false} summary={
                 <span className="inline-flex items-center gap-1.5">
                   <span className="inline-block transition-transform group-open:rotate-90">›</span>Recover to another unit
                   <span className="normal-case tracking-normal text-fg-faint">· breakdown, HOS, swap</span>

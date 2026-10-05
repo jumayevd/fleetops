@@ -45,7 +45,7 @@ database unless `CONFIRM_SEED=yes` is set.
 
 | Module | Highlights |
 |---|---|
-| **Overview** | "Needs you" insight cards grouped by compliance / dispatch / fleet / money / safety; KPIs with deltas and sparklines; live fleet map; billing queue; this week's production; upcoming pickups; activity |
+| **Overview** | Six key numbers; "Needs attention" (top items, critical first, filter by compliance / dispatch / fleet / money / safety, full list one click away); today's pickups and recent activity in one tabbed card; live fleet map; billing queue; this week's production; monthly performance with chart |
 | **Dispatch board** | Daily board grouped by dispatcher team: load, driver (hold / type tags), truck, trailer, phones, status, time in status, ETA, next stop, notes. Statuses derive from the load and stop progress (Dispatched → At pickup → En route → Unloading) with manual override (Stop / Rest / Home / Vacation) and history. Row colours and notes per day, flat and prebook (> 24 h) views, date navigation, keyboard navigation, column copy, live refresh |
 | **Weekly production** | Revenue / km / $-per-km / load per driver per weekday, totals, goals per driver type, efficiency, CSV export |
 | **Loads** | Table and kanban board, filters, multi-stop booking form (pickups, intermediate deliveries, windows), broker vs customer, customer reference, empty km, suggested rate; detail with stepper, stops (arrive / complete), documents checklist (RC / BOL / POD → billing stage), recover to another unit, TONU / cancel with reason, activity with filters |
@@ -84,7 +84,7 @@ runs in UTC.
 ## Design system
 
 "Graphite": graphite surfaces, one amber signal accent, semantic status colours, tabular numerals, compact density,
-Day and Night themes (`data-theme` cookie resolved before first paint). Tokens in `src/app/globals.css`, kit in
+Day (default) and Night themes, plus Auto to follow the device (`data-theme` cookie resolved before first paint). Tokens in `src/app/globals.css`, kit in
 `src/components/ui.tsx`, rules in `docs/design-system.md`. The competitor benchmark and how we exceed it:
 `docs/competitive-analysis.md`.
 

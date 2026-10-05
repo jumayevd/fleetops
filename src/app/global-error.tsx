@@ -2,7 +2,7 @@
 
 import "./globals.css";
 import { useSyncExternalStore, type CSSProperties } from "react";
-import { THEME_COOKIE } from "@/lib/theme";
+import { DEFAULT_THEME, THEME_COOKIE } from "@/lib/theme";
 import RootError from "./error";
 
 // Replaces the root layout, so nothing from it applies: no data-theme, no Geist font variables.
@@ -11,8 +11,9 @@ const FONT_FALLBACK = { "--font-geist-sans": "ui-sans-serif", "--font-geist-mono
 const subscribe = () => () => {};
 function readTheme(): "light" | "dark" {
   try {
-    const m = document.cookie.match(new RegExp(`(?:^|; )${THEME_COOKIE}=(light|dark)`));
-    return (m?.[1] as "light" | "dark" | undefined) ?? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const pref = document.cookie.match(new RegExp(`(?:^|; )${THEME_COOKIE}=(light|dark|auto)`))?.[1] ?? DEFAULT_THEME;
+    if (pref === "auto") return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return pref === "dark" ? "dark" : "light";
   } catch {
     return "light";
   }

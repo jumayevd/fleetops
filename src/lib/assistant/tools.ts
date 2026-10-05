@@ -638,7 +638,7 @@ export function buildAssistantTools(ctx: ToolContext) {
       inputSchema: z.object({ kind: z.enum(["compliance", "dispatch", "fleet", "money", "safety"]).optional(), level: z.enum(["critical", "warning"]).optional() }),
       execute: (f) => safely("alerts", async () => {
         const all = await getAlerts();
-        // Same rule as the alerts bell and "Needs you": only alerts this role can open (invoice alerts stay with finance).
+        // Same rule as the alerts bell and "Needs attention": only alerts this role can open (invoice alerts stay with finance).
         const visible = all.filter((a) => canOpen(ctx.role, a.href) && (!f.kind || a.kind === f.kind) && (!f.level || a.level === f.level));
         const by = <K extends string>(key: (a: (typeof all)[number]) => K) => visible.reduce<Record<string, number>>((m, a) => { m[key(a)] = (m[key(a)] ?? 0) + 1; return m; }, {});
         return { asOf: fmtDateTime(new Date()), byLevel: by((a) => a.level), byKind: by((a) => a.kind), ...capped(visible, "alerts"), href: "/dashboard/alerts" };

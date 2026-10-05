@@ -12,7 +12,7 @@ professional. Every page must look right in **both** themes.
 2. **Compact.** 13 px tables, 36 px rows, 44 px top bar, 56 px icon rail. Dense but breathable:
    whitespace comes from alignment, not padding.
 3. **Numbers are first-class.** Metrics, IDs, money, distances use `font-mono tabular-nums`
-   (class `num`). Labels are sentence case, never ALL CAPS (small caps labels use `.eyebrow`).
+   (class `num`). Labels, chips and table headers are sentence case, never ALL CAPS (small labels use `.eyebrow`).
 4. **One accent-filled button per view.** Primary actions are graphite-inverted (`primary`);
    amber fill is reserved for the single most important call to action, live indicators and
    selection.
@@ -52,7 +52,8 @@ Radii: controls `rounded-md` (6 px), cards `rounded-lg` (10 px), chips `rounded`
 only for live status dots.
 
 Typography: Geist Sans (UI) + Geist Mono (`num`, IDs, codes). Sizes: page title 18/600,
-section title 13/600, body 13–14, table 13, eyebrow 11/500 uppercase tracking-wide `text-fg-subtle`.
+section title 13/600, body 13–14, table 13, table header 12/500 `text-fg-muted`, eyebrow 12/400 `text-fg-muted`,
+chips 11/500.
 
 ## Components (`src/components/ui.tsx`)
 
@@ -80,8 +81,9 @@ inline.
 
 ## Theme mechanics
 
-`<html data-theme="light|dark">` set server-side from the `theme` cookie; "auto" is resolved by
-an inline script before paint from `prefers-color-scheme`. Tailwind `dark:` variant =
+`<html data-theme="light|dark">` set server-side from the `theme` cookie. **Day is the default** when no cookie
+is set; Night and Auto are opt-in from the toggle, and "auto" is resolved by an inline script before paint from
+`prefers-color-scheme`. Tailwind `dark:` variant =
 `[data-theme=dark]`. Leaflet tiles are inverted/desaturated in dark mode via CSS filter.
 Charts read tokens at runtime (`useChartTheme()` in `charts.tsx`).
 
@@ -89,3 +91,18 @@ Charts read tokens at runtime (`useChartTheme()` in `charts.tsx`).
 
 Sentence case everywhere. No exclamation marks in system copy. Buttons are verb-first.
 Empty states say what to do next. Errors say what happened and how to fix it.
+
+## Overview layout
+
+The overview is the calmest page in the app and the template for new summary pages:
+
+1. Greeting and one summary line (date · trucks moving · items to review), one primary action.
+2. One strip of six key numbers (`KpiStrip`): label, value, one short line. Colour only the words that need a
+   look (`Flag`), never the whole line, and no sparklines.
+3. "Needs attention" (top six, critical first, a filter chip per kind, "View all") beside a tabbed "Today" card
+   (pickups, recent activity).
+4. Live fleet map beside billing and this week's production; roles without the map get the three cards in a row.
+5. One performance card: a chart plus a short metric list (`MetricList`).
+
+Rules of thumb: show the top items and link to the full list; in long lists one severity dot replaces badges;
+secondary forms and hints (recover to another unit, keyboard shortcuts) start collapsed.

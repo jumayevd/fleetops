@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { Sun, Moon, MonitorSmartphone } from "lucide-react";
 import { cn } from "./ui";
-import { THEME_COOKIE, parseThemePref, type ThemePref } from "@/lib/theme";
+import { DEFAULT_THEME, THEME_COOKIE, parseThemePref, type ThemePref } from "@/lib/theme";
 
 const ORDER: ThemePref[] = ["light", "dark", "auto"];
 const LABEL: Record<ThemePref, string> = { light: "Day", dark: "Night", auto: "Auto" };
@@ -33,7 +33,7 @@ function subscribe(cb: () => void) {
 
 /** Day / Night / Auto. Persists in a cookie so the server renders the right theme next time. */
 export function ThemeToggle({ className, showLabel }: { className?: string; showLabel?: boolean }) {
-  const pref = useSyncExternalStore(subscribe, readPref, () => "auto" as ThemePref);
+  const pref = useSyncExternalStore(subscribe, readPref, () => DEFAULT_THEME);
   const cycle = () => writePref(ORDER[(ORDER.indexOf(pref) + 1) % ORDER.length]);
   const Icon = pref === "light" ? Sun : pref === "dark" ? Moon : MonitorSmartphone;
   return (

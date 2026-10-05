@@ -8,7 +8,7 @@ export function openRecoverPanel() {
   if (d instanceof HTMLDetailsElement) d.open = true;
 }
 
-/** The collapsible Recover section. Open by default for loads in transit; the URL hash opens it for dispatched loads too. */
+/** The collapsible Recover section: closed until needed; the URL hash (#recover, from the row menu) opens it. */
 export function RecoverDetails({ defaultOpen, summary, children }: { defaultOpen: boolean; summary: ReactNode; children: ReactNode }) {
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {

@@ -809,7 +809,7 @@ function DetailPanel({ v, now, onClose }: { v: View; now: number; onClose: () =>
                         )}
                       </span>
                     </span>
-                    {done && <span className="text-[10px] uppercase tracking-wide">Done</span>}
+                    {done && <span className="text-[11px]">Done</span>}
                     {next && <Chip tone="accent">Next</Chip>}
                   </li>
                 );

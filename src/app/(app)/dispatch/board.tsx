@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition, type CSSProperties, type ReactNode } from "react";
 import {
-  Bed, ChevronDown, ChevronRight, CircleCheck, ClockFading, Copy, Ellipsis, Eraser, House, OctagonPause, Package, Phone, Search, TreePalm, Undo2, Users, X,
+  Bed, ChevronDown, ChevronRight, CircleCheck, ClockFading, Copy, Ellipsis, Eraser, House, Keyboard, OctagonPause, Package, Phone, Search, TreePalm, Undo2, Users, X,
 } from "lucide-react";
 import { Badge, Button, Chip, cn, EmptyState, IconButton, Kbd, LiveDot, Progress, STATUS_TONE, StatusDot, TONE_DOT, inputClass, type Tone } from "@/components/ui";
 import { BOARD_STATUS_LABELS, BOARD_STATUS_ORDER, DRIVER_TYPE_LABELS, DRIVER_TYPE_SHORT, EQUIPMENT_LABELS, MANUAL_BOARD_STATUSES, type BoardStatus } from "@/lib/constants";
@@ -280,10 +280,20 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
             className={cn(inputClass, "h-8 w-72 pl-8 pr-7")} />
           {q && <button type="button" onClick={() => setQ("")} aria-label="Clear" className="absolute right-1.5 top-1.5 rounded p-0.5 text-fg-subtle hover:bg-raised hover:text-fg"><X className="h-3.5 w-3.5" /></button>}
         </label>
-        <p className="hidden items-center gap-1 text-[11px] text-fg-subtle xl:flex">
-          <Kbd>↑</Kbd><Kbd>↓</Kbd> move <Kbd className="ml-1.5">↵</Kbd> open {canEdit && <><Kbd className="ml-1.5">c</Kbd> colour <Kbd className="ml-1.5">n</Kbd> notes</>} <Kbd className="ml-1.5">h</Kbd> history
-          <span className="ml-1.5">· click a header, then</span> <Kbd>Ctrl</Kbd><Kbd>C</Kbd> copies the column
-        </p>
+        {/* Shortcuts live behind one quiet button instead of a permanent line of hints. */}
+        <details className="relative hidden xl:block">
+          <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-muted transition-colors hover:bg-raised hover:text-fg [&::-webkit-details-marker]:hidden">
+            <Keyboard className="h-3.5 w-3.5" /> Shortcuts
+          </summary>
+          <ul className="absolute left-0 top-9 z-30 w-72 space-y-2 rounded-lg border border-line bg-overlay p-3 text-[12px] text-fg-muted shadow-float">
+            <li className="flex items-center justify-between gap-3">Move between drivers <span className="flex gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd></span></li>
+            <li className="flex items-center justify-between gap-3">Open driver details <Kbd>↵</Kbd></li>
+            {canEdit && <li className="flex items-center justify-between gap-3">Row colour <Kbd>c</Kbd></li>}
+            {canEdit && <li className="flex items-center justify-between gap-3">Notes <Kbd>n</Kbd></li>}
+            <li className="flex items-center justify-between gap-3">Status history <Kbd>h</Kbd></li>
+            <li className="flex items-center justify-between gap-3">Copy a column (click its header) <span className="flex gap-1"><Kbd>Ctrl</Kbd><Kbd>C</Kbd></span></li>
+          </ul>
+        </details>
         <div className="ml-auto flex items-center gap-3 text-[11px] text-fg-subtle">
           {selectedCol && (
             <button type="button" onClick={() => void copyColumn(selectedCol)} className="inline-flex items-center gap-1 rounded-md border border-accent/40 bg-accent-soft px-2 py-1 text-[11px] font-medium text-accent-text hover:border-accent">
@@ -300,7 +310,7 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
         className="relative max-h-[calc(100vh-268px)] min-h-[240px] overflow-auto rounded-lg border border-line bg-surface outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
         <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
           <thead className="sticky top-0 z-20">
-            <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+            <tr className="text-left text-[12px] font-medium text-fg-muted">
               {COLUMNS.map((c, i) => {
                 const sticky = i === 0 ? { left: 0, width: STICKY_LOAD } : i === 1 ? { left: STICKY_LOAD, width: STICKY_DRIVER } : null;
                 const active = selectedCol === c.key;
@@ -308,7 +318,7 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
                   <th key={c.key} scope="col" style={sticky ? { left: sticky.left, width: sticky.width, minWidth: sticky.width, maxWidth: sticky.width } : undefined}
                     className={cn("h-8 whitespace-nowrap border-b border-line bg-sunken px-3 font-medium", sticky && "sticky z-30", i === 1 && "border-r border-line")}>
                     <button type="button" onClick={() => setSelectedCol(active ? null : c.key)} aria-pressed={active} title={active ? "Click to deselect" : "Select column (Ctrl+C copies it)"}
-                      className={cn("-mx-1.5 inline-flex h-6 items-center gap-1 rounded px-1.5 uppercase tracking-wide transition-colors hover:text-fg", active && "bg-accent-soft text-accent-text")}>
+                      className={cn("-mx-1.5 inline-flex h-6 items-center gap-1 rounded px-1.5 transition-colors hover:text-fg", active && "bg-accent-soft text-accent-text")}>
                       {c.label}<span className="sr-only">, select column for copying</span>{active && <Copy className="h-3 w-3" />}
                     </button>
                   </th>
@@ -459,10 +469,10 @@ function Row({ r, date, now, liveClock, canEdit, focused, selectedCol, draft, no
           {r.statusManual && (
             canEdit && r.statusMode === "live"
               ? <button type="button" onClick={onRestore} title="Set by a dispatcher — click to restore the automatic status"
-                  className="inline-flex items-center gap-1 rounded-sm border border-transparent bg-accent-soft px-1 text-[10px] font-semibold uppercase leading-4 tracking-wide text-accent-text hover:border-accent/50">
-                  manual <Undo2 className="h-2.5 w-2.5" />
+                  className="inline-flex items-center gap-1 rounded border border-transparent bg-accent-soft px-1.5 text-[11px] font-medium leading-4 text-accent-text hover:border-accent/50">
+                  Manual <Undo2 className="h-2.5 w-2.5" />
                 </button>
-              : <Chip tone="accent" title="Set by a dispatcher">manual</Chip>
+              : <Chip tone="accent" title="Set by a dispatcher">Manual</Chip>
           )}
         </div>
       </td>
@@ -531,7 +541,7 @@ function EtaCell({ l, date }: { l: BoardRow["load"]; date: string }) {
     return (
       <div className="flex items-center gap-1.5">
         <span className="text-fg">{l.progress >= 1 ? "Arriving" : <>ETA <span className="num">{hhmm(l.eta)}</span>{!sameDay && <span className="text-fg-subtle"> {fmtDayMonth(l.eta)}</span>}</>}</span>
-        {l.late && <Chip tone="danger" title={`Delivery window ${fmtDateTime(l.deliveryAt)}`}>late {hoursBetween(l.eta, l.deliveryAt)}h</Chip>}
+        {l.late && <Chip tone="danger" title={`Delivery window ${fmtDateTime(l.deliveryAt)}`}>Late {hoursBetween(l.eta, l.deliveryAt)} h</Chip>}
       </div>
     );
   }
@@ -541,7 +551,7 @@ function EtaCell({ l, date }: { l: BoardRow["load"]; date: string }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-fg">Pickup <span className="num">{fmtDateTime(l.pickupAt)}</span></span>
-      {l.latePickup && <Chip tone="warn" title="Pickup window has passed and the load hasn't departed">late pickup</Chip>}
+      {l.latePickup && <Chip tone="warn" title="Pickup window has passed and the load hasn't departed">Late pickup</Chip>}
     </div>
   );
 }
@@ -651,7 +661,7 @@ function DriverDrawer({ row, now, onClose }: { row: BoardRow; now: number; onClo
       <div className="space-y-4 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge value={row.status} label={BOARD_STATUS_LABELS[row.status as BoardStatus] ?? row.status} dot />
-          {row.statusManual && <Chip tone="accent">manual</Chip>}
+          {row.statusManual && <Chip tone="accent">Manual</Chip>}
           {row.driver.hold && <Chip tone="warn" title={row.driver.holdReason ?? undefined}>Hold</Chip>}
           <span className="num text-[12px] text-fg-muted">{now ? `for ${duration(row.statusSince, now)}` : ""} · since {fmtDateTime(row.statusSince)}</span>
         </div>
@@ -704,7 +714,7 @@ function DriverDrawer({ row, now, onClose }: { row: BoardRow; now: number; onClo
                   <span className={cn("absolute -left-[4.5px] top-1.5 h-2 w-2 rounded-full ring-2 ring-overlay", TONE_DOT[STATUS_TONE[e.status] ?? "neutral"])} />
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge value={e.status} label={BOARD_STATUS_LABELS[e.status as BoardStatus] ?? e.status} />
-                    <Chip tone={e.source === "MANUAL" ? "accent" : "neutral"}>{e.source === "MANUAL" ? "manual" : "auto"}</Chip>
+                    <Chip tone={e.source === "MANUAL" ? "accent" : "neutral"}>{e.source === "MANUAL" ? "Manual" : "Auto"}</Chip>
                     <span className="num text-[11px] text-fg-subtle">{fmtDateTime(e.at)}</span>
                   </div>
                   {(e.user || e.note) && <p className="mt-0.5 text-[12px] text-fg-muted">{e.user && <span className="text-fg">{e.user}</span>}{e.user && e.note && " — "}{e.note}</p>}

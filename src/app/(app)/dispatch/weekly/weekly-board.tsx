@@ -44,7 +44,7 @@ export function WeeklyBoard({ groups, days, today, grand, goalTotal }: {
     <div className="relative max-h-[calc(100vh-300px)] min-h-[300px] overflow-auto rounded-lg border border-line bg-surface">
       <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
         <thead className="sticky top-0 z-20">
-          <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+          <tr className="text-left text-[12px] font-medium text-fg-muted">
             <th scope="col" className="sticky left-0 z-30 h-9 border-b border-line bg-sunken px-3 font-medium" style={{ width: DRIVER_W, minWidth: DRIVER_W }}>Driver</th>
             <th scope="col" className="sticky z-30 h-9 border-b border-r border-line bg-sunken px-2 font-medium" style={{ left: DRIVER_W, width: METRIC_W, minWidth: METRIC_W }}>Metric</th>
             {days.map((d) => (

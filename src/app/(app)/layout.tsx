@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     can(user.role, "loads.view") ? db.load.count({ where: { status: "PLANNED", pickupAt: { lte: daysAgo(-1) } } }) : Promise.resolve(0),
     can(user.role, "chat.view") ? db.announcement.count({ where: { pinned: true, OR: [{ expiresAt: null }, { expiresAt: { gt: daysAgo(0) } }] } }) : Promise.resolve(0),
   ]);
-  // The bell only lists alerts this role can act on (same rule as the dashboard's "Needs you").
+  // The bell only lists alerts this role can act on (same rule as the dashboard's "Needs attention").
   const alerts = allAlerts.filter((a) => canOpen(user.role, a.href));
   const badges: Record<string, number> = {};
   if (openClaims) badges["/claims"] = openClaims;

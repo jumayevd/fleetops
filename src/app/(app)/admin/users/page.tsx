@@ -144,7 +144,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
             <div className="overflow-auto">
               <table className="w-full min-w-max text-[12px]">
                 <thead>
-                  <tr className="bg-sunken text-left text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+                  <tr className="bg-surface text-left text-[12px] font-medium text-fg-muted">
                     <th className="border-b border-line px-4 py-2 font-medium">Permission</th>
                     {ROLES.map((r) => <th key={r} className="border-b border-line px-2 py-2 text-center font-medium">{ROLE_LABELS[r]}</th>)}
                   </tr>

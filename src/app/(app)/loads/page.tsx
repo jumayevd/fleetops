@@ -6,7 +6,7 @@ import { ArrowRight, ChevronLeft, ChevronRight, Download, LayoutGrid, List, Plus
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { BILLING_STAGE_LABELS, LOAD_STATUSES, LOAD_STATUS_LABELS, type BillingStage, type LoadStatus } from "@/lib/constants";
+import { BILLING_STAGE_LABELS, LOAD_STATUSES, LOAD_STATUS_LABELS, humanize, type BillingStage, type LoadStatus } from "@/lib/constants";
 import { money, dateTime, number } from "@/lib/format";
 import { estimatedArrival } from "@/lib/telemetry";
 import { Badge, Card, Cell, Chip, FilterPills, LinkButton, PageHeader, STATUS_TONE, Segmented, Stat, Table, buttonClass, cn } from "@/components/ui";
@@ -145,7 +145,7 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
                   <td>
                     <div className="flex items-center gap-1.5">
                       <Link href={`/loads/${l.id}`} className="num font-medium text-fg hover:underline">{l.reference}</Link>
-                      {l.priority !== "NORMAL" && <Chip tone={PRIORITY_TONE[l.priority]}>{l.priority}</Chip>}
+                      {l.priority !== "NORMAL" && <Chip tone={PRIORITY_TONE[l.priority]}>{humanize(l.priority)}</Chip>}
                       {l.hazmat && <Chip tone="danger">Hazmat</Chip>}
                     </div>
                     {l.customerRef && <div className="num text-[11px] text-fg-subtle">ref {l.customerRef}</div>}

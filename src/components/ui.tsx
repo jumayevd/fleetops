@@ -130,11 +130,11 @@ export function Badge({ value, label, tone, className, dot }: {
   );
 }
 
-/** Quiet flag chip: HOLD, NO RC, HAZMAT… */
+/** Quiet flag chip in sentence case: Hold, No RC, Hazmat… */
 export function Chip({ children, tone = "neutral", className, title }: { children: ReactNode; tone?: Tone; className?: string; title?: string }) {
   return (
-    <span title={title} className={clsx("inline-flex items-center rounded-sm border px-1 text-[10px] font-semibold uppercase leading-4 tracking-wide",
-      tone === "neutral" ? "border-line text-fg-subtle" : clsx(TONE_SOFT[tone], "border-transparent"), className)}>
+    <span title={title} className={clsx("inline-flex items-center whitespace-nowrap rounded border px-1.5 text-[11px] font-medium leading-4",
+      tone === "neutral" ? "border-line text-fg-muted" : clsx(TONE_SOFT[tone], "border-transparent"), className)}>
       {children}
     </span>
   );
@@ -266,7 +266,7 @@ export function Table({ head, children, empty, emptyTitle, emptyDescription, den
     <div className={clsx("overflow-auto", className)}>
       <table className="w-full min-w-max text-[13px]">
         <thead className={clsx(stickyHead && "sticky top-0 z-10")}>
-          <tr className="bg-sunken text-left text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+          <tr className="bg-surface text-left text-[12px] text-fg-muted">
             {head.map((h, i) => <th key={i} className={clsx("whitespace-nowrap border-b border-line px-3 font-medium", dense ? "py-1.5" : "py-2")}>{h}</th>)}
           </tr>
         </thead>
@@ -293,7 +293,7 @@ export function DL({ items, cols = 2 }: { items: [string, ReactNode][]; cols?: 1
     <dl className={clsx("grid gap-x-5 gap-y-3", cols === 1 ? "grid-cols-1" : cols === 3 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2")}>
       {items.map(([k, v]) => (
         <div key={k} className="min-w-0">
-          <dt className="text-[11px] text-fg-subtle">{k}</dt>
+          <dt className="text-[12px] text-fg-muted">{k}</dt>
           <dd className="mt-0.5 truncate text-[13px] font-medium text-fg">{v ?? "—"}</dd>
         </div>
       ))}

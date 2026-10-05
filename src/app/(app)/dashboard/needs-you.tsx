@@ -1,79 +1,68 @@
 import Link from "next/link";
+import type { Alert } from "@/lib/alerts";
 import { StatusDot, cn } from "@/components/ui";
-import { plural, type AlertGroup } from "./lib";
-import { MoreLink } from "./panels";
+import type { AlertGroup } from "./lib";
 
-const SHOW = 3;
-const HIDDEN_TITLE = "The alerts bell counts every open exception. Only the ones your role can open are listed here.";
+const SHOW = 6;
 
 /**
- * Insight strip: one card per alert kind, worst first. Quiet single card when nothing needs a decision.
- * `hidden` is how many open exceptions were filtered out for this role, so the count here can be
- * reconciled with the shell's alerts bell, which is not role-filtered.
+ * What needs a decision, in one short list: critical first, a filter chip per kind, and the full list one click
+ * away (/dashboard/alerts). A single calm line when nothing is open. Alerts are already filtered to this role.
  */
-export function NeedsYou({ groups, hidden = 0 }: { groups: AlertGroup[]; hidden?: number }) {
-  if (groups.length === 0) {
-    return (
-      <section className="flex items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3">
-        <StatusDot tone="ok" />
-        <div className="min-w-0">
-          <p className="text-[13px] font-medium text-fg">{hidden ? "Nothing for you right now" : "All clear"}</p>
-          <p className="text-[12px] text-fg-muted">
-            {hidden
-              ? `Nothing you can act on needs a decision. ${plural(hidden, "open exception")} ${hidden === 1 ? "belongs" : "belong"} to other roles and ${hidden === 1 ? "is" : "are"} counted in the alerts bell.`
-              : "Nothing needs a decision right now. Compliance, dispatch, fleet, money and safety exceptions appear here as they happen."}
-          </p>
-        </div>
-      </section>
-    );
-  }
-  const total = groups.reduce((a, g) => a + g.items.length, 0);
-  const critical = groups.reduce((a, g) => a + g.critical, 0);
+export function NeedsAttention({ alerts, groups, className }: { alerts: Alert[]; groups: AlertGroup[]; className?: string }) {
+  const critical = alerts.filter((a) => a.level === "critical").length;
+  const more = alerts.length - SHOW;
   return (
-    <section aria-label="Needs you">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="eyebrow">
-          Needs you <span className="num">· {total} open{critical ? ` · ${critical} critical` : ""}</span>
-          {hidden > 0 && <span className="num" title={HIDDEN_TITLE}> · {hidden} hidden for your role</span>}
-        </p>
-        <MoreLink href="/dashboard/alerts">All exceptions</MoreLink>
-      </div>
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
-        {groups.slice(0, 5).map((g) => <GroupCard key={g.kind} group={g} />)}
-      </div>
-    </section>
-  );
-}
-
-function GroupCard({ group: g }: { group: AlertGroup }) {
-  const all = `/dashboard/alerts?kind=${g.kind}`;
-  const more = g.items.length - SHOW;
-  return (
-    <section className="flex min-w-0 flex-col rounded-lg border border-line bg-surface">
-      <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
-        <Link href={all} className="flex min-w-0 items-center gap-2 text-[12px] font-medium text-fg hover:text-accent-text">
-          <StatusDot tone={g.tone} />
-          <span className="truncate">{g.label}</span>
-        </Link>
-        <span className="flex items-baseline gap-1.5 whitespace-nowrap">
-          {g.critical > 0 && <span className="num text-[11px] text-danger">{g.critical} critical</span>}
-          <span className={cn("num text-[15px] font-semibold leading-none", g.critical ? "text-danger" : "text-warn")}>{g.items.length}</span>
-        </span>
+    <section aria-labelledby="needs-attention" className={cn("flex min-w-0 flex-col rounded-lg border border-line bg-surface", className)}>
+      <header className="flex min-h-10 items-center justify-between gap-2 border-b border-line px-4 py-2">
+        <h2 id="needs-attention" className="flex items-center gap-2 text-[13px] font-semibold text-fg">
+          Needs attention
+          {alerts.length > 0 && (
+            <span className="num text-[12px] font-normal text-fg-subtle">
+              {alerts.length}{critical > 0 && <span className="text-danger"> · {critical} critical</span>}
+            </span>
+          )}
+        </h2>
+        {alerts.length > 0 && <Link href="/dashboard/alerts" className="text-[12px] font-medium text-fg-muted hover:text-fg">View all →</Link>}
       </header>
-      <ul className="flex-1 divide-y divide-line">
-        {g.items.slice(0, SHOW).map((a, i) => (
-          <li key={`${a.href}-${i}`}>
-            <Link href={a.href} className="block px-3 py-1.5 transition-colors hover:bg-raised">
-              <span className="block truncate text-[12px] text-fg">{a.title}</span>
-              <span className="block truncate text-[11px] text-fg-subtle">{a.detail}</span>
+
+      {alerts.length === 0 ? (
+        <div className="flex flex-1 items-center gap-3 px-4 py-8">
+          <StatusDot tone="ok" />
+          <div>
+            <p className="text-[13px] font-medium text-fg">All clear</p>
+            <p className="text-[12px] text-fg-muted">Nothing needs a decision right now.</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <nav aria-label="Filter by kind" className="flex flex-wrap gap-1.5 px-4 pb-1 pt-3">
+            {groups.map((g) => (
+              <Link key={g.kind} href={`/dashboard/alerts?kind=${g.kind}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-0.5 text-[12px] text-fg-muted transition-colors hover:border-line-strong hover:text-fg">
+                {g.label}<span className="num text-fg-subtle">{g.items.length}</span>
+              </Link>
+            ))}
+          </nav>
+          <ul className="flex-1 py-1">
+            {alerts.slice(0, SHOW).map((a, i) => (
+              <li key={`${a.href}-${i}`}>
+                <Link href={a.href} className="flex items-start gap-3 px-4 py-2 transition-colors hover:bg-raised">
+                  <StatusDot tone={a.level === "critical" ? "danger" : "warn"} className="mt-[5px]" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] text-fg">{a.title}</span>
+                    <span className="block truncate text-[12px] text-fg-subtle">{a.detail}</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {more > 0 && (
+            <Link href="/dashboard/alerts" className="border-t border-line px-4 py-2 text-[12px] text-fg-muted transition-colors hover:bg-raised hover:text-fg">
+              <span className="num">{more}</span> more
             </Link>
-          </li>
-        ))}
-      </ul>
-      {more > 0 && (
-        <Link href={all} className="border-t border-line px-3 py-1.5 text-[11px] text-fg-muted transition-colors hover:bg-raised hover:text-fg">
-          +{more} more
-        </Link>
+          )}
+        </>
       )}
     </section>
   );

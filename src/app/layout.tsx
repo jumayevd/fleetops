@@ -12,12 +12,8 @@ export const metadata: Metadata = {
   description: "Dispatch, fleet, tracking and finance in one control tower.",
 };
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f4f5f7" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b0d10" },
-  ],
-};
+// Day is the default theme whatever the device prefers, so the browser chrome matches the Day canvas.
+export const viewport: Viewport = { themeColor: "#f4f5f7" };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const pref = parseThemePref((await cookies()).get(THEME_COOKIE)?.value);

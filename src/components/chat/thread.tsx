@@ -302,7 +302,7 @@ export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = fals
                       {firstUnreadId && g.items.some((i) => i.id === firstUnreadId) && (
                         <div className="my-1 flex items-center gap-2 px-4" role="separator" aria-label="New messages">
                           <span className="flex-1 border-t border-accent" />
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-text">New</span>
+                          <span className="text-[11px] font-medium text-accent-text">New</span>
                         </div>
                       )}
                       <Group g={g} own={g.userId != null && g.userId === me?.id} loadLinks={loadLinks} compact={compact} onRetry={retry} onDiscard={discard} />
