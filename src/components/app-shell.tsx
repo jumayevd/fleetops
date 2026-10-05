@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Suspense, use, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   LayoutDashboard, Rows3, Package, Map, CalendarRange, Navigation, Truck, Container, Wrench, ClipboardList, Users, Building2,
   Receipt, BarChart3, ShieldAlert, MessageSquare, Megaphone, Landmark, ShieldCheck, Send, ScrollText,
@@ -11,7 +11,8 @@ import {
 import { cn, Avatar, Kbd, StatusDot } from "./ui";
 import { ThemeToggle } from "./theme-toggle";
 import { CommandPalette } from "./command-palette";
-import { NAV, SEGMENT_LABELS, allNavItems, findNavItem } from "@/lib/nav";
+import { NavProgress } from "./nav-progress";
+import { NAV, NAV_COOKIE, SEGMENT_LABELS, allNavItems, findNavItem } from "@/lib/nav";
 import { can } from "@/lib/permissions";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { logout } from "@/app/actions/auth";
@@ -22,27 +23,28 @@ const ICONS: Record<string, LucideIcon> = {
   Receipt, BarChart3, ShieldAlert, MessageSquare, Megaphone, Landmark, ShieldCheck, Send, ScrollText,
 };
 
-// Sidebar pin preference lives in localStorage; exposed as an external store (no setState-in-effect).
-const PIN_KEY = "fleetops.nav.pinned";
-const pinListeners = new Set<() => void>();
-const readPinned = () => { try { return localStorage.getItem(PIN_KEY) === "1"; } catch { return false; } };
-const writePinned = (v: boolean) => { try { localStorage.setItem(PIN_KEY, v ? "1" : "0"); } catch { /* storage unavailable */ } pinListeners.forEach((l) => l()); };
-const subscribePinned = (cb: () => void) => { pinListeners.add(cb); return () => { pinListeners.delete(cb); }; };
-
 type ShellUser = { name: string; email: string; role: string };
 
-export function AppShell({ user, alerts, badges = {}, children }: {
+/** Alerts for the bell and counts for the nav. Streamed: the shell renders first, these fill in when ready. */
+export type ShellData = { alerts: Alert[]; badges: Record<string, number> };
+
+export function AppShell({ user, data, navOpen, children }: {
   user: ShellUser;
-  alerts: Alert[];
-  /** href → count shown as a quiet chip in the nav (e.g. open alerts, unread chat). */
-  badges?: Record<string, number>;
+  data: Promise<ShellData>;
+  /** Sidebar state from the cookie, so the first paint already has the right width. */
+  navOpen: boolean;
   children: ReactNode;
 }) {
   const path = usePathname();
   const router = useRouter();
-  const pinned = useSyncExternalStore(subscribePinned, readPinned, () => false);
+  const [pinned, setPinned] = useState(navOpen);
   const [cmd, setCmd] = useState(false);
   const chord = useRef<string | null>(null);
+  const togglePinned = () => {
+    const next = !pinned;
+    setPinned(next);
+    document.cookie = `${NAV_COOKIE}=${next ? "open" : "rail"}; path=/; max-age=31536000; samesite=lax`;
+  };
 
   // Global keys: ⌘K / Ctrl+K or "/" opens search; "g" then a letter jumps (g l → loads).
   useEffect(() => {
@@ -67,58 +69,60 @@ export function AppShell({ user, alerts, badges = {}, children }: {
 
   return (
     <div className="min-h-screen">
-      {/* Desktop rail: 56px, expands to 240px on hover or when pinned */}
-      <aside className={cn("group/rail fixed inset-y-0 left-0 z-40 hidden border-r border-line bg-surface transition-[width] duration-150 ease-out lg:block print:hidden",
-        pinned ? "w-60" : "w-14 hover:w-60")}>
-        <div className={cn(pinned ? "block" : "hidden group-hover/rail:block", "h-full")}><SideNav user={user} path={path} badges={badges} expanded pinned={pinned} /></div>
-        {!pinned && <div className="h-full group-hover/rail:hidden"><SideNav user={user} path={path} badges={badges} expanded={false} pinned={pinned} /></div>}
+      <Suspense fallback={null}><NavProgress /></Suspense>
+      {/* Desktop sidebar: labelled by default; collapses to a 56px rail that expands on hover. */}
+      <aside className={cn("group/rail fixed inset-y-0 left-0 z-40 hidden border-r border-line bg-surface transition-[width,box-shadow] duration-200 ease-out lg:block print:hidden",
+        pinned ? "w-60" : "w-14 hover:w-60 hover:shadow-float")}>
+        <div className={cn(pinned ? "block" : "hidden group-hover/rail:block", "h-full")}>
+          <SideNav user={user} path={path} data={data} expanded pinned={pinned} onTogglePin={togglePinned} />
+        </div>
+        {!pinned && (
+          <div className="h-full group-hover/rail:hidden">
+            <SideNav user={user} path={path} data={data} expanded={false} pinned={pinned} onTogglePin={togglePinned} />
+          </div>
+        )}
       </aside>
 
-      <div className={cn("transition-[padding] duration-150", pinned ? "lg:pl-60" : "lg:pl-14", "print:pl-0")}>
+      <div className={cn("transition-[padding] duration-200 ease-out", pinned ? "lg:pl-60" : "lg:pl-14", "print:pl-0")}>
         {/* Keyed by path so popovers and the mobile drawer close on navigation without effects. */}
-        <TopBar key={path} user={user} path={path} alerts={alerts} badges={badges} pinned={pinned} openSearch={() => setCmd(true)} />
-        <main className="p-4 lg:p-5">{children}</main>
+        <TopBar key={path} user={user} path={path} data={data} pinned={pinned} openSearch={() => setCmd(true)} />
+        <main className="mx-auto w-full max-w-[1680px] p-4 lg:px-6 lg:py-5">{children}</main>
       </div>
       {cmd && <CommandPalette onClose={() => setCmd(false)} role={user.role} />}
     </div>
   );
 }
 
-function SideNav({ user, path, badges, expanded, pinned, onNavigate }: {
-  user: ShellUser; path: string; badges: Record<string, number>; expanded: boolean; pinned: boolean; onNavigate?: () => void;
+function SideNav({ user, path, data, expanded, pinned, onTogglePin, onNavigate }: {
+  user: ShellUser; path: string; data: Promise<ShellData>; expanded: boolean; pinned: boolean; onTogglePin: () => void; onNavigate?: () => void;
 }) {
+  const activeHref = findNavItem(path)?.href;
   return (
-    <nav className="flex h-full flex-col">
-      <div className={cn("flex h-11 items-center border-b border-line", expanded ? "px-3" : "justify-center")}>
-        <Link href="/" className="flex items-center gap-2 text-fg" aria-label="FleetOps home">
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-on-accent"><Truck className="h-3.5 w-3.5" /></span>
-          {expanded && <span className="text-[13px] font-semibold tracking-tight">FleetOps</span>}
+    <nav className="flex h-full flex-col" aria-label="Main">
+      <div className={cn("flex h-12 shrink-0 items-center", expanded ? "px-4" : "justify-center")}>
+        <Link href="/" className="flex items-center gap-2.5 text-fg" aria-label="FleetOps home">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-mark text-on-mark shadow-card"><Truck className="h-4 w-4" /></span>
+          {expanded && <span className="text-[15px] font-semibold tracking-tight">FleetOps</span>}
         </Link>
       </div>
-      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-2">
         {NAV.map((g) => {
           const items = g.items.filter((i) => can(user.role, i.perm));
           if (!items.length) return null;
           return (
-            <div key={g.section} className="mb-2">
-              {expanded ? <p className="eyebrow px-4 pb-1 pt-2">{g.section}</p> : <div className="mx-4 my-2 border-t border-line" />}
+            <div key={g.section} className="mt-2">
+              {expanded ? <p className="px-5 pb-1 pt-2 text-[11px] font-medium text-fg-subtle">{g.section}</p> : <div className="mx-4 my-2 border-t border-line" />}
               {items.map((i) => {
                 const Icon = ICONS[i.icon] ?? Package;
-                const active = findNavItem(path)?.href === i.href;
-                const n = badges[i.href];
+                const active = activeHref === i.href;
                 return (
-                  <Link key={i.href} href={i.href} title={expanded ? undefined : i.label} onClick={onNavigate}
-                    className={cn("group relative mx-2 flex h-8 items-center gap-2.5 rounded-md text-[13px] transition-colors",
-                      expanded ? "px-2" : "justify-center",
-                      active ? "bg-raised font-medium text-fg" : "text-fg-muted hover:bg-raised hover:text-fg")}>
-                    {active && <span className="absolute -left-2 top-1.5 h-5 w-0.5 rounded-r bg-accent" />}
-                    <Icon className={cn("h-4 w-4 shrink-0", active ? "text-accent-text" : "text-fg-subtle group-hover:text-fg-muted")} />
+                  <Link key={i.href} href={i.href} title={expanded ? undefined : i.label} onClick={onNavigate} aria-current={active ? "page" : undefined}
+                    className={cn("group relative mx-2 flex h-8 items-center gap-2.5 rounded-md text-[13px] transition-[color,background-color] duration-150",
+                      expanded ? "px-2.5" : "justify-center",
+                      active ? "bg-accent-soft font-medium text-accent-text" : "text-fg-muted hover:bg-raised hover:text-fg")}>
+                    <Icon className={cn("h-4 w-4 shrink-0 transition-colors", active ? "text-accent" : "text-fg-subtle group-hover:text-fg-muted")} />
                     {expanded && <span className="truncate">{i.label}</span>}
-                    {n ? (
-                      expanded
-                        ? <span className="num ml-auto rounded bg-neutral-soft px-1 text-[10px] text-fg-muted">{n}</span>
-                        : <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />
-                    ) : null}
+                    <Suspense fallback={null}><NavBadge data={data} href={i.href} expanded={expanded} /></Suspense>
                   </Link>
                 );
               })}
@@ -127,7 +131,8 @@ function SideNav({ user, path, badges, expanded, pinned, onNavigate }: {
         })}
       </div>
       <div className="border-t border-line p-2">
-        <button onClick={() => writePinned(!pinned)} className={cn("hidden h-8 w-full items-center gap-2.5 rounded-md text-[12px] text-fg-subtle hover:bg-raised hover:text-fg lg:flex", expanded ? "px-2" : "justify-center")} title={pinned ? "Collapse sidebar" : "Keep sidebar open"}>
+        <button type="button" onClick={onTogglePin} title={pinned ? "Collapse sidebar" : "Keep sidebar open"}
+          className={cn("hidden h-8 w-full items-center gap-2.5 rounded-md text-[12px] text-fg-subtle transition-colors hover:bg-raised hover:text-fg lg:flex", expanded ? "px-2.5" : "justify-center")}>
           {pinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           {expanded && <span>{pinned ? "Collapse" : "Keep open"}</span>}
         </button>
@@ -136,27 +141,35 @@ function SideNav({ user, path, badges, expanded, pinned, onNavigate }: {
   );
 }
 
-function TopBar({ user, path, alerts, badges, pinned, openSearch }: {
-  user: ShellUser; path: string; alerts: Alert[]; badges: Record<string, number>; pinned: boolean; openSearch: () => void;
+/** Count chip on a nav item (open claims, unassigned loads, pinned announcements). */
+function NavBadge({ data, href, expanded }: { data: Promise<ShellData>; href: string; expanded: boolean }) {
+  const n = use(data).badges[href];
+  if (!n) return null;
+  return expanded
+    ? <span className="num fade-in ml-auto rounded-full bg-neutral-soft px-1.5 text-[11px] font-medium text-fg-muted group-aria-[current=page]:bg-surface">{n}</span>
+    : <span className="fade-in absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />;
+}
+
+function TopBar({ user, path, data, pinned, openSearch }: {
+  user: ShellUser; path: string; data: Promise<ShellData>; pinned: boolean; openSearch: () => void;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [bell, setBell] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
-  const critical = alerts.filter((a) => a.level === "critical").length;
   const crumbs = breadcrumbs(path);
 
   return (
     <>
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-scrim" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 border-r border-line bg-surface">
-            <SideNav user={user} path={path} badges={badges} expanded pinned={pinned} onNavigate={() => setMobileOpen(false)} />
+          <div className="fade-in absolute inset-0 bg-scrim" onClick={() => setMobileOpen(false)} />
+          <aside className="drawer-in absolute inset-y-0 left-0 w-64 border-r border-line bg-surface shadow-float">
+            <SideNav user={user} path={path} data={data} expanded pinned={pinned} onTogglePin={() => {}} onNavigate={() => setMobileOpen(false)} />
           </aside>
         </div>
       )}
-      <header className="sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-line bg-canvas/80 px-3 backdrop-blur print:hidden lg:px-5">
-        <button className="rounded-md p-1.5 text-fg-muted hover:bg-raised lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
+      <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-line bg-canvas/85 px-3 backdrop-blur-md print:hidden lg:px-6">
+        <button className="rounded-md p-1.5 text-fg-muted transition-colors hover:bg-raised lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
           {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
         </button>
         <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px]">
@@ -165,64 +178,85 @@ function TopBar({ user, path, alerts, badges, pinned, openSearch }: {
               {i > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-fg-faint" />}
               {i === crumbs.length - 1
                 ? <span className="truncate font-medium text-fg">{c.label}</span>
-                : <Link href={c.href} className="truncate text-fg-muted hover:text-fg">{c.label}</Link>}
+                : <Link href={c.href} className="truncate text-fg-muted transition-colors hover:text-fg">{c.label}</Link>}
             </span>
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={openSearch} className="hidden h-7 items-center gap-2 rounded-md border border-line bg-surface px-2 text-[12px] text-fg-subtle hover:border-line-strong hover:text-fg sm:flex" aria-label="Search">
-            <Search className="h-3.5 w-3.5" /><span className="pr-6">Search</span><Kbd>⌘K</Kbd>
+          <button onClick={openSearch} className="hidden h-8 w-56 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-[13px] text-fg-subtle shadow-card transition-colors hover:border-line-strong hover:text-fg-muted sm:flex" aria-label="Search">
+            <Search className="h-3.5 w-3.5" /><span className="flex-1 text-left">Search…</span><Kbd>⌘K</Kbd>
           </button>
-          <button onClick={openSearch} className="rounded-md p-1.5 text-fg-muted hover:bg-raised sm:hidden" aria-label="Search"><Search className="h-4 w-4" /></button>
+          <button onClick={openSearch} className="rounded-md p-1.5 text-fg-muted transition-colors hover:bg-raised sm:hidden" aria-label="Search"><Search className="h-4 w-4" /></button>
           <ThemeToggle />
           <div className="relative">
-            <button onClick={() => { setBell((b) => !b); setUserMenu(false); }} className="relative rounded-md p-1.5 text-fg-muted hover:bg-raised hover:text-fg" aria-label={`Alerts (${alerts.length})`}>
-              <Bell className="h-4 w-4" />
-              {alerts.length > 0 && <span className={cn("absolute right-1 top-1 h-2 w-2 rounded-full ring-2 ring-canvas", critical ? "bg-danger" : "bg-warn")} />}
-            </button>
-            {bell && (
-              <Popover onClose={() => setBell(false)} className="w-80">
-                <div className="flex items-center justify-between px-3 py-2">
-                  <p className="text-[12px] font-semibold text-fg">Needs attention</p>
-                  <span className="num text-[11px] text-fg-subtle">{critical} critical · {alerts.length - critical} warnings</span>
-                </div>
-                <ul className="max-h-[60vh] overflow-y-auto border-t border-line">
-                  {alerts.length === 0 && <li className="px-3 py-6 text-center text-[12px] text-fg-subtle">All clear</li>}
-                  {alerts.map((a, i) => (
-                    <li key={i}>
-                      <Link href={a.href} className="flex gap-2.5 px-3 py-2 hover:bg-raised">
-                        <StatusDot tone={a.level === "critical" ? "danger" : "warn"} className="mt-1.5" />
-                        <span className="min-w-0">
-                          <span className="block truncate text-[13px] text-fg">{a.title}</span>
-                          <span className="block truncate text-[11px] text-fg-subtle">{a.detail}</span>
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </Popover>
-            )}
+            <Suspense fallback={<BellButton count={0} critical={0} onClick={() => {}} />}>
+              <BellMenu data={data} open={bell} onToggle={() => { setBell((b) => !b); setUserMenu(false); }} onClose={() => setBell(false)} />
+            </Suspense>
           </div>
           <div className="relative">
-            <button onClick={() => { setUserMenu((u) => !u); setBell(false); }} className="flex items-center gap-2 rounded-md p-1 pr-2 hover:bg-raised" aria-label="Account menu">
-              <Avatar name={user.name} size={24} />
-              <span className="hidden text-[12px] text-fg-muted md:block">{user.name.split(" ")[0]}</span>
+            <button onClick={() => { setUserMenu((u) => !u); setBell(false); }} className="flex items-center gap-2 rounded-md p-1 pr-2 transition-colors hover:bg-raised" aria-label="Account menu">
+              <Avatar name={user.name} size={26} />
+              <span className="hidden text-[13px] font-medium text-fg-muted md:block">{user.name.split(" ")[0]}</span>
             </button>
             {userMenu && (
-              <Popover onClose={() => setUserMenu(false)} className="w-56">
-                <div className="px-3 py-2">
+              <Popover onClose={() => setUserMenu(false)} className="w-60">
+                <div className="px-3 py-2.5">
                   <p className="truncate text-[13px] font-medium text-fg">{user.name}</p>
-                  <p className="truncate text-[11px] text-fg-subtle">{ROLE_LABELS[user.role as Role]} · {user.email}</p>
+                  <p className="truncate text-[12px] text-fg-subtle">{ROLE_LABELS[user.role as Role]} · {user.email}</p>
                 </div>
                 <div className="border-t border-line p-1">
-                  <Link href="/account" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-fg-muted hover:bg-raised hover:text-fg"><UserCircle className="h-4 w-4" />My account</Link>
-                  <form action={logout}><button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-fg-muted hover:bg-raised hover:text-fg"><LogOut className="h-4 w-4" />Sign out</button></form>
+                  <Link href="/account" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-fg-muted transition-colors hover:bg-raised hover:text-fg"><UserCircle className="h-4 w-4" />My account</Link>
+                  <form action={logout}><button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-fg-muted transition-colors hover:bg-raised hover:text-fg"><LogOut className="h-4 w-4" />Sign out</button></form>
                 </div>
               </Popover>
             )}
           </div>
         </div>
       </header>
+    </>
+  );
+}
+
+function BellButton({ count, critical, onClick }: { count: number; critical: number; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="relative rounded-md p-1.5 text-fg-muted transition-colors hover:bg-raised hover:text-fg" aria-label={`Alerts (${count})`}>
+      <Bell className="h-4 w-4" />
+      {count > 0 && <span className={cn("fade-in absolute right-1 top-1 h-2 w-2 rounded-full ring-2 ring-canvas", critical ? "bg-danger" : "bg-warn")} />}
+    </button>
+  );
+}
+
+function BellMenu({ data, open, onToggle, onClose }: { data: Promise<ShellData>; open: boolean; onToggle: () => void; onClose: () => void }) {
+  const { alerts } = use(data);
+  const critical = alerts.filter((a) => a.level === "critical").length;
+  return (
+    <>
+      <BellButton count={alerts.length} critical={critical} onClick={onToggle} />
+      {open && (
+        <Popover onClose={onClose} className="w-80">
+          <div className="flex items-center justify-between px-3 py-2.5">
+            <p className="text-[13px] font-semibold text-fg">Needs attention</p>
+            <span className="num text-[12px] text-fg-subtle">{critical ? <span className="text-danger">{critical} critical · </span> : null}{alerts.length} open</span>
+          </div>
+          <ul className="max-h-[60vh] overflow-y-auto border-t border-line py-1">
+            {alerts.length === 0 && <li className="px-3 py-6 text-center text-[12px] text-fg-subtle">All clear</li>}
+            {alerts.map((a, i) => (
+              <li key={i}>
+                <Link href={a.href} className="flex gap-2.5 px-3 py-2 transition-colors hover:bg-raised">
+                  <StatusDot tone={a.level === "critical" ? "danger" : "warn"} className="mt-1.5" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] text-fg">{a.title}</span>
+                    <span className="block truncate text-[12px] text-fg-subtle">{a.detail}</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {alerts.length > 0 && (
+            <Link href="/dashboard/alerts" className="block border-t border-line px-3 py-2 text-[12px] font-medium text-fg-muted transition-colors hover:bg-raised hover:text-fg">View all →</Link>
+          )}
+        </Popover>
+      )}
     </>
   );
 }
@@ -235,7 +269,7 @@ function Popover({ children, onClose, className }: { children: ReactNode; onClos
     document.addEventListener("mousedown", onDown); document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
   }, [onClose]);
-  return <div ref={ref} className={cn("absolute right-0 top-full z-50 mt-1.5 overflow-hidden rounded-lg border border-line bg-overlay shadow-float", className)}>{children}</div>;
+  return <div ref={ref} className={cn("pop-in absolute right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-line bg-overlay shadow-float", className)}>{children}</div>;
 }
 
 function breadcrumbs(path: string): { href: string; label: string }[] {

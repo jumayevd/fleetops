@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { Banknote, Clock3, Gauge, PackageOpen, Plus, Route, UserCheck, Wrench } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { fleetSnapshot } from "@/lib/telemetry";
@@ -74,31 +74,31 @@ export default async function Dashboard() {
 
   const kpis: Kpi[] = [
     {
-      label: "In transit", value: ops.inTransit, href: to("/loads?status=IN_TRANSIT"),
+      label: "In transit", value: ops.inTransit, href: to("/loads?status=IN_TRANSIT"), icon: Route, tone: "progress",
       sub: runningLate ? <Flag tone="danger">{plural(runningLate, "load")} running late</Flag> : ops.inTransit ? "All on schedule" : "Nothing on the road",
     },
-    { label: "Awaiting pickup", value: ops.assigned, href: to("/loads?status=ASSIGNED"), sub: `${ops.pickupsSoon} in the next 24 h` },
+    { label: "Awaiting pickup", value: ops.assigned, href: to("/loads?status=ASSIGNED"), icon: Clock3, tone: "info", sub: `${ops.pickupsSoon} in the next 24 h` },
     {
-      label: "Needs a truck", value: ops.unassignedSoon, href: to(canEdit ? "/dispatch" : "/loads?status=PLANNED"),
+      label: "Needs a truck", value: ops.unassignedSoon, href: to(canEdit ? "/dispatch" : "/loads?status=PLANNED"), icon: PackageOpen, tone: ops.unassignedSoon ? "warn" : "neutral",
       sub: ops.unassignedSoon ? <Flag tone="warn">Pickup within 24 h</Flag> : `${plural(ops.planned, "booked load")} later`,
     },
     {
-      label: "Fleet utilization", value: `${Math.round(utilization * 100)}%`, href: to("/tracking"),
+      label: "Fleet utilization", value: `${Math.round(utilization * 100)}%`, href: to("/tracking"), icon: Gauge, tone: "accent",
       sub: `${busyTrucks} of ${activeTrucks.length} trucks on loads`,
     },
     {
-      label: "Drivers ready", value: ops.driversReady, href: to("/drivers"),
+      label: "Drivers ready", value: ops.driversReady, href: to("/drivers"), icon: UserCheck, tone: "ok",
       sub: ops.hold ? <><Flag tone="warn">{ops.hold} on hold</Flag> · {ops.driversWorking} working</> : `${ops.driversWorking} working`,
     },
     showMoney && rev
       ? {
-          label: "Revenue this month", value: money(rev.mtd), href: to("/finance"),
+          label: "Revenue this month", value: money(rev.mtd), href: to("/finance"), icon: Banknote, tone: "ok",
           sub: growth === null
             ? (rev.prior ? `${money(rev.prior)} by now last month` : "No deliveries yet")
             : <><Flag tone={trend(growth)}>{pct(growth)}</Flag> vs last month</>,
         }
       : {
-          label: "Trucks in shop", value: inShop, href: to("/maintenance"),
+          label: "Trucks in shop", value: inShop, href: to("/maintenance"), icon: Wrench, tone: inShop ? "warn" : "neutral",
           sub: inShop ? `${Math.round((inShop / Math.max(1, fleet.length)) * 100)}% of the fleet` : "Every truck available",
         },
   ];
@@ -192,7 +192,7 @@ export default async function Dashboard() {
           <p className="mb-2 text-[12px] text-fg-muted">{showMoney ? "Revenue and direct costs by month · the gap is gross margin" : "Loads delivered by month"}</p>
           {showMoney
             ? <RevenueChart data={months} height={220} />
-            : <SimpleBar data={months.map((m) => ({ month: m.month, loads: m.loads }))} dataKey="loads" nameKey="month" tone="info" height={220} format="number" />}
+            : <SimpleBar data={months.map((m) => ({ month: m.month, loads: m.loads }))} dataKey="loads" nameKey="month" tone="accent" height={220} format="number" />}
         </div>
         <MetricList items={metrics} className="self-start" />
       </Card>

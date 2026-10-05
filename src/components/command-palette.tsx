@@ -77,8 +77,8 @@ export function CommandPalette({ onClose, role }: { onClose: () => void; role: s
 
   let lastGroup = "";
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center bg-scrim p-4 pt-[12vh] backdrop-blur-[2px]" onMouseDown={onClose} role="dialog" aria-modal aria-label="Search">
-      <div className="w-full max-w-xl overflow-hidden rounded-lg border border-line bg-overlay shadow-float" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="fade-in fixed inset-0 z-[100] flex items-start justify-center bg-scrim p-4 pt-[12vh] backdrop-blur-[2px]" onMouseDown={onClose} role="dialog" aria-modal aria-label="Search">
+      <div className="pop-in w-full max-w-xl overflow-hidden rounded-lg border border-line bg-overlay shadow-float [transform-origin:top_center]" onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-line px-3">
           <Search className="h-4 w-4 shrink-0 text-fg-subtle" />
           <input autoFocus value={q} onChange={(e) => search(e.target.value)} placeholder="Search loads, drivers, trucks, customers… or jump to a page"

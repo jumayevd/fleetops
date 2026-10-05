@@ -1,23 +1,26 @@
 # FleetOps design system — "Graphite"
 
-A control-room aesthetic that works in daylight and at night. Monochrome graphite surfaces, one
-warm **signal** accent (amber), semantic status colours, tabular numerals. Compact, quiet,
-professional. Every page must look right in **both** themes.
+A control-room aesthetic that works in daylight and at night. Cool graphite neutrals, one confident
+**blue accent** for actions, selection, focus and live state, an amber brand mark, semantic status
+colours and tabular numerals. Compact, calm, modern. Every page must look right in **both** themes.
 
 ## Principles
 
-1. **Signal over decoration.** Colour means something: amber = live/selected/action, green = good,
-   orange = caution, red = problem, blue = informational, violet = in progress. Everything else
-   is graphite.
+1. **Signal over decoration.** Colour means something: blue = action/selected/live, green = good,
+   orange = caution, red = problem, cyan = informational, violet = in progress, amber = the brand
+   mark only. Everything else is graphite. Key numbers carry a small tinted icon tile (`TONE_SOFT`).
 2. **Compact.** 13 px tables, 36 px rows, 44 px top bar, 56 px icon rail. Dense but breathable:
    whitespace comes from alignment, not padding.
 3. **Numbers are first-class.** Metrics, IDs, money, distances use `font-mono tabular-nums`
    (class `num`). Labels, chips and table headers are sentence case, never ALL CAPS (small labels use `.eyebrow`).
-4. **One accent-filled button per view.** Primary actions are graphite-inverted (`primary`);
-   amber fill is reserved for the single most important call to action, live indicators and
-   selection.
-5. **Hairlines, not shadows.** 1 px `line` borders. Shadows only on floating layers (menus,
-   drawers, dialogs).
+4. **One filled button per view.** The main action is the blue `primary` button; everything else is
+   `secondary` (white, hairline) or `ghost`.
+5. **Hairlines and a whisper of depth.** 1 px `line` borders plus `shadow-card` on cards and buttons;
+   `shadow-float` only on floating layers (menus, drawers, dialogs). Cards are `rounded-lg` (12 px),
+   controls `rounded-md` (8 px).
+6. **Motion is quick and quiet.** Pages fade up on navigation (`template.tsx`, 240 ms), menus pop in
+   (140 ms), buttons press (`active:scale-[0.97]`), a 2 px accent bar tracks page loads and every route
+   streams behind a skeleton (`loading.tsx` → `PageSkeleton`). All of it is off for reduced motion.
 6. **Tokens only.** Never write `slate-500`, `#fff`, `bg-white`, `text-gray-*`. Use the tokens
    below so both themes work. ESLint will not catch this — reviewers will.
 
@@ -69,9 +72,11 @@ inline.
 
 ## Shell
 
-- **Icon rail** (56 px) with grouped sections; expands to 240 px on hover/pin; active item has a
-  2 px amber bar on the left and `bg-raised`. Nav badge counts (e.g. open alerts) are quiet chips.
-- **Top bar** (44 px): breadcrumb, global search `⌘K`, theme toggle (Day / Night / Auto),
+- **Sidebar** (240 px, labelled) with grouped sections, open by default; collapses to a 56 px icon rail
+  that expands on hover (`nav` cookie, so the first paint has the right width). The active item is a
+  blue tint (`bg-accent-soft text-accent-text`). Nav counts and the alert bell stream in after the
+  shell renders, so they never hold up a page.
+- **Top bar** (48 px): breadcrumb, global search `⌘K`, theme toggle (Day / Night / Auto),
   alerts, user menu. Sticky, `bg-canvas/80 backdrop-blur`, hairline bottom.
 - **Command palette**: navigation + entity search (loads, drivers, trucks, trailers, customers,
   invoices) + quick actions ("New load"). Keyboard: `⌘K`, `↑↓`, `↵`, `esc`; `g d` → dashboard,

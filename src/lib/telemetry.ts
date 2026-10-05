@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { bearing, pathPolyline, pointAlongPolyline } from "./geo";
 import { nearestCity } from "./constants";
@@ -35,6 +36,13 @@ export function loadRoute(load: RoutedLoad): [number, number][] {
   return pathPolyline(pts);
 }
 
+let labeled = false;
+
+/**
+ * Moves every simulated truck (and its trailer) to where its load should be now. One read and at most two
+ * batched UPDATEs, so the pages that call it (overview, live map, board, fleet, load detail) pay a couple of
+ * round trips instead of one per truck. Throttled per server instance.
+ */
 export async function syncSimulatedPositions(force = false) {
   const now = Date.now();
   if (!force && now - lastSync < SYNC_THROTTLE_MS) return;
@@ -42,55 +50,62 @@ export async function syncSimulatedPositions(force = false) {
 
   const loads = await db.load.findMany({
     where: { status: "IN_TRANSIT", truckId: { not: null } },
-    include: { truck: true, stops: { select: { lat: true, lng: true, seq: true, status: true, city: true } } },
+    select: {
+      departedAt: true, distanceKm: true, originLat: true, originLng: true, destLat: true, destLng: true, trailerId: true,
+      truck: { select: { id: true, unitNumber: true, heading: true, pingSource: true, lastPingAt: true } },
+      stops: { select: { lat: true, lng: true, seq: true, status: true, city: true } },
+    },
   });
 
-  await Promise.all(
-    loads.map(async (l) => {
-      const t = l.truck!;
-      if (t.pingSource && t.pingSource !== "SIMULATED" && t.lastPingAt && now - t.lastPingAt.getTime() < DEVICE_FRESH_MS) return;
-      // On site (arrived at a stop, not yet loaded / unloaded): parked at that stop, whatever the clock says.
-      const current = [...l.stops].sort((a, b) => a.seq - b.seq).find((s) => s.status !== "DONE");
-      if (current?.status === "ARRIVED") {
-        await db.truck.update({
-          where: { id: t.id },
-          data: { lat: current.lat, lng: current.lng, speedKmh: 0, engineOn: false, locationName: nearestCity(current.lat, current.lng).label, lastPingAt: new Date(now), pingSource: "SIMULATED" },
-        });
-        if (l.trailerId) {
-          await db.trailer.update({ where: { id: l.trailerId }, data: { lat: current.lat, lng: current.lng, locationName: current.city, lastPingAt: new Date(now) } }).catch(() => undefined);
-        }
-        return;
-      }
+  const trucks: Prisma.Sql[] = [];
+  const trailers: Prisma.Sql[] = [];
+  for (const l of loads) {
+    const t = l.truck!;
+    // A real device ping wins over simulation while it is fresh.
+    if (t.pingSource && t.pingSource !== "SIMULATED" && t.lastPingAt && now - t.lastPingAt.getTime() < DEVICE_FRESH_MS) continue;
+    // On site (arrived at a stop, not yet loaded / unloaded): parked at that stop, whatever the clock says.
+    const current = [...l.stops].sort((a, b) => a.seq - b.seq).find((s) => s.status !== "DONE");
+    let lat: number, lng: number, heading: number | null, speed: number, engine: boolean, fuel: number | null, label: string;
+    if (current?.status === "ARRIVED") {
+      ({ lat, lng } = current);
+      heading = t.heading; speed = 0; engine = false; fuel = null; label = nearestCity(lat, lng).label;
+    } else {
       const route = loadRoute(l);
       const p = loadProgress(l, now);
       const pos = pointAlongPolyline(route, p);
-      const ahead = pointAlongPolyline(route, Math.min(1, p + 0.01));
-      // deterministic-ish speed wobble so the fleet doesn't look robotic
+      // Deterministic-ish speed wobble so the fleet doesn't look robotic.
       const wobble = Math.sin(now / 60_000 + t.unitNumber.charCodeAt(t.unitNumber.length - 1)) * 12;
-      const fuelPct = Math.max(6, Math.round(92 - p * (l.distanceKm / 9)));
-      await db.truck.update({
-        where: { id: t.id },
-        data: {
-          lat: pos.lat, lng: pos.lng,
-          heading: p < 1 ? bearing(pos, ahead) : t.heading,
-          speedKmh: p < 1 ? Math.round(72 + wobble) : 0,
-          engineOn: p < 1,
-          fuelPct,
-          locationName: nearestCity(pos.lat, pos.lng).label,
-          lastPingAt: new Date(now),
-          pingSource: "SIMULATED",
-        },
-      });
-      // A paired trailer travels with the tractor.
-      if (l.trailerId) {
-        await db.trailer.update({ where: { id: l.trailerId }, data: { lat: pos.lat, lng: pos.lng, locationName: nearestCity(pos.lat, pos.lng).label, lastPingAt: new Date(now) } }).catch(() => undefined);
-      }
-    }),
-  );
+      ({ lat, lng } = pos);
+      heading = p < 1 ? bearing(pos, pointAlongPolyline(route, Math.min(1, p + 0.01))) : t.heading;
+      speed = p < 1 ? Math.round(72 + wobble) : 0;
+      engine = p < 1;
+      fuel = Math.max(6, Math.round(92 - p * (l.distanceKm / 9)));
+      label = nearestCity(lat, lng).label;
+    }
+    trucks.push(Prisma.sql`(${t.id}::text, ${lat}::float8, ${lng}::float8, ${heading}::float8, ${speed}::float8, ${engine}::boolean, ${fuel}::float8, ${label}::text)`);
+    // A paired trailer travels with the tractor.
+    if (l.trailerId) trailers.push(Prisma.sql`(${l.trailerId}::text, ${lat}::float8, ${lng}::float8, ${current?.status === "ARRIVED" ? current.city : label}::text)`);
+  }
 
-  // Idle trucks: fill in a location label once so lists never show blanks.
-  const unlabeled = await db.truck.findMany({ where: { locationName: null, lat: { not: null } }, select: { id: true, lat: true, lng: true } });
-  await Promise.all(unlabeled.map((t) => db.truck.update({ where: { id: t.id }, data: { locationName: nearestCity(t.lat!, t.lng!).label, speedKmh: 0, engineOn: false } })));
+  // Timestamps are written by the database in UTC, the way Prisma stores DateTime (timestamp without time zone).
+  await Promise.all([
+    trucks.length && db.$executeRaw`
+      UPDATE "Truck" AS t SET "lat" = v.lat, "lng" = v.lng, "heading" = v.heading, "speedKmh" = v.speed, "engineOn" = v.engine,
+        "fuelPct" = COALESCE(v.fuel, t."fuelPct"), "locationName" = v.label, "lastPingAt" = timezone('UTC', now()), "pingSource" = 'SIMULATED'
+      FROM (VALUES ${Prisma.join(trucks)}) AS v(id, lat, lng, heading, speed, engine, fuel, label)
+      WHERE t."id" = v.id`,
+    trailers.length && db.$executeRaw`
+      UPDATE "Trailer" AS r SET "lat" = v.lat, "lng" = v.lng, "locationName" = v.label, "lastPingAt" = timezone('UTC', now())
+      FROM (VALUES ${Prisma.join(trailers)}) AS v(id, lat, lng, label)
+      WHERE r."id" = v.id`,
+  ]);
+
+  // Idle trucks: fill in a location label once per server instance so lists never show blanks.
+  if (!labeled || force) {
+    labeled = true;
+    const unlabeled = await db.truck.findMany({ where: { locationName: null, lat: { not: null } }, select: { id: true, lat: true, lng: true } });
+    await Promise.all(unlabeled.map((t) => db.truck.update({ where: { id: t.id }, data: { locationName: nearestCity(t.lat!, t.lng!).label, speedKmh: 0, engineOn: false } })));
+  }
 }
 
 export async function fleetSnapshot() {

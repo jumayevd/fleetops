@@ -20,7 +20,7 @@ const DEMO_ACCOUNTS = [
 function Wordmark() {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-on-primary">
+      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-mark text-on-mark shadow-card">
         <Truck className="h-4 w-4" />
       </span>
       <span className="text-[15px] font-semibold tracking-tight text-fg">FleetOps</span>

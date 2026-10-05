@@ -40,13 +40,12 @@ export type ChartTheme = ChartTokens & {
 };
 
 /**
- * Categorical series order. Chosen by running the Graphite tokens through a CVD validator:
- * every 2-, 3- and 4-series prefix clears the adjacent-pair separation target in both themes,
- * and amber stays out of the first three slots so "accent = signal" still holds on most charts.
+ * Categorical series order: the brand blue leads, then hues far from it and from each other (orange,
+ * violet, cyan) so every 2-, 3- and 4-series prefix stays distinguishable in both themes.
  * Slots 5–6 (ok, danger) are red/green neighbours — charts with that many series always carry a
  * legend. Never cycle past the list: the last slot (neutral grey) is for "Other".
  */
-export const SERIES_TONES: readonly ChartTone[] = ["info", "warn", "progress", "accent", "ok", "danger", "neutral"];
+export const SERIES_TONES: readonly ChartTone[] = ["accent", "warn", "progress", "info", "ok", "danger", "neutral"];
 
 const toneVarName = (tone: ChartTone) => (tone === "neutral" ? "--fg-subtle" : `--${tone}`);
 /** `var(--tone)` string for inline styles outside the hook (server components, Leaflet HTML). */
@@ -62,7 +61,7 @@ function build(read: (cssVar: string) => string, mode: "light" | "dark"): ChartT
     series: SERIES_TONES.map(tone),
     tooltip: {
       contentStyle: {
-        background: t.overlay, border: `1px solid ${t.line}`, borderRadius: 6, boxShadow: "var(--shadow-float)",
+        background: t.overlay, border: `1px solid ${t.line}`, borderRadius: 8, boxShadow: "var(--shadow-float)",
         color: t.fg, fontSize: 12, lineHeight: "16px", padding: "6px 10px",
       },
       itemStyle: { color: t.fg, padding: "1px 0" },
@@ -135,7 +134,7 @@ export function seriesColor(theme: ChartTheme, index: number): string {
   return theme.series[Math.min(Math.max(0, index), theme.series.length - 1)];
 }
 /** Accepts a tone name ("progress"), a var() string or any CSS colour. Tone names are theme-aware. */
-export function resolveColor(theme: ChartTheme, color: string | undefined, fallback: ChartTone = "info"): string {
+export function resolveColor(theme: ChartTheme, color: string | undefined, fallback: ChartTone = "accent"): string {
   if (!color) return toneColor(theme, fallback);
   return (SERIES_TONES as readonly string[]).includes(color) ? toneColor(theme, color as ChartTone) : color;
 }
@@ -199,8 +198,8 @@ export function RevenueChart({ data, height = 260 }: { data: { month: string; re
       <AreaChart data={data} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={t.info} stopOpacity={0.2} />
-            <stop offset="100%" stopColor={t.info} stopOpacity={0.02} />
+            <stop offset="0%" stopColor={t.accent} stopOpacity={0.22} />
+            <stop offset="100%" stopColor={t.accent} stopOpacity={0.02} />
           </linearGradient>
         </defs>
         <CartesianGrid stroke={t.grid} vertical={false} />
@@ -208,8 +207,8 @@ export function RevenueChart({ data, height = 260 }: { data: { month: string; re
         <YAxis tickFormatter={fmtMoneyCompact} tick={t.tick} axisLine={false} tickLine={false} width={52} />
         <Tooltip {...t.tooltip} cursor={t.cursorLine} formatter={(v) => money(Number(v))} />
         <Legend {...legendProps(t)} />
-        <Area type="monotone" dataKey="revenue" name="Revenue" stroke={t.info} strokeWidth={2} fill={`url(#${gid})`}
-          activeDot={{ r: 4, fill: t.info, stroke: t.surface, strokeWidth: 2 }} />
+        <Area type="monotone" dataKey="revenue" name="Revenue" stroke={t.accent} strokeWidth={2} fill={`url(#${gid})`}
+          activeDot={{ r: 4, fill: t.accent, stroke: t.surface, strokeWidth: 2 }} />
         <Area type="monotone" dataKey="cost" name="Direct costs" stroke={t.fgMuted} strokeWidth={2} fill="transparent"
           activeDot={{ r: 4, fill: t.fgMuted, stroke: t.surface, strokeWidth: 2 }} />
       </AreaChart>
@@ -238,7 +237,7 @@ export function SimpleBar({ data, dataKey, nameKey, money: isMoney = false, colo
   format?: Format;
 }) {
   const t = useChartTheme();
-  const fill = resolveColor(t, color ?? tone, "info");
+  const fill = resolveColor(t, color ?? tone, "accent");
   const tickFmt = resolveFormat(format, isMoney ? fmtMoneyCompact : fmtCompact);
   const fullFmt = resolveFormat(format, isMoney ? (v: number) => money(v) : (v: number) => number(v));
   if (data.length === 0) return <ChartEmpty height={height} />;

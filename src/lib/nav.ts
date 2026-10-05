@@ -78,3 +78,6 @@ export function findNavItem(path: string) {
     .filter((i) => path === i.href || path.startsWith(i.href + "/"))
     .sort((a, b) => b.href.length - a.href.length)[0];
 }
+
+/** Sidebar state cookie: "open" (labelled sidebar, the default) or "rail" (icons only, expands on hover). */
+export const NAV_COOKIE = "nav";

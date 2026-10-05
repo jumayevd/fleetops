@@ -13,9 +13,9 @@ export function NeedsAttention({ alerts, groups, className }: { alerts: Alert[];
   const critical = alerts.filter((a) => a.level === "critical").length;
   const more = alerts.length - SHOW;
   return (
-    <section aria-labelledby="needs-attention" className={cn("flex min-w-0 flex-col rounded-lg border border-line bg-surface", className)}>
-      <header className="flex min-h-10 items-center justify-between gap-2 border-b border-line px-4 py-2">
-        <h2 id="needs-attention" className="flex items-center gap-2 text-[13px] font-semibold text-fg">
+    <section aria-labelledby="needs-attention" className={cn("flex min-w-0 flex-col rounded-lg border border-line bg-surface shadow-card", className)}>
+      <header className="flex min-h-11 items-center justify-between gap-2 border-b border-line px-4 py-2">
+        <h2 id="needs-attention" className="flex items-center gap-2 text-[14px] font-semibold text-fg">
           Needs attention
           {alerts.length > 0 && (
             <span className="num text-[12px] font-normal text-fg-subtle">

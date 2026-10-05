@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { db } from "./db";
 import { estimatedArrival } from "./telemetry";
 import { REQUIRED_UNIT_DOCS } from "./documents";
@@ -15,8 +16,11 @@ export type Alert = {
 
 const DAY = 86_400_000;
 
-/** Operational exceptions that need a human: compliance, late loads, overdue money, service due. Sorted critical first. */
-export async function getAlerts(): Promise<Alert[]> {
+/**
+ * Operational exceptions that need a human: compliance, late loads, overdue money, service due. Sorted critical first.
+ * Cached per request, so the shell (alert bell) and the overview share one computation.
+ */
+export const getAlerts = cache(async (): Promise<Alert[]> => {
   const now = new Date();
   const soon = new Date(now.getTime() + 30 * DAY);
   const [drivers, trucks, transit, overdue, unassigned, dispatchedNoRc, trailersInShop, leased, openClaims, idleDrivers, unitDocs, docs] = await Promise.all([
@@ -121,4 +125,4 @@ export async function getAlerts(): Promise<Alert[]> {
   }
 
   return alerts.sort((a, b) => (a.level === b.level ? 0 : a.level === "critical" ? -1 : 1));
-}
+});

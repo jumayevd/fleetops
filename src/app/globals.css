@@ -6,74 +6,84 @@
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
-  --canvas: #f4f5f7;
+  /* Neutrals: cool graphite, white cards on a soft canvas */
+  --canvas: #f5f6f8;
   --surface: #ffffff;
-  --raised: #f8f9fb;
-  --sunken: #eef0f3;
+  --raised: #f2f4f7;
+  --sunken: #eef1f5;
   --overlay: #ffffff;
-  --line: #e2e5ea;
-  --line-strong: #c9ced6;
-  --fg: #14171c;
-  --fg-muted: #4f5866;
-  --fg-subtle: #7c8696;
-  --fg-faint: #a5adba;
-  --accent: #f5a524;
-  --accent-hover: #e8961a;
-  --accent-text: #9a6700;
-  --accent-soft: #fff4dd;
-  --on-accent: #1c1400;
-  --primary: #14171c;
-  --primary-hover: #2a2f38;
+  --line: #e4e7ec;
+  --line-strong: #d0d5dd;
+  --fg: #101828;
+  --fg-muted: #475467;
+  --fg-subtle: #667085;
+  --fg-faint: #98a2b3;
+  /* Accent: one confident blue for actions, selection, focus and live state */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-text: #1d4ed8;
+  --accent-soft: #eef4ff;
+  --on-accent: #ffffff;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
   --on-primary: #ffffff;
-  --ok: #15803d;
-  --ok-soft: #e7f6ec;
-  --warn: #c2410c;
-  --warn-soft: #ffefe5;
-  --danger: #b91c1c;
-  --danger-soft: #fdecec;
-  --info: #1d4ed8;
-  --info-soft: #e8effd;
-  --progress: #6d28d9;
-  --progress-soft: #f0eafe;
-  --neutral-soft: #eef0f3;
-  --shadow-float: 0 8px 24px rgba(16, 20, 28, 0.12), 0 2px 6px rgba(16, 20, 28, 0.08);
-  --scrim: rgba(16, 20, 28, 0.4);
+  /* Brand mark (logo tile) */
+  --mark: #f5a524;
+  --on-mark: #1c1400;
+  /* Status */
+  --ok: #067647;
+  --ok-soft: #ecfdf3;
+  --warn: #c4320a;
+  --warn-soft: #fff4ed;
+  --danger: #d92d20;
+  --danger-soft: #fef3f2;
+  --info: #0e7490;
+  --info-soft: #ecfcff;
+  --progress: #6938ef;
+  --progress-soft: #f4f3ff;
+  --neutral-soft: #f2f4f7;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-float: 0 12px 24px -4px rgba(16, 24, 40, 0.14), 0 4px 8px -2px rgba(16, 24, 40, 0.06);
+  --scrim: rgba(16, 24, 40, 0.4);
   --map-filter: none;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --canvas: #0b0d10;
-  --surface: #12151a;
-  --raised: #171b21;
-  --sunken: #0e1115;
-  --overlay: #1a1f27;
-  --line: #232933;
-  --line-strong: #343c48;
-  --fg: #e8ebef;
-  --fg-muted: #a3acb9;
-  --fg-subtle: #6f7a89;
-  --fg-faint: #4c5563;
-  --accent: #f5a524;
-  --accent-hover: #ffb84d;
-  --accent-text: #f5b742;
-  --accent-soft: rgba(245, 165, 36, 0.14);
-  --on-accent: #1c1400;
-  --primary: #e8ebef;
-  --primary-hover: #ffffff;
-  --on-primary: #0b0d10;
-  --ok: #3dd68c;
-  --ok-soft: rgba(61, 214, 140, 0.14);
-  --warn: #fb923c;
-  --warn-soft: rgba(251, 146, 60, 0.14);
-  --danger: #f76b6b;
-  --danger-soft: rgba(247, 107, 107, 0.14);
-  --info: #60a5fa;
-  --info-soft: rgba(96, 165, 250, 0.14);
-  --progress: #a78bfa;
-  --progress-soft: rgba(167, 139, 250, 0.14);
+  --canvas: #0b0d12;
+  --surface: #12151c;
+  --raised: #1a1e27;
+  --sunken: #0e1117;
+  --overlay: #171b24;
+  --line: #242a35;
+  --line-strong: #353d4b;
+  --fg: #f0f2f5;
+  --fg-muted: #a9b1be;
+  --fg-subtle: #7d8697;
+  --fg-faint: #545d6c;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-text: #8ab8ff;
+  --accent-soft: rgba(59, 130, 246, 0.16);
+  --on-accent: #ffffff;
+  --primary: #3b82f6;
+  --primary-hover: #4f91f8;
+  --on-primary: #ffffff;
+  --mark: #f5a524;
+  --on-mark: #1c1400;
+  --ok: #47cd89;
+  --ok-soft: rgba(71, 205, 137, 0.14);
+  --warn: #fd853a;
+  --warn-soft: rgba(253, 133, 58, 0.14);
+  --danger: #f97066;
+  --danger-soft: rgba(249, 112, 102, 0.14);
+  --info: #22ccee;
+  --info-soft: rgba(34, 204, 238, 0.14);
+  --progress: #9b8afb;
+  --progress-soft: rgba(155, 138, 251, 0.16);
   --neutral-soft: rgba(255, 255, 255, 0.06);
-  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 16px 32px -8px rgba(0, 0, 0, 0.6), 0 4px 8px -2px rgba(0, 0, 0, 0.4);
   --scrim: rgba(0, 0, 0, 0.6);
   --map-filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.55);
 }
@@ -98,6 +108,8 @@
   --color-accent-text: var(--accent-text);
   --color-accent-soft: var(--accent-soft);
   --color-on-accent: var(--on-accent);
+  --color-mark: var(--mark);
+  --color-on-mark: var(--on-mark);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-on-primary: var(--on-primary);
@@ -115,9 +127,10 @@
   /* Backdrop behind drawers and dialogs. */
   --color-scrim: var(--scrim);
 
+  --shadow-card: var(--shadow-card);
   --shadow-float: var(--shadow-float);
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 }
 
 html,
@@ -152,7 +165,7 @@ body {
   scrollbar-color: var(--line-strong) transparent;
 }
 
-/* Focus ring: amber signal */
+/* Focus ring: accent */
 :where(button, a, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -198,5 +211,96 @@ input[type="time"] {
   body {
     background: #fff;
     color: #000;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
+
+/* Page content fades up on navigation (template.tsx). fill-mode backwards: no transform remains afterwards,
+   so fixed and sticky descendants behave normally once the animation ends. */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.page-enter > * {
+  animation: page-enter 0.24s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+/* Menus, popovers and dialogs */
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.pop-in {
+  animation: pop-in 0.14s ease-out backwards;
+  transform-origin: top right;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in {
+  animation: fade-in 0.16s ease-out backwards;
+}
+
+/* Mobile navigation drawer */
+@keyframes drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: none; }
+}
+.drawer-in {
+  animation: drawer-in 0.22s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+/* Skeletons appear only if a page takes longer than a blink, so fast navigations never flash. */
+.skeleton-delay {
+  animation: fade-in 0.2s ease-out 0.12s backwards;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--sunken) 0%, var(--raised) 50%, var(--sunken) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Navigation progress bar (components/nav-progress.tsx) */
+@keyframes nav-grow {
+  from { transform: scaleX(0.08); }
+  to { transform: scaleX(0.9); }
+}
+.nav-progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 70;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left;
+  pointer-events: none;
+}
+.nav-progress[data-state="loading"] {
+  animation: nav-grow 6s cubic-bezier(0.1, 0.7, 0.2, 1) forwards, fade-in 0.2s ease 0.1s backwards;
+}
+.nav-progress[data-state="done"] {
+  transform: scaleX(1);
+  opacity: 0;
+  transition: transform 0.2s ease, opacity 0.3s ease 0.15s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter > *,
+  .pop-in,
+  .fade-in,
+  .drawer-in,
+  .skeleton-delay {
+    animation: none;
+  }
+  .skeleton {
+    animation: none;
   }
 }

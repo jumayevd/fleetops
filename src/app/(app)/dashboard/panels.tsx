@@ -4,7 +4,7 @@ import { isSameDay, addDays, format } from "date-fns";
 import {
   ArrowRightLeft, FileText, Pencil, Phone, PackagePlus, Receipt, StickyNote, TriangleAlert, UserCheck, type LucideIcon,
 } from "lucide-react";
-import { Chip, EmptyState, LinkButton, Progress, StatusDot, cn, type Tone } from "@/components/ui";
+import { Chip, EmptyState, LinkButton, Progress, StatusDot, TONE_SOFT, cn, type Tone } from "@/components/ui";
 import { ago, km, money, money2 } from "@/lib/format";
 import type { weeklyProduction } from "@/lib/stats";
 import type { billingQueue, RecentEvent, UpcomingPickup } from "./queries";
@@ -30,28 +30,36 @@ export function Flag({ tone, children }: { tone?: SubTone; children: ReactNode }
 /* Key numbers                                                         */
 /* ------------------------------------------------------------------ */
 
-export type Kpi = { label: string; value: ReactNode; sub?: ReactNode; subTone?: SubTone; href?: string };
+export type Kpi = { label: string; value: ReactNode; sub?: ReactNode; subTone?: SubTone; href?: string; icon?: LucideIcon; tone?: Tone };
 
-/** The day in six numbers: one strip, hairline dividers, colour only on the line that needs a look. */
+/** The day in six numbers: one strip, hairline dividers, a tinted icon per number, colour only where it needs a look. */
 export function KpiStrip({ items }: { items: Kpi[] }) {
   return (
     <section aria-label="Key numbers"
-      className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3 xl:grid-cols-6">
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line shadow-card sm:grid-cols-3 xl:grid-cols-6">
       {items.map((k) => {
+        const Icon = k.icon;
         const body = (
           <>
-            <p className="truncate text-[12px] text-fg-muted">{k.label}</p>
-            <p className="num mt-1 truncate text-[22px] font-semibold leading-tight tracking-tight text-fg">{k.value}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-[12px] font-medium text-fg-muted">{k.label}</p>
+              {Icon && (
+                <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-transform duration-150 group-hover:scale-105", TONE_SOFT[k.tone ?? "neutral"])}>
+                  <Icon className="h-4 w-4" aria-hidden />
+                </span>
+              )}
+            </div>
+            <p className="num mt-1.5 truncate text-[24px] font-semibold leading-tight tracking-tight text-fg">{k.value}</p>
             <p className={cn("mt-0.5 truncate text-[12px]", k.subTone ? SUB_TONE[k.subTone] : "text-fg-subtle")}>{k.sub ?? " "}</p>
           </>
         );
         return k.href ? (
           <Link key={k.label} href={k.href}
-            className="block min-w-0 bg-surface px-4 py-3 transition-colors hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40">
+            className="group block min-w-0 bg-surface px-4 py-3.5 transition-colors hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40">
             {body}
           </Link>
         ) : (
-          <div key={k.label} className="min-w-0 bg-surface px-4 py-3">{body}</div>
+          <div key={k.label} className="min-w-0 bg-surface px-4 py-3.5">{body}</div>
         );
       })}
     </section>

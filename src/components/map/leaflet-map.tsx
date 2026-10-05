@@ -101,7 +101,7 @@ function cachedIcon(key: string, build: () => L.DivIcon) {
 function truckIcon(t: MapTruck, selected: boolean, v: Vars) {
   const { fill, ink } = truckColor(t, selected, v);
   const heading = Math.round(t.heading / 5) * 5; // 5° steps: invisible on screen, keeps the cache warm
-  const key = ["t", t.unitNumber, selected, t.moving, t.stale, heading, fill, ink, v["--surface"], v["--primary"], v["--on-primary"]].join("|");
+  const key = ["t", t.unitNumber, selected, t.moving, t.stale, heading, fill, ink, v["--surface"], v["--fg"]].join("|");
   return cachedIcon(key, () => buildTruckIcon(t, selected, heading, fill, ink, v));
 }
 
@@ -116,7 +116,7 @@ function buildTruckIcon(t: MapTruck, selected: boolean, heading: number, fill: s
       ${t.moving ? `<div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%) rotate(${heading}deg);transform-origin:50% ${size / 2 + 8}px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid ${fill}"></div>` : ""}
       <svg width="${Math.round(size * 0.52)}" height="${Math.round(size * 0.52)}" viewBox="0 0 24 24" fill="none" stroke="${ink}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
     </div>
-    <div style="position:absolute;top:${size + 3}px;left:50%;transform:translateX(-50%);background:${v["--primary"]};color:${v["--on-primary"]};font-family:var(--font-mono),ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:-.01em;padding:1px 5px;border-radius:4px;white-space:nowrap;${t.stale ? "opacity:.7;" : ""}">${escapeHtml(t.unitNumber)}</div>`,
+    <div style="position:absolute;top:${size + 3}px;left:50%;transform:translateX(-50%);background:${v["--fg"]};color:${v["--surface"]};font-family:var(--font-mono),ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:-.01em;padding:1px 5px;border-radius:4px;white-space:nowrap;${t.stale ? "opacity:.7;" : ""}">${escapeHtml(t.unitNumber)}</div>`,
   });
 }
 
