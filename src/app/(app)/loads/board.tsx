@@ -1,27 +1,42 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { BILLING_STAGE_LABELS, LOAD_STATUS_LABELS, type BillingStage, type LoadStatus } from "@/lib/constants";
-import { ago, dateTime, money } from "@/lib/format";
+import { ago, dateTime, money, number } from "@/lib/format";
 import { estimatedArrival, loadProgress } from "@/lib/telemetry";
 import { Badge, Chip, LinkButton, Progress, STATUS_TONE, cn } from "@/components/ui";
-import { BOARD_COLUMNS, PRIORITY_TONE, lateness } from "./shared";
+import { PRIORITY_TONE, lateness } from "./shared";
 import type { ListLoad } from "./query";
 
-/** Kanban: Booked → Dispatched → In transit → Delivered (last 7 days). Cards open the load. */
-export function LoadBoard({ loads, showMoney, canEdit }: { loads: ListLoad[]; showMoney: boolean; canEdit: boolean }) {
+export type BoardColumn = {
+  status: LoadStatus;
+  /** The first cards of the column (capped server-side). */
+  loads: ListLoad[];
+  /** Every load in the column, for the count and the "+n more" link. */
+  total: number;
+  /** The table filtered to this status. */
+  moreHref: string;
+};
+
+/** Kanban: Booked → Dispatched → In transit → Delivered (last 7 days). Cards open the load; long columns link to the table. */
+export function LoadBoard({ columns, showMoney, canEdit }: { columns: BoardColumn[]; showMoney: boolean; canEdit: boolean }) {
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-      {BOARD_COLUMNS.map((col) => {
-        const items = loads.filter((l) => l.status === col);
+      {columns.map(({ status: col, loads: items, total, moreHref }) => {
+        const more = total - items.length;
         return (
           <section key={col} aria-label={LOAD_STATUS_LABELS[col]} className="flex min-h-40 flex-col rounded-lg border border-line bg-sunken/60">
             <header className="flex items-center justify-between gap-2 px-3 py-2">
               <Badge value={col} label={LOAD_STATUS_LABELS[col]} dot />
-              <span className="num text-[11px] text-fg-subtle">{items.length}{col === "DELIVERED" && " · last 7 days"}</span>
+              <span className="num text-[11px] text-fg-subtle">{number(total)}{col === "DELIVERED" && " · last 7 days"}</span>
             </header>
             <div className="flex-1 space-y-1.5 px-1.5 pb-1.5">
               {items.map((l) => <BoardCard key={l.id} load={l} column={col} showMoney={showMoney} />)}
-              {items.length === 0 && (
+              {more > 0 && (
+                <Link href={moreHref} className="block rounded-md border border-dashed border-line-strong px-2.5 py-2 text-center text-[12px] font-medium text-fg-muted hover:bg-raised hover:text-fg">
+                  <span className="num">+{number(more)}</span> more · open in table
+                </Link>
+              )}
+              {total === 0 && (
                 <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
                   <p className="text-[12px] text-fg-subtle">{EMPTY[col]}</p>
                   {col === "PLANNED" && canEdit && <LinkButton href="/loads/new" variant="secondary" size="sm">Book a load</LinkButton>}

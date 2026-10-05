@@ -39,11 +39,13 @@ export async function DocumentsPanel({ user, target, path, title = "Documents", 
   /** Quiet line under the checklist / above the list. */
   description?: string;
 }) {
-  const docs = await listDocs(target);
-  const uploadable: string[] = [];
-  for (const k of DOC_KINDS[target.type]) if (await canUploadDoc(user, target, k)) uploadable.push(k);
-  const deletable = new Set<string>();
-  for (const d of docs) if (await canDeleteDoc(user, d)) deletable.add(d.id);
+  // Checks start in the same tick: a driver's per-kind "is this my load?" lookups are identical
+  // findUnique calls, which Prisma's dataloader batches into one query instead of one per kind.
+  const kinds: readonly string[] = DOC_KINDS[target.type];
+  const [docs, uploadOk] = await Promise.all([listDocs(target), Promise.all(kinds.map((k) => canUploadDoc(user, target, k)))]);
+  const uploadable = kinds.filter((_, i) => uploadOk[i]);
+  const deleteOk = await Promise.all(docs.map((d) => canDeleteDoc(user, d)));
+  const deletable = new Set(docs.filter((_, i) => deleteOk[i]).map((d) => d.id));
 
   const have = new Set(docs.map((d) => d.kind));
   const missing = (required ?? []).filter((k) => !have.has(k));

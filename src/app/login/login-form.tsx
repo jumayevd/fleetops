@@ -13,7 +13,8 @@ export function LoginForm({ demoAccounts }: { demoAccounts: { role: string; emai
 
   return (
     <>
-      <form ref={formRef} className="mt-6 space-y-4" onSubmit={(e) => {
+      {/* method="post": a submit before hydration must never put the password in the URL. */}
+      <form ref={formRef} method="post" className="mt-6 space-y-4" onSubmit={(e) => {
         // Manual submit keeps the email filled in if the password was wrong.
         e.preventDefault();
         const fd = new FormData(e.currentTarget);

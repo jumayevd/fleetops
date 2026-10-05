@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Field, Input, Select } from "@/components/ui";
 import { assignLoad, recoverLoad } from "@/app/actions/loads";
+import { money } from "@/lib/format";
 import { optLabel, type DriverOpt, type Opt, type TruckOpt } from "../shared";
 
 export type UnitOptions = { trucks: TruckOpt[]; drivers: DriverOpt[]; trailers: Opt[] };
@@ -40,7 +41,7 @@ export function AssignForm({ loadId, options, current, distanceKm }: { loadId: s
       <Field label="Truck" required>
         <Select name="truckId" required value={p.truckId} onChange={(e) => p.onTruck(e.target.value)} placeholder="Select a truck…" options={opt(options.trucks)} />
       </Field>
-      <Field label="Driver" required hint={p.driver ? `Pay ≈ $${Math.round(distanceKm * p.driver.payPerKm).toLocaleString()} at $${p.driver.payPerKm.toFixed(2)}/km` : undefined}>
+      <Field label="Driver" required hint={p.driver ? `Pay ≈ ${money(distanceKm * p.driver.payPerKm)} at $${p.driver.payPerKm.toFixed(2)}/km` : undefined}>
         <Select name="driverId" required value={p.driverId} onChange={(e) => p.onDriver(e.target.value)} placeholder="Select a driver…" options={opt(options.drivers)} />
       </Field>
       <Field label="Trailer">

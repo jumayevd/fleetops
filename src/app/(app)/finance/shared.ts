@@ -1,4 +1,5 @@
 import type { Tone } from "@/components/ui";
+import { REQUIRED_LOAD_DOCS } from "@/lib/constants";
 
 /* Pure helpers shared by the finance pages and their client controls (safe on client and server). */
 
@@ -29,13 +30,50 @@ export function parseTab(tab: unknown, status?: unknown): FinanceTab {
   return typeof status === "string" && status ? "invoices" : "queue";
 }
 
-export function financeHref({ tab, status }: { tab?: FinanceTab; status?: InvoiceFilter } = {}) {
+export function financeHref({ tab, status, page }: { tab?: FinanceTab; status?: InvoiceFilter; page?: number } = {}) {
   const q = new URLSearchParams();
   if (tab && tab !== "queue") q.set("tab", tab);
   if (status && status !== DEFAULT_FILTER) q.set("status", status);
+  if (page && page > 1) q.set("page", String(page));
   const s = q.toString();
   return s ? `/finance?${s}` : "/finance";
 }
+
+/** Invoices listed per page on the invoices tab. */
+export const INVOICE_PAGE_SIZE = 200;
+
+/** Open work sorts by what is due soonest; history by most recent. */
+export const invoiceOrder = (filter: InvoiceFilter) => (filter === "open" || filter === "overdue" || filter === "SENT" ? "due" : "recent");
+
+/** `?page=` as a whole number from 1 (anything else is the first page). */
+export function parsePage(v: unknown): number {
+  const n = typeof v === "string" ? Number(v) : NaN;
+  return Number.isInteger(n) && n > 1 ? n : 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Invoice lifecycle and billing                                       */
+/* ------------------------------------------------------------------ */
+
+/** Allowed moves: draft → sent → paid, and draft or sent → void. Paid and void invoices are final. */
+export const INVOICE_TRANSITIONS: Record<string, readonly string[]> = {
+  DRAFT: ["SENT", "VOID"], SENT: ["PAID", "VOID"], PAID: [], VOID: [],
+};
+
+/**
+ * Documents a load needs before it is billed. A TONU load was never delivered, so there is no proof of
+ * delivery to wait for: the rate confirmation is enough. (lib/workflow.ts still asks every load for RC and
+ * POD when it stores the billing stage; the billing queue reads documents through this until that changes.)
+ */
+export const requiredDocsFor = (status: string): readonly string[] => (status === "TONU" ? ["RC"] : REQUIRED_LOAD_DOCS);
+
+/** A TONU load, before or after it is invoiced: TONU loads are never stamped delivered. */
+export const wasTonu = (l: { status: string; deliveredAt: Date | null }) =>
+  l.status === "TONU" || (l.status === "INVOICED" && !l.deliveredAt);
+
+/** When a load became billable: its delivery, or the day the truck was ordered for on a TONU. */
+export const billableSince = (l: { status: string; deliveredAt: Date | null; deliveryAt: Date; pickupAt: Date }) =>
+  l.deliveredAt ?? (wasTonu(l) ? l.pickupAt : l.deliveryAt);
 
 /* ------------------------------------------------------------------ */
 /* Invoice maths                                                       */

@@ -2,16 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { addDays, format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button, cn, inputClass } from "@/components/ui";
+import { shiftYmd, ymdDayMonth, ymdDayMonthYear } from "../dates";
 
-const WEEK = 7 * 86_400_000;
-const shift = (ymd: string, weeks: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + weeks * WEEK).toISOString().slice(0, 10);
-const label = (ymd: string) => {
-  const s = new Date(`${ymd}T12:00:00`);
-  return `${format(s, "d MMM")} – ${format(addDays(s, 6), "d MMM yyyy")}`;
-};
+const shift = (ymd: string, weeks: number) => shiftYmd(ymd, weeks * 7);
+/** Calendar arithmetic on the YYYY-MM-DD string itself, so the label never depends on the server's or browser's zone. */
+const label = (ymd: string) => `${ymdDayMonth(ymd)} – ${ymdDayMonthYear(shiftYmd(ymd, 6))}`;
 
 /** prev / this week / next + a list of recent weeks. */
 export function WeekPicker({ week, thisWeek }: { week: string; thisWeek: string }) {

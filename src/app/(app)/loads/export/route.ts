@@ -31,7 +31,10 @@ export async function GET(req: Request) {
     l.commodity, EQUIPMENT_LABELS[l.equipment] ?? l.equipment, Math.round(l.weightKg), l.pallets ?? "",
   ]);
   const cell = (v: unknown) => {
-    const s = String(v ?? "");
+    let s = String(v ?? "");
+    // Free text (references, commodity, stop names) must not run as a spreadsheet formula: a leading =, +, @, tab or
+    // CR, or a "-" that doesn't start a number, gets an apostrophe. Numeric cells (negative margins too) pass through.
+    if (typeof v === "string" && (/^[=+@\t\r]/.test(s) || /^-(?![\d.])/.test(s))) s = `'${s}`;
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const csv = [head, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");

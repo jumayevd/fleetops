@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { EQUIPMENT_LABELS } from "@/lib/constants";
-import { saveTrailer } from "@/app/actions/fleet";
 import { PageHeader } from "@/components/ui";
+import { saveTrailer } from "../../../actions";
 import { TrailerForm } from "../../trailer-form";
 
 export async function generateMetadata({ params }: PageProps<"/fleet/trailers/[id]/edit">) {
@@ -23,7 +23,7 @@ export default async function EditTrailer({ params }: PageProps<"/fleet/trailers
   return (
     <>
       <PageHeader eyebrow="Fleet · Trailers" title={<>Edit <span className="num">{trailer.unitNumber}</span></>} subtitle={`${EQUIPMENT_LABELS[trailer.type] ?? trailer.type}${trailer.year ? ` · ${trailer.year}` : ""}${trailer.plate ? ` · ${trailer.plate}` : ""}`} />
-      <TrailerForm action={saveTrailer.bind(null, id)} trailer={trailer} trucks={trucks.map((t) => ({ id: t.id, label: `${t.unitNumber} · ${t.make} ${t.model}` }))} redirectTo={`/fleet/trailers/${id}`} cancelHref={`/fleet/trailers/${id}`} />
+      <TrailerForm action={saveTrailer.bind(null, id)} trailer={trailer} trucks={trucks.map((t) => ({ id: t.id, label: `${t.unitNumber} · ${t.make} ${t.model}` }))} cancelHref={`/fleet/trailers/${id}`} />
     </>
   );
 }

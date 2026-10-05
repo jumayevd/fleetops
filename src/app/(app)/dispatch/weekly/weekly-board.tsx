@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
-import { addDays, format, isWeekend } from "date-fns";
+import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Chip, Progress, cn, type Tone } from "@/components/ui";
+import { Spark } from "@/components/charts";
 import { DRIVER_TYPE_LABELS, DRIVER_TYPE_SHORT } from "@/lib/constants";
 import { money, money2, number } from "@/lib/format";
 import type { WeeklyDriverRow, WeeklyTeamRow } from "@/lib/stats";
+import type { WeekDay } from "./weekly-data";
 
 const METRICS = ["Amount", "Km", "$/km", "Load #"] as const;
 const DRIVER_W = 224;
@@ -20,9 +21,21 @@ const planDelta = (d: number) => <span className={cn("num", d >= 0 ? "text-ok" :
 
 type Grand = { total: number; km: number; drivers: number; avgPerTruck: number; rpk: number };
 
-export function WeeklyBoard({ groups, start, today, grand, goalTotal }: { groups: WeeklyTeamRow[]; start: string; /** YYYY-MM-DD from the server, so the highlighted column matches on both sides of hydration. */ today: string; grand: Grand; goalTotal: number }) {
+/** 7-day revenue trend, inline SVG (no axes); the row's totals are the readout. */
+function DaySpark({ amounts, className }: { amounts: number[]; className?: string }) {
+  const any = amounts.some((a) => a > 0);
+  return <Spark data={amounts} tone={any ? "progress" : "neutral"} height={16} dot={false} fill={any} className={cn("w-16 shrink-0", className)} />;
+}
+
+export function WeeklyBoard({ groups, days, today, grand, goalTotal }: {
+  groups: WeeklyTeamRow[];
+  /** Weekday columns in company time, labelled on the server. */
+  days: WeekDay[];
+  /** YYYY-MM-DD in company time from the server, so the highlighted column matches on both sides of hydration. */
+  today: string;
+  grand: Grand; goalTotal: number;
+}) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(new Date(start), i)), [start]);
   const toggle = (key: string) => setCollapsed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const cols = 2 + 7 + 6;
   const grandEff = goalTotal ? Math.round((grand.total / goalTotal) * 100) : 0;
@@ -35,8 +48,8 @@ export function WeeklyBoard({ groups, start, today, grand, goalTotal }: { groups
             <th scope="col" className="sticky left-0 z-30 h-9 border-b border-line bg-sunken px-3 font-medium" style={{ width: DRIVER_W, minWidth: DRIVER_W }}>Driver</th>
             <th scope="col" className="sticky z-30 h-9 border-b border-r border-line bg-sunken px-2 font-medium" style={{ left: DRIVER_W, width: METRIC_W, minWidth: METRIC_W }}>Metric</th>
             {days.map((d) => (
-              <th key={d.toISOString()} scope="col" className={cn("h-9 border-b border-line bg-sunken px-3 text-right font-medium", isWeekend(d) && "text-fg-faint", format(d, "yyyy-MM-dd") === today && "text-accent-text")}>
-                <span>{format(d, "EEE")}</span> <span className="num font-normal normal-case tracking-normal">{format(d, "d MMM")}</span>
+              <th key={d.ymd} scope="col" className={cn("h-9 border-b border-line bg-sunken px-3 text-right font-medium", d.weekend && "text-fg-faint", d.ymd === today && "text-accent-text")}>
+                <span>{d.weekday}</span> <span className="num font-normal normal-case tracking-normal">{d.label}</span>
               </th>
             ))}
             {["Total $", "Total km", "Avg $/km", "Plan Δ", "Days", "Efficiency"].map((h, i) => (
@@ -62,6 +75,7 @@ export function WeeklyBoard({ groups, start, today, grand, goalTotal }: { groups
                       <span className="num hidden text-fg sm:inline">{money(g.total)}</span>
                       <span className="hidden text-fg-subtle sm:inline">· avg <span className="num">{money(g.avgPerTruck)}</span> per driver</span>
                       <span className={cn("num hidden rounded px-1 text-[11px] font-medium sm:inline", g.efficiency >= 100 ? "bg-ok-soft text-ok" : g.efficiency >= 70 ? "bg-warn-soft text-warn" : "bg-danger-soft text-danger")}>{g.efficiency}% of {money(teamGoal)}</span>
+                      <DaySpark amounts={days.map((_, i) => g.rows.reduce((a, r) => a + r.days[i].amount, 0))} className="ml-1 hidden sm:block" />
                     </button>
                   </div>
                 </td>
@@ -76,7 +90,7 @@ export function WeeklyBoard({ groups, start, today, grand, goalTotal }: { groups
             <td className="sticky z-30 border-r border-t border-line bg-sunken px-2 py-2" style={{ left: DRIVER_W }} />
             {days.map((d, i) => {
               const dayTotal = groups.reduce((a, g) => a + g.rows.reduce((b, r) => b + r.days[i].amount, 0), 0);
-              return <td key={d.toISOString()} className="num border-t border-line px-3 py-2 text-right">{dayTotal ? money(dayTotal) : <span className="text-fg-faint">—</span>}</td>;
+              return <td key={d.ymd} className="num border-t border-line px-3 py-2 text-right">{dayTotal ? money(dayTotal) : <span className="text-fg-faint">—</span>}</td>;
             })}
             <td className="num border-l border-t border-line px-3 py-2 text-right">{money(grand.total)}</td>
             <td className="num border-t border-line px-3 py-2 text-right">{number(Math.round(grand.km))}</td>
@@ -91,7 +105,7 @@ export function WeeklyBoard({ groups, start, today, grand, goalTotal }: { groups
   );
 }
 
-function DriverRows({ r, days }: { r: WeeklyDriverRow; days: Date[] }) {
+function DriverRows({ r, days }: { r: WeeklyDriverRow; days: WeekDay[] }) {
   const stickyBg = "var(--surface)";
   return (
     <>
@@ -108,6 +122,7 @@ function DriverRows({ r, days }: { r: WeeklyDriverRow; days: Date[] }) {
                   {r.driver.hold && <Chip tone="warn">Hold</Chip>}
                 </div>
                 <div className="mt-0.5 text-[11px] text-fg-subtle">{r.driver.truck ? <span className="num">{r.driver.truck}</span> : "No truck"} · goal <span className="num">{money(r.goal)}</span></div>
+                <DaySpark amounts={r.days.map((c) => c.amount)} className="mt-2" />
               </td>
             )}
             <td className={cn("sticky z-10 border-r border-line px-2 text-[11px] text-fg-subtle", rowBorder)} style={{ background: stickyBg, left: DRIVER_W, width: METRIC_W, minWidth: METRIC_W }}>{m}</td>
@@ -115,7 +130,7 @@ function DriverRows({ r, days }: { r: WeeklyDriverRow; days: Date[] }) {
               const transit = c.loads.some((l) => l.status === "IN_TRANSIT");
               const empty = c.loads.length === 0;
               return (
-                <td key={di} className={cn("num h-7 whitespace-nowrap px-3 text-right text-[12px]", rowBorder, transit && "bg-progress-soft", isWeekend(days[di]) && empty && "text-fg-faint")}>
+                <td key={di} className={cn("num h-7 whitespace-nowrap px-3 text-right text-[12px]", rowBorder, transit && "bg-progress-soft", days[di].weekend && empty && "text-fg-faint")}>
                   <DayCell metric={m} cell={c} />
                 </td>
               );

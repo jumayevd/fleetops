@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { Lock, Sparkles } from "lucide-react";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Card, Checkbox, Field, Input, LinkButton, Select, Textarea, cn } from "@/components/ui";
@@ -85,6 +85,11 @@ export function LoadForm({ action, options, defaults = {}, stops: initialStops, 
   };
   const opt = (xs: { id: string; label: string; note?: string }[]) => xs.map((x) => ({ value: x.id, label: optLabel(x) }));
   const status = defaults.status as LoadStatus | undefined;
+  // A dispatched load keeps a truck and a driver: clearing them here would leave it "Dispatched" with no unit.
+  // Returning it to Booked is the Unassign button in the load's Status card (releases the unit and trailer too).
+  const dispatched = status === "ASSIGNED";
+  const rateId = useId();
+  const distanceId = useId();
 
   return (
     <ActionForm action={action} className="space-y-4">
@@ -150,25 +155,23 @@ export function LoadForm({ action, options, defaults = {}, stops: initialStops, 
         <div className="space-y-4">
           <Card title="Pricing">
             <div className="space-y-3">
-              <Field label="Customer rate (USD)" required hint={suggest ? <>Lane guide ≈ {money(suggest)} for {number(dist)} km</> : "Add two stops to see a lane guide."}>
-                <div className="flex gap-1.5">
-                  <Input type="number" name="rate" required min={0} step={10} value={rate} onChange={(e) => setRate(e.target.value)} placeholder={suggest ? String(suggest) : "0"} className="num" />
-                  {suggest && Number(rate) !== suggest && (
-                    <button type="button" onClick={() => setRate(String(suggest))} title="Use the lane guide" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line px-2 text-[12px] font-medium text-accent-text hover:bg-accent-soft">
-                      <Sparkles className="h-3.5 w-3.5" />Use
-                    </button>
-                  )}
-                </div>
-              </Field>
+              <InlineField id={rateId} label="Customer rate (USD)" required hint={suggest ? <>Lane guide ≈ {money(suggest)} for {number(dist)} km</> : "Add two stops to see a lane guide."}
+                action={suggest != null && Number(rate) !== suggest && (
+                  <button type="button" onClick={() => setRate(String(suggest))} title="Use the lane guide" aria-label={`Use the lane guide rate, ${money(suggest)}`}
+                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line px-2 text-[12px] font-medium text-accent-text hover:bg-accent-soft">
+                    <Sparkles className="h-3.5 w-3.5" />Use
+                  </button>
+                )}>
+                <Input id={rateId} type="number" name="rate" required min={0} step={10} value={rate} onChange={(e) => setRate(e.target.value)} placeholder={suggest ? String(suggest) : "0"} className="num" />
+              </InlineField>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Loaded km" hint={estimate != null ? `Estimate ${number(estimate)} km${estimateComplete ? "" : " (partial)"}` : "Estimated from the stops"}>
-                  <div className="flex gap-1.5">
-                    <Input type="number" name="distanceKm" min={1} step={1} value={distance} onChange={(e) => setDistance(e.target.value)} placeholder={estimate != null ? String(estimate) : "—"} className="num" />
-                    {estimate != null && distance !== "" && Number(distance) !== estimate && (
-                      <button type="button" onClick={() => setDistance("")} title="Use the estimate" className="inline-flex h-8 shrink-0 items-center rounded-md border border-line px-2 text-[12px] font-medium text-fg-muted hover:bg-raised">Reset</button>
-                    )}
-                  </div>
-                </Field>
+                <InlineField id={distanceId} label="Loaded km" hint={estimate != null ? `Estimate ${number(estimate)} km${estimateComplete ? "" : " (partial)"}` : "Estimated from the stops"}
+                  action={estimate != null && distance !== "" && Number(distance) !== estimate && (
+                    <button type="button" onClick={() => setDistance("")} title="Use the estimate" aria-label={`Reset loaded km to the estimate, ${number(estimate)} km`}
+                      className="inline-flex h-8 shrink-0 items-center rounded-md border border-line px-2 text-[12px] font-medium text-fg-muted hover:bg-raised">Reset</button>
+                  )}>
+                  <Input id={distanceId} type="number" name="distanceKm" min={1} step={1} value={distance} onChange={(e) => setDistance(e.target.value)} placeholder={estimate != null ? String(estimate) : "—"} className="num" />
+                </InlineField>
                 <Field label="Empty km" hint="Repositioning to the pickup.">
                   <Input type="number" name="emptyKm" min={0} step={1} value={emptyKm} onChange={(e) => setEmptyKm(e.target.value)} placeholder="0" className="num" />
                 </Field>
@@ -195,12 +198,9 @@ export function LoadForm({ action, options, defaults = {}, stops: initialStops, 
             </div>
           </Card>
 
-          <Card title={locked ? "Assignment" : "Assignment (optional)"}>
+          <Card title={locked || dispatched ? "Assignment" : "Assignment (optional)"}>
             {locked ? (
               <div className="space-y-2 text-[13px]">
-                <input type="hidden" name="truckId" value={truckId} />
-                <input type="hidden" name="driverId" value={driverId} />
-                <input type="hidden" name="trailerId" value={trailerId} />
                 <Row k="Truck" v={options.trucks.find((t) => t.id === truckId)?.label ?? "—"} />
                 <Row k="Driver" v={options.drivers.find((d) => d.id === driverId)?.label ?? "—"} />
                 <Row k="Trailer" v={options.trailers.find((t) => t.id === trailerId)?.label ?? "—"} />
@@ -208,12 +208,19 @@ export function LoadForm({ action, options, defaults = {}, stops: initialStops, 
               </div>
             ) : (
               <div className="space-y-3">
-                <Field label="Truck"><Select name="truckId" value={truckId} onChange={(e) => onTruck(e.target.value)} placeholder="Assign later" options={opt(options.trucks)} /></Field>
-                <Field label="Driver" hint={driver?.note ? `${driver.label} is ${driver.note} — the server will reject this assignment.` : undefined}>
-                  <Select name="driverId" value={driverId} onChange={(e) => onDriver(e.target.value)} placeholder="Assign later" options={opt(options.drivers)} />
+                <Field label="Truck" required={dispatched}>
+                  <Select name="truckId" required={dispatched} value={truckId} onChange={(e) => onTruck(e.target.value)} placeholder={dispatched ? "Select a truck…" : "Assign later"} options={opt(options.trucks)} />
+                </Field>
+                <Field label="Driver" required={dispatched} hint={driver?.note ? `${driver.label} is ${driver.note} — the server will reject this assignment.` : undefined}>
+                  <Select name="driverId" required={dispatched} value={driverId} onChange={(e) => onDriver(e.target.value)} placeholder={dispatched ? "Select a driver…" : "Assign later"} options={opt(options.drivers)} />
                 </Field>
                 <Field label="Trailer"><Select name="trailerId" value={trailerId} onChange={(e) => setTrailerId(e.target.value)} placeholder="None" options={opt(options.trailers)} /></Field>
-                <p className="text-[11px] text-fg-subtle">Choosing a truck and driver moves the load to Dispatched and notifies the driver. Units marked “busy” are already committed to another active load.</p>
+                <p className="text-[11px] text-fg-subtle">
+                  {dispatched
+                    ? <>This load is dispatched, so it keeps a truck and a driver; changing them reassigns it. To return it to Booked, use <b className="font-medium text-fg-muted">Unassign</b> in the Status card on the load page.</>
+                    : "Choosing a truck and driver moves the load to Dispatched and notifies the driver."}
+                  {" "}Units marked “busy” are already committed to another active load.
+                </p>
               </div>
             )}
           </Card>
@@ -231,6 +238,19 @@ export function LoadForm({ action, options, defaults = {}, stops: initialStops, 
         </div>
       </footer>
     </ActionForm>
+  );
+}
+
+/** Field whose control sits next to a helper button: the label points at the input instead of wrapping both. */
+function InlineField({ id, label, required, hint, action, children }: {
+  id: string; label: string; required?: boolean; hint?: ReactNode; action?: ReactNode; children: ReactNode;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block text-[12px] font-medium text-fg-muted">{label}{required && <span className="text-danger"> *</span>}</label>
+      <div className="flex gap-1.5">{children}{action}</div>
+      {hint && <p className="mt-1 text-[11px] text-fg-subtle">{hint}</p>}
+    </div>
   );
 }
 

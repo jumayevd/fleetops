@@ -1,18 +1,18 @@
 import Link from "next/link";
-import { ArrowRight, ExternalLink } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { DOC_KIND_LABELS } from "@/lib/documents";
 import { date, money, number } from "@/lib/format";
 import { invoiceLoad } from "@/app/actions/finance";
 import { Card, Cell, Chip, LinkButton, Table, cn } from "@/components/ui";
 import type { QueueLoad } from "./data";
+import { billableSince } from "./shared";
 import { CreateInvoiceButton } from "./create-invoice-button";
 
 const DAY = 86_400_000;
 
-/** Days since delivery (or since the planned delivery for TONU loads without a delivered timestamp). */
+/** Days since the load became billable: delivery, or the day the truck was ordered for on a TONU. */
 function waitingDays(l: QueueLoad, now: Date) {
-  const at = l.deliveredAt ?? l.deliveryAt;
-  return Math.max(0, Math.floor((now.getTime() - at.getTime()) / DAY));
+  return Math.max(0, Math.floor((now.getTime() - billableSince(l).getTime()) / DAY));
 }
 const waitTone = (days: number) => (days > 14 ? "text-danger" : days > 7 ? "text-warn" : "text-fg-subtle");
 
@@ -42,7 +42,10 @@ function Delivered({ l, now }: { l: QueueLoad; now: Date }) {
   const days = waitingDays(l, now);
   return (
     <div className="whitespace-nowrap">
-      <div className="num text-fg-muted">{date(l.deliveredAt ?? l.deliveryAt)}</div>
+      <div className="text-fg-muted">
+        {!l.deliveredAt && l.status === "TONU" && <span className="text-fg-subtle">ordered for </span>}
+        <span className="num">{date(billableSince(l))}</span>
+      </div>
       <div className={cn("text-[11px]", waitTone(days))}>{days === 0 ? "today" : `${days} d waiting`}</div>
     </div>
   );
@@ -57,22 +60,24 @@ export function QueueTab({ missing, ready, editable, now }: { missing: QueueLoad
         actions={<span className="num text-[11px] text-fg-subtle">{number(ready.length)} {ready.length === 1 ? "load" : "loads"} · {money(sum(ready))}</span>}>
         <Table dense head={["Load", "Bill to", "Route", "Delivered", "Proof of delivery", right("rate", "Rate"), ""]}
           empty={ready.length === 0} emptyTitle="Nothing is ready to invoice"
-          emptyDescription="Delivered loads move here once the rate confirmation and proof of delivery are on file.">
+          emptyDescription="Delivered loads move here once the rate confirmation and proof of delivery are on file; TONU loads need only the rate confirmation.">
           {ready.map((l) => (
             <tr key={l.id}>
               <td><LoadRef l={l} /></td>
               <td className="max-w-56"><BillTo l={l} /></td>
               <td><Route l={l} /></td>
               <td><Delivered l={l} now={now} /></td>
-              <td className="text-fg-muted">{l.podSignedBy ? <>signed by <span className="text-fg">{l.podSignedBy}</span></> : <span className="text-fg-subtle">on file</span>}</td>
+              <td className="text-fg-muted">
+                {l.podSignedBy ? <>signed by <span className="text-fg">{l.podSignedBy}</span></>
+                  : l.status === "TONU" ? <span className="text-fg-subtle" title="Nothing was delivered on a TONU load">not needed</span>
+                  : <span className="text-fg-subtle">on file</span>}
+              </td>
               <td className="num text-right font-medium">{money(l.rate)}</td>
               <td className="w-px whitespace-nowrap text-right">
                 {editable ? (
-                  l.status === "DELIVERED" ? (
-                    <form action={invoiceLoad.bind(null, l.id)}><CreateInvoiceButton /></form>
-                  ) : (
-                    <LinkButton href={`/loads/${l.id}`} variant="secondary" size="sm" title="TONU fees are invoiced from the load page">Invoice from load<ExternalLink /></LinkButton>
-                  )
+                  <form action={invoiceLoad.bind(null, l.id)}>
+                    <CreateInvoiceButton label={l.status === "TONU" ? "Invoice TONU fee" : "Create invoice"} />
+                  </form>
                 ) : (
                   <LinkButton href={`/loads/${l.id}`} variant="ghost" size="sm">Open load</LinkButton>
                 )}
@@ -86,7 +91,7 @@ export function QueueTab({ missing, ready, editable, now }: { missing: QueueLoad
         actions={<span className="num text-[11px] text-fg-subtle">{number(missing.length)} {missing.length === 1 ? "load" : "loads"} · {money(sum(missing))} on hold</span>}>
         <Table dense head={["Load", "Bill to", "Route", "Delivered", "Missing", "Driver", right("rate", "Rate"), ""]}
           empty={missing.length === 0} emptyTitle="No loads are waiting on paperwork"
-          emptyDescription="Delivered loads without a rate confirmation or proof of delivery show up here until the documents are uploaded.">
+          emptyDescription="Delivered loads without a rate confirmation or proof of delivery, and TONU loads without a rate confirmation, wait here until the documents are uploaded.">
           {missing.map((l) => (
             <tr key={l.id}>
               <td><LoadRef l={l} /></td>

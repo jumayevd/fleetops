@@ -6,8 +6,8 @@ import { getCurrentUser, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import {
-  BILLING_STAGE_LABELS, CUSTOMER_KIND_LABELS, EQUIPMENT_LABELS, LOAD_STATUS_LABELS, LOAD_TRANSITIONS,
-  type BillingStage, type LoadStatus,
+  BILLING_STAGE_LABELS, CLAIM_TYPE_LABELS, CUSTOMER_KIND_LABELS, EQUIPMENT_LABELS, LOAD_STATUS_LABELS, LOAD_TRANSITIONS,
+  humanize, type BillingStage, type LoadStatus,
 } from "@/lib/constants";
 import { missingLoadDocs } from "@/lib/workflow";
 import { DOC_KIND_LABELS } from "@/lib/documents";
@@ -19,6 +19,7 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, Chip, DL, LinkButton, LiveDot, PageHeader, Progress, STATUS_TONE, StatusDot, buttonClass, cn } from "@/components/ui";
 import { LeafletMap, type MapPoint, type MapTruck } from "@/components/map";
 import { DocumentsPanel } from "@/components/documents/panel";
+import { ChatThread } from "@/components/chat/thread";
 import { assignmentOptions } from "../options";
 import { LoadRowMenu } from "../row-menu";
 import { PRIORITY_TONE, STOP_TONE, STOP_TYPE_LABEL, STOP_TYPE_TONE, fmtDuration, fmtRpk, loadSteps, pingStale, ratePerKm, stopLateBy, windowLabel } from "../shared";
@@ -28,6 +29,7 @@ import { StopActions } from "./stop-actions";
 import { StatusActions } from "./status-actions";
 import { AssignForm, RecoverForm } from "./assignment";
 import { DeleteLoadButton } from "./delete-button";
+import { RecoverDetails } from "./recover-details";
 
 /** Checklist shown on the documents card (REQUIRED_LOAD_DOCS drives the billing stage; BOL is expected on file too). */
 const LOAD_DOC_CHECKLIST = ["RC", "BOL", "POD"] as const;
@@ -138,7 +140,7 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
         }
         actions={
           <>
-            <LinkButton href={`/chat?room=load:${id}`} variant="secondary"><MessageSquare />Open chat thread</LinkButton>
+            <LinkButton href={`/chat?room=load:${id}`} variant="secondary"><MessageSquare />Open in chat</LinkButton>
             {editable && status !== "INVOICED" && <LinkButton href={`/loads/${id}/edit`} variant="secondary"><Pencil />Edit</LinkButton>}
             <LoadRowMenu id={id} reference={load.reference} status={status} canEdit={editable} canClaim={canClaim} trigger="button" context="detail" />
           </>
@@ -284,6 +286,10 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
           <Card title="Activity" flush actions={<span className="num rounded bg-neutral-soft px-1.5 text-[11px] leading-5 text-fg-subtle">{events.length}</span>}>
             <LoadActivity loadId={id} events={events} canPost />
           </Card>
+
+          <Card title="Thread" flush actions={<Link href={`/chat?room=load:${id}`} className="text-[12px] font-medium text-fg-muted hover:text-fg">Open in chat</Link>}>
+            <ChatThread room={`load:${id}`} compact className="h-80" />
+          </Card>
         </div>
 
         {/* --------------------------------------------------------- right */}
@@ -348,15 +354,14 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
             )}
 
             {unitOptions && (status === "ASSIGNED" || status === "IN_TRANSIT") && (
-              <details id="recover" open={inTransit} className="group mt-4 scroll-mt-16 border-t border-line pt-3">
-                <summary className="eyebrow cursor-pointer list-none select-none marker:content-none [&::-webkit-details-marker]:hidden">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-block transition-transform group-open:rotate-90">›</span>Recover to another unit
-                    <span className="normal-case tracking-normal text-fg-faint">· breakdown, HOS, swap</span>
-                  </span>
-                </summary>
-                <div className="mt-2"><RecoverForm loadId={id} options={unitOptions} current={current} /></div>
-              </details>
+              <RecoverDetails defaultOpen={inTransit} summary={
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block transition-transform group-open:rotate-90">›</span>Recover to another unit
+                  <span className="normal-case tracking-normal text-fg-faint">· breakdown, HOS, swap</span>
+                </span>
+              }>
+                <RecoverForm loadId={id} options={unitOptions} current={current} />
+              </RecoverDetails>
             )}
           </Card>
 
@@ -395,10 +400,10 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
                       {load.invoice.status === "PAID" ? `Paid ${date(load.invoice.paidAt)}` : `Due ${date(load.invoice.dueAt)}`} · billed to {billTo.name}
                     </p>
                   </>
-                ) : transitions.includes("INVOICED") && canFinance && status === "DELIVERED" ? (
+                ) : transitions.includes("INVOICED") && canFinance && (status === "DELIVERED" || status === "TONU") ? (
                   <form action={invoiceLoad.bind(null, id)}>
                     <button type="submit" className={cn(buttonClass(missing.length ? "secondary" : "primary"), "w-full")}>
-                      {missing.length ? "Generate invoice anyway" : "Generate invoice"}
+                      {status === "TONU" ? `Invoice TONU fee${missing.length ? " anyway" : ""}` : missing.length ? "Generate invoice anyway" : "Generate invoice"}
                     </button>
                     <p className={cn("mt-1.5 text-[11px]", missing.length ? "text-warn" : "text-fg-subtle")}>
                       {missing.length
@@ -437,7 +442,7 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
                     <Link href={`/claims/${c.id}`} className="flex items-center gap-3 px-4 py-2 text-[13px] hover:bg-raised">
                       <ShieldAlert className="h-4 w-4 shrink-0 text-fg-subtle" />
                       <span className="num font-medium text-fg">{c.number}</span>
-                      <span className="flex-1 truncate text-fg-muted">{c.type.toLowerCase().replace(/_/g, " ")}</span>
+                      <span className="flex-1 truncate text-fg-muted">{CLAIM_TYPE_LABELS[c.type] ?? humanize(c.type)}</span>
                       <Badge value={c.status} />
                     </Link>
                   </li>

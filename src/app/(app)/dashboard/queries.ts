@@ -1,24 +1,35 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { BOARD_STATUSES, MANUAL_BOARD_STATUSES } from "@/lib/constants";
 
 const DAY = 86_400_000;
 
-/** Pickups due within 24 h (and any already overdue), soonest first. */
-export function upcomingPickups(now: Date, take = 8) {
-  return db.load.findMany({
-    where: { status: { in: ["PLANNED", "ASSIGNED"] }, pickupAt: { lte: new Date(now.getTime() + DAY) } },
-    orderBy: { pickupAt: "asc" },
-    take,
-    select: {
-      id: true, reference: true, status: true, priority: true, originCity: true, destCity: true, commodity: true, pickupAt: true, hazmat: true,
-      customer: { select: { name: true } },
-      team: { select: { name: true, color: true } },
-      truck: { select: { unitNumber: true } },
-      driver: { select: { name: true, hold: true } },
-    },
-  });
+/** Board statuses derived from a live load (the driver is out working) versus the hand-set ones that mean off the road. */
+const WORKING_STATUSES = BOARD_STATUSES.filter((s) => !MANUAL_BOARD_STATUSES.includes(s));
+const OFF_STATUSES = MANUAL_BOARD_STATUSES.filter((s) => s !== "READY");
+
+/** Pickups due within 24 h (and any already overdue), soonest first, plus the total so the card can say "+N more". */
+export async function upcomingPickups(now: Date, take = 8) {
+  const where: Prisma.LoadWhereInput = { status: { in: ["PLANNED", "ASSIGNED"] }, pickupAt: { lte: new Date(now.getTime() + DAY) } };
+  const [loads, total] = await Promise.all([
+    db.load.findMany({
+      where,
+      orderBy: { pickupAt: "asc" },
+      take,
+      select: {
+        id: true, reference: true, status: true, priority: true, originCity: true, destCity: true, commodity: true, pickupAt: true, hazmat: true,
+        customer: { select: { name: true } },
+        team: { select: { name: true, color: true } },
+        truck: { select: { unitNumber: true } },
+        driver: { select: { name: true, hold: true } },
+      },
+    }),
+    db.load.count({ where }),
+  ]);
+  return { loads, total };
 }
-export type UpcomingPickup = Awaited<ReturnType<typeof upcomingPickups>>[number];
+export type UpcomingPickup = Awaited<ReturnType<typeof upcomingPickups>>["loads"][number];
 
 export function recentEvents(take = 10) {
   return db.loadEvent.findMany({
@@ -56,13 +67,15 @@ export async function operationalCounts(now: Date) {
   const [loadsByStatus, unassignedSoon, pickupsSoon, boardByStatus, hold, onLeave] = await Promise.all([
     db.load.groupBy({ by: ["status"], _count: true }),
     db.load.count({ where: { status: "PLANNED", pickupAt: { lte: soon } } }),
-    db.load.count({ where: { status: { in: ["PLANNED", "ASSIGNED"] }, pickupAt: { gte: now, lte: soon } } }),
+    // Dispatched loads due inside the window: a subset of "Awaiting pickup", so the tile's hint never exceeds its value.
+    db.load.count({ where: { status: "ASSIGNED", pickupAt: { gte: now, lte: soon } } }),
     db.driver.groupBy({ by: ["boardStatus"], where: { status: "ACTIVE" }, _count: true }),
     db.driver.count({ where: { status: "ACTIVE", hold: true } }),
     db.driver.count({ where: { status: "ON_LEAVE" } }),
   ]);
   const loads = (s: string) => loadsByStatus.find((c) => c.status === s)?._count ?? 0;
   const board = (s: string) => boardByStatus.find((c) => c.boardStatus === s)?._count ?? 0;
+  const boardSum = (statuses: readonly string[]) => statuses.reduce((a, s) => a + board(s), 0);
   return {
     inTransit: loads("IN_TRANSIT"),
     assigned: loads("ASSIGNED"),
@@ -70,7 +83,10 @@ export async function operationalCounts(now: Date) {
     unassignedSoon,
     pickupsSoon,
     driversReady: board("READY"),
-    driversActive: boardByStatus.reduce((a, c) => a + c._count, 0),
+    /** On a load right now (dispatched, at pickup, en route, unloading). */
+    driversWorking: boardSum(WORKING_STATUSES),
+    /** Active drivers parked by hand: home, rest, stopped, vacation. */
+    driversOff: boardSum(OFF_STATUSES),
     hold,
     onLeave,
   };

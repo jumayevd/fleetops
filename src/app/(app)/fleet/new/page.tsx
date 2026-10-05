@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { saveTruck } from "@/app/actions/fleet";
 import { PageHeader } from "@/components/ui";
+import { saveTruck } from "../actions";
 import { TruckForm } from "../truck-form";
 
 export const metadata = { title: "Add truck" };

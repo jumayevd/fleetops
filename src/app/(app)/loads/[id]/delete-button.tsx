@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { buttonClass, cn } from "@/components/ui";
 import { deleteLoad } from "@/app/actions/loads";
+import { actionError } from "../shared";
 
 /** Permanent delete (users.manage, booked or cancelled loads only). Confirms first; the action redirects to /loads. */
 export function DeleteLoadButton({ loadId, reference }: { loadId: string; reference: string }) {
@@ -18,10 +19,12 @@ export function DeleteLoadButton({ loadId, reference }: { loadId: string; refere
           if (!window.confirm(`Delete ${reference} permanently? Its stops, events and documents are removed. This cannot be undone.`)) return;
           setError(null);
           start(async () => {
+            const fallback = "Could not delete the load. Only booked or cancelled loads can be deleted — reload the page to see its current status.";
             try {
-              await deleteLoad(loadId);
+              const res: unknown = await deleteLoad(loadId);
+              setError(actionError(res, undefined, fallback));
             } catch (e) {
-              setError(e instanceof Error && e.message ? e.message : "Could not delete the load.");
+              setError(actionError(undefined, e, fallback));
             }
           });
         }}

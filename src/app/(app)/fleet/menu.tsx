@@ -88,7 +88,8 @@ export type MenuItem = {
 export const menuItemClass =
   "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] text-fg hover:bg-raised focus:bg-raised focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0 [&_svg]:text-fg-subtle";
 
-function MenuList({ items, close }: { items: MenuItem[]; close: () => void }) {
+/** Keyboard behaviour for a role="menu" list: focus the first enabled item on mount, ↑ / ↓ move between enabled items. */
+export function useMenuKeys() {
   const ref = useRef<HTMLUListElement>(null);
   useEffect(() => { ref.current?.querySelector<HTMLElement>("[role=menuitem]:not([disabled])")?.focus(); }, []);
   const onKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
@@ -99,6 +100,11 @@ function MenuList({ items, close }: { items: MenuItem[]; close: () => void }) {
     const i = els.indexOf(document.activeElement as HTMLElement);
     els[(i + (e.key === "ArrowDown" ? 1 : -1) + els.length) % els.length]?.focus();
   };
+  return { ref, onKeyDown };
+}
+
+function MenuList({ items, close }: { items: MenuItem[]; close: () => void }) {
+  const { ref, onKeyDown } = useMenuKeys();
   return (
     <ul ref={ref} role="menu" onKeyDown={onKeyDown} className="space-y-px">
       {items.map((it, i) => {

@@ -5,6 +5,7 @@ import { CITIES } from "@/lib/constants";
 import { LoadForm } from "../load-form";
 import { assignmentOptions } from "../options";
 import type { StopDefault } from "../stops-editor";
+import { zonedAt } from "../tz";
 
 export const metadata = { title: "New load" };
 
@@ -13,10 +14,8 @@ export default async function NewLoadPage({ searchParams }: PageProps<"/loads/ne
   const sp = await searchParams;
   const options = await assignmentOptions();
 
-  // Sensible defaults: pick up tomorrow morning, deliver the day after.
-  const pickup = new Date();
-  pickup.setDate(pickup.getDate() + 1);
-  pickup.setHours(8, 0, 0, 0);
+  // Sensible defaults: pick up tomorrow 08:00 company time (not the server's zone), deliver the day after.
+  const pickup = zonedAt(1, 8);
   const pickupEnd = new Date(pickup.getTime() + 4 * 3_600_000);
   const deliveryEnd = new Date(pickup.getTime() + 34 * 3_600_000);
   const city = (name: string) => CITIES.find((c) => c.name === name)!;

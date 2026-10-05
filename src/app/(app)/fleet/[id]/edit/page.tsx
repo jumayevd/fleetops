@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { saveTruck } from "@/app/actions/fleet";
 import { PageHeader } from "@/components/ui";
+import { saveTruck } from "../../actions";
 import { TruckForm } from "../../truck-form";
 
 export async function generateMetadata({ params }: PageProps<"/fleet/[id]/edit">) {

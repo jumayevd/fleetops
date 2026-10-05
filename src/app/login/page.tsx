@@ -47,9 +47,10 @@ export default async function LoginPage() {
         <div className="relative z-10"><Wordmark /></div>
         <div className="relative z-10 max-w-xl">
           <p className="eyebrow mb-3">Dispatch · Tracking · Fleet · Billing</p>
-          <h1 className="text-[32px] font-semibold leading-[1.15] tracking-tight text-fg xl:text-[36px]">
+          {/* Marketing line, not the page heading: this panel is hidden below lg, "Sign in" is the h1. */}
+          <p className="text-[32px] font-semibold leading-[1.15] tracking-tight text-fg xl:text-[36px]">
             Every truck, load and dollar, in one control room.
-          </h1>
+          </p>
           <p className="mt-4 max-w-md text-[14px] leading-6 text-fg-muted">
             Boards, live map, maintenance, documents and invoices share one record of each load, so dispatch,
             fleet and accounting see the same truth and act on it sooner.
@@ -63,7 +64,7 @@ export default async function LoginPage() {
       <section className="flex items-center justify-center px-5 py-14 sm:px-8">
         <div className="w-full max-w-[360px]">
           <div className="mb-8 lg:hidden"><Wordmark /></div>
-          <h2 className="text-lg font-semibold tracking-tight text-fg">Sign in</h2>
+          <h1 className="text-lg font-semibold tracking-tight text-fg">Sign in</h1>
           <p className="mt-1 text-[13px] text-fg-muted">Use your company account. Sessions last 12 hours.</p>
           <LoginForm demoAccounts={demo ? DEMO_ACCOUNTS : []} />
         </div>

@@ -11,12 +11,12 @@ import { ago, date, dateTime, daysAgo, daysUntil, km, money, money2, number } fr
 import { estimatedArrival, loadProgress } from "@/lib/telemetry";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { Spark } from "@/components/charts";
-import { Badge, Card, Cell, Chip, DL, EmptyState, ExpiryBadge, LinkButton, PageHeader, Progress, STATUS_TONE, Stat, StatusDot, Table, Tabs, cn, type Tone } from "@/components/ui";
+import { Badge, Card, Cell, Chip, DL, EmptyState, ExpiryBadge, LinkButton, PageHeader, Progress, STATUS_TONE, Stat, StatusDot, TONE_DOT, Table, Tabs, cn, type Tone } from "@/components/ui";
 import { TeamDot } from "../team-control";
 import { HoldControl } from "./hold-control";
 import { EmploymentMenu } from "./employment-menu";
 import {
-  ACTIVE_LOAD_STATUSES, COMPLETED_LOAD_STATUSES, DRIVER_TYPE_TONE, EMPLOYMENT_LABELS, fmtDuration, onTimeTone, performance, riskReasons, scoreGrade, sinceShort, tenure,
+  ACTIVE_LOAD_STATUSES, COMPLETED_LOAD_STATUSES, DRIVER_TYPE_TONE, EMPLOYMENT_LABELS, fmtDuration, onTimeTone, perfFromTotals, performance, riskReasons, scoreGrade, sinceShort, tenure,
 } from "../shared";
 
 const TABS = ["overview", "performance", "documents", "loads", "history"] as const;
@@ -51,9 +51,14 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
   });
   if (!driver) notFound();
 
-  const [done, active, docRows] = await Promise.all([
+  // Lifetime figures come from aggregates; only the last 90 days of loads are fetched, for the recent and weekly breakdowns.
+  const completed = { driverId: id, status: { in: [...COMPLETED_LOAD_STATUSES] } };
+  const since90 = daysAgo(90);
+  const [totals, onTimeAll, recentLoads, active, docRows] = await Promise.all([
+    db.load.aggregate({ where: completed, _sum: { rate: true, driverPay: true, distanceKm: true, emptyKm: true }, _count: true }),
+    db.load.count({ where: { ...completed, deliveredAt: { lte: db.load.fields.deliveryAt } } }),
     db.load.findMany({
-      where: { driverId: id, status: { in: [...COMPLETED_LOAD_STATUSES] } },
+      where: { ...completed, deliveredAt: { gte: since90 } },
       select: { rate: true, driverPay: true, distanceKm: true, emptyKm: true, deliveredAt: true, deliveryAt: true },
     }),
     db.load.findFirst({
@@ -64,21 +69,27 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
   ]);
   const have = new Set(docRows.map((d) => d.kind));
   const missingDocs = REQUIRED_DRIVER_DOCS.filter((k) => !have.has(k));
-  const lifetime = performance(done);
-  const since90 = daysAgo(90);
-  const recent = performance(done.filter((l) => l.deliveredAt && l.deliveredAt >= since90));
+  const lifetime = perfFromTotals({
+    loads: totals._count, km: totals._sum.distanceKm ?? 0, emptyKm: totals._sum.emptyKm ?? 0,
+    revenue: totals._sum.rate ?? 0, pay: totals._sum.driverPay ?? 0, onTime: onTimeAll,
+  });
+  const recent = performance(recentLoads);
   const grade = scoreGrade(driver.score);
   const risks = riskReasons(driver);
   const idleDays = driver.status === "ACTIVE" && driver.boardStatus === "READY" && !active ? Math.floor((new Date().getTime() - driver.boardStatusSince.getTime()) / 86_400_000) : 0;
 
   // Triage list: what a fleet manager needs to act on for this driver, most serious first.
-  const attention: { tone: Tone; text: string; href: string }[] = risks.map((r) => ({ ...r, href: r.text.startsWith("Score") ? `/drivers/${id}?tab=performance` : `/drivers/${id}?tab=documents` }));
-  if (driver.hold) attention.push({ tone: "warn", text: `On hold${driver.holdReason ? ` — ${driver.holdReason}` : ""}. Dispatch cannot assign loads until released.`, href: `/drivers/${id}` });
+  // A row links only where the destination can resolve it; the rest are plain text.
+  const attention: { tone: Tone; text: string; href?: string }[] = risks.map((r) => ({ ...r, href: r.text.startsWith("Score") ? `/drivers/${id}?tab=performance` : `/drivers/${id}?tab=documents` }));
+  if (driver.hold) attention.push({ tone: "warn", text: `On hold${driver.holdReason ? ` — ${driver.holdReason}` : ""}. Dispatch cannot assign loads until released.` });
   if (missingDocs.length) attention.push({ tone: "warn", text: `Paperwork incomplete: ${missingDocs.map((k) => DOC_KIND_LABELS[k].toLowerCase()).join(", ")} not on file`, href: `/drivers/${id}?tab=documents` });
   if (idleDays >= IDLE_DAYS) attention.push({ tone: "info", text: `Ready for ${idleDays}d with no load assigned`, href: `/dispatch?driver=${id}` });
   if (driver.status === "ACTIVE" && !driver.truck) attention.push({ tone: "info", text: "No truck assigned", href: "/fleet" });
-  if (driver.status === "ACTIVE" && !driver.user) attention.push({ tone: "neutral", text: "No app login — the driver cannot update stops or upload PODs from the road", href: editable ? `/drivers/${id}/edit` : `/drivers/${id}` });
-  if (driver.status === "ACTIVE" && driver.user && !driver.user.active) attention.push({ tone: "warn", text: "App login is deactivated", href: `/admin/users` });
+  // No screen can add a login to an existing driver yet (the edit form and /admin/users cannot link one), so this row is informational.
+  if (driver.status === "ACTIVE" && !driver.user) attention.push({ tone: "neutral", text: "No app login — the driver cannot update stops or upload PODs from the road" });
+  if (driver.status === "ACTIVE" && driver.user && !driver.user.active) {
+    attention.push({ tone: "warn", text: "App login is deactivated", href: can(user.role, "users.manage") ? `/admin/users/${driver.user.id}` : undefined });
+  }
 
   const tabs = TABS.map((t) => ({
     key: t, label: TAB_LABELS[t], href: `/drivers/${id}${t === "overview" ? "" : `?tab=${t}`}`,
@@ -128,9 +139,13 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
                 <ul className="divide-y divide-line">
                   {attention.map((a, i) => (
                     <li key={i}>
-                      <Link href={a.href} className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg hover:bg-raised">
-                        <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><span className="text-[11px] text-fg-subtle">Open →</span>
-                      </Link>
+                      {a.href ? (
+                        <Link href={a.href} className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg hover:bg-raised">
+                          <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><span className="text-[11px] text-fg-subtle">Open →</span>
+                        </Link>
+                      ) : (
+                        <p className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg"><StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span></p>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -240,7 +255,7 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
         </div>
       )}
 
-      {tab === "performance" && <PerformanceTab done={done} lifetime={lifetime} recent={recent} score={driver.score} rating={driver.rating} payPerKm={driver.payPerKm} showEarnings={showEarnings} />}
+      {tab === "performance" && <PerformanceTab recentLoads={recentLoads} lifetime={lifetime} recent={recent} score={driver.score} rating={driver.rating} payPerKm={driver.payPerKm} showEarnings={showEarnings} />}
 
       {tab === "documents" && (
         <div className="grid gap-4 xl:grid-cols-3">
@@ -300,13 +315,14 @@ function Figure({ label, value, hint, tone = "neutral" }: { label: string; value
 type Perf = ReturnType<typeof performance>;
 type DoneRow = { rate: number; driverPay: number; distanceKm: number; emptyKm: number; deliveredAt: Date | null; deliveryAt: Date };
 
-function PerformanceTab({ done, lifetime, recent, score, rating, payPerKm, showEarnings }: {
-  done: DoneRow[]; lifetime: Perf; recent: Perf; score: number; rating: number; payPerKm: number; showEarnings: boolean;
+/** `recentLoads`: completed loads delivered in the last 90 days, which covers the 8-week table. */
+function PerformanceTab({ recentLoads, lifetime, recent, score, rating, payPerKm, showEarnings }: {
+  recentLoads: DoneRow[]; lifetime: Perf; recent: Perf; score: number; rating: number; payPerKm: number; showEarnings: boolean;
 }) {
   const grade = scoreGrade(score);
   const weekStart = startOfWeek(subWeeks(new Date(), WEEKS - 1), { weekStartsOn: 1 });
   const weeks = Array.from({ length: WEEKS }, (_, i) => ({ start: addWeeks(weekStart, i), loads: 0, km: 0, revenue: 0, pay: 0 }));
-  for (const l of done) {
+  for (const l of recentLoads) {
     if (!l.deliveredAt || l.deliveredAt < weekStart) continue;
     const i = Math.min(WEEKS - 1, Math.floor((l.deliveredAt.getTime() - weekStart.getTime()) / (7 * 86_400_000)));
     const w = weeks[i];
@@ -362,7 +378,7 @@ function PerformanceTab({ done, lifetime, recent, score, rating, payPerKm, showE
               </tr>
             ))}
           </Table>
-          {done.length === 0 && <EmptyState title="No completed loads yet" description="Performance figures appear once this driver delivers their first load." />}
+          {lifetime.loads === 0 && <EmptyState title="No completed loads yet" description="Performance figures appear once this driver delivers their first load." />}
           <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Delivered and invoiced loads, counted by delivery date. On time = delivered within the appointment window.{showEarnings && " Earnings are driver pay recorded on each load."}</p>
         </Card>
 
@@ -425,57 +441,78 @@ async function LoadsTab({ driverId, showEarnings }: { driverId: string; showEarn
   );
 }
 
-const TONE_BG: Record<Tone, string> = { neutral: "bg-fg-faint", accent: "bg-accent", ok: "bg-ok", warn: "bg-warn", danger: "bg-danger", info: "bg-info", progress: "bg-progress" };
+/** A status event is written a moment after the driver record changes; allow for that gap when pairing them. */
+const LOG_SKEW_MS = 60_000;
+const HISTORY_LIMIT = 150;
+type TimelineEntry = { id: string; status: string; source: string; note: string | null; at: Date; user: { name: string } | null; unlogged?: boolean };
 
 async function HistoryTab({ driverId, current }: { driverId: string; current: { status: string; since: Date; manual: boolean } }) {
   const events = await db.driverStatusEvent.findMany({
-    where: { driverId }, orderBy: { at: "desc" }, take: 150,
+    where: { driverId }, orderBy: { at: "desc" }, take: HISTORY_LIMIT,
     select: { id: true, status: true, source: true, note: true, at: true, user: { select: { name: true } } },
   });
   const now = new Date().getTime();
-  // Each event lasts until the next (newer) one; the newest is still running.
-  const rows = events.map((e, i) => ({ ...e, until: i === 0 ? null : events[i - 1].at, ms: (i === 0 ? now : events[i - 1].at.getTime()) - e.at.getTime() }));
+  const sinceMs = current.since.getTime();
+
+  // The driver record (what the board shows) is the source of truth for the current status, so the log is reconciled
+  // with it and the timeline, the shares and "Right now" agree:
+  //  - the event that opened the current status supplies who and why; the record supplies when;
+  //  - if none was logged (some employment changes write the board directly), the top row is built from the record;
+  //  - log entries newer than the record never reached the board and are left out (counted in a footnote).
+  const openerIdx = events.findIndex((e) => e.status === current.status && Math.abs(e.at.getTime() - sinceMs) <= LOG_SKEW_MS);
+  const older = openerIdx >= 0 ? events.slice(openerIdx + 1) : events.filter((e) => e.at.getTime() <= sinceMs);
+  const skipped = openerIdx >= 0 ? openerIdx : events.length - older.length;
+  const head: TimelineEntry = openerIdx >= 0
+    ? { ...events[openerIdx], at: current.since }
+    : { id: "current", status: current.status, source: current.manual ? "MANUAL" : "AUTO", note: null, at: current.since, user: null, unlogged: true };
+  const timeline: TimelineEntry[] = [head, ...older];
+  // Each entry lasts until the next (newer) one; the first is still running.
+  const rows = timeline.map((e, i) => ({ ...e, until: i === 0 ? null : timeline[i - 1].at, ms: Math.max(0, (i === 0 ? now : timeline[i - 1].at.getTime()) - e.at.getTime()) }));
   const byStatus = new Map<string, number>();
   for (const r of rows) byStatus.set(r.status, (byStatus.get(r.status) ?? 0) + r.ms);
   const totalMs = [...byStatus.values()].reduce((a, b) => a + b, 0);
   const share = [...byStatus].map(([status, ms]) => ({ status, ms })).sort((a, b) => b.ms - a.ms);
   const manual = rows.filter((r) => r.source === "MANUAL").length;
   const label = (s: string) => BOARD_STATUS_LABELS[s as BoardStatus] ?? s;
-  const span = rows.length ? rows[rows.length - 1].at : null;
+  const span = rows[rows.length - 1].at;
 
   return (
     <div className="grid gap-4 xl:grid-cols-3">
       <Card title="Status timeline" flush className="xl:col-span-2"
-        actions={<span className="text-[11px] text-fg-subtle"><span className="num">{rows.length}</span> changes · <span className="num">{manual}</span> manual{rows.length === 150 && " · latest 150"}</span>}>
-        {rows.length === 0 ? (
-          <EmptyState title="No status changes recorded" description={`Currently ${label(current.status).toLowerCase()} since ${dateTime(current.since)}. Changes are logged automatically from loads and when a dispatcher overrides the board.`} />
-        ) : (
-          <ol className="divide-y divide-line">
-            {rows.map((r, i) => {
-              const tone = STATUS_TONE[r.status] ?? "neutral";
-              return (
-                <li key={r.id} className={cn("flex items-start gap-3 px-4 py-2.5", i === 0 && "bg-raised/60")}>
-                  <span className="mt-1.5 flex flex-col items-center self-stretch">
-                    <StatusDot tone={tone} pulse={i === 0} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <Badge value={r.status} label={label(r.status)} />
-                      <Chip tone={r.source === "MANUAL" ? "accent" : "neutral"} title={r.source === "MANUAL" ? "Set by a dispatcher" : "Derived from the load"}>{r.source === "MANUAL" ? "Manual" : "Auto"}</Chip>
-                      {r.user?.name && <span className="text-[12px] text-fg-muted">by {r.user.name}</span>}
-                      {!r.user?.name && r.source === "AUTO" && <span className="text-[12px] text-fg-subtle">system</span>}
-                    </div>
-                    {r.note && <p className="mt-1 text-[13px] text-fg">{r.note}</p>}
-                    <p className="num mt-1 text-[11px] text-fg-subtle">{dateTime(r.at)}{r.until ? ` → ${dateTime(r.until)}` : " → now"}</p>
+        actions={<span className="text-[11px] text-fg-subtle"><span className="num">{rows.length}</span> {rows.length === 1 ? "change" : "changes"} · <span className="num">{manual}</span> manual{events.length === HISTORY_LIMIT && ` · latest ${HISTORY_LIMIT}`}</span>}>
+        <ol className="divide-y divide-line">
+          {rows.map((r, i) => {
+            const tone = STATUS_TONE[r.status] ?? "neutral";
+            return (
+              <li key={r.id} className={cn("flex items-start gap-3 px-4 py-2.5", i === 0 && "bg-raised/60")}>
+                <span className="mt-1.5 flex flex-col items-center self-stretch">
+                  <StatusDot tone={tone} pulse={i === 0} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Badge value={r.status} label={label(r.status)} />
+                    <Chip tone={r.source === "MANUAL" ? "accent" : "neutral"} title={r.source === "MANUAL" ? "Set by a dispatcher" : "Derived from the load"}>{r.source === "MANUAL" ? "Manual" : "Auto"}</Chip>
+                    {r.user?.name && <span className="text-[12px] text-fg-muted">by {r.user.name}</span>}
+                    {!r.user?.name && r.source === "AUTO" && !r.unlogged && <span className="text-[12px] text-fg-subtle">system</span>}
+                    {r.unlogged && <span className="text-[12px] text-fg-subtle" title="This change has no log entry. Status and start time come from the driver record, as on the board.">not logged</span>}
                   </div>
-                  <div className="shrink-0 text-right">
-                    <p className="num text-[13px] font-medium text-fg">{fmtDuration(r.ms)}</p>
-                    <p className="text-[11px] text-fg-subtle">{i === 0 ? "so far" : "in status"}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
+                  {r.note && <p className="mt-1 text-[13px] text-fg">{r.note}</p>}
+                  <p className="num mt-1 text-[11px] text-fg-subtle">{dateTime(r.at)}{r.until ? ` → ${dateTime(r.until)}` : " → now"}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="num text-[13px] font-medium text-fg">{fmtDuration(r.ms)}</p>
+                  <p className="text-[11px] text-fg-subtle">{i === 0 ? "so far" : "in status"}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+        {events.length === 0 ? (
+          <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Nothing logged yet. Changes are logged automatically from loads and when a dispatcher overrides the board.</p>
+        ) : skipped > 0 && (
+          <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
+            <span className="num">{skipped}</span> later log {skipped === 1 ? "entry doesn't" : "entries don't"} match the board status and {skipped === 1 ? "is" : "are"} left out of the timings.
+          </p>
         )}
       </Card>
 
@@ -492,7 +529,7 @@ async function HistoryTab({ driverId, current }: { driverId: string; current: { 
                       <span className="inline-flex items-center gap-1.5 text-fg"><StatusDot tone={tone} />{label(s.status)}</span>
                       <span className="num text-fg-muted">{fmtDuration(s.ms)} <span className="text-fg-subtle">· {Math.round(pct)}%</span></span>
                     </div>
-                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-sunken"><div className={cn("h-full rounded-full", TONE_BG[tone])} style={{ width: `${Math.max(1, Math.round(pct))}%` }} /></div>
+                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-sunken"><div className={cn("h-full rounded-full", TONE_DOT[tone])}style={{ width: `${Math.max(1, Math.round(pct))}%` }} /></div>
                   </li>
                 );
               })}

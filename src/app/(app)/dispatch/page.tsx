@@ -1,5 +1,4 @@
 import { Plus } from "lucide-react";
-import { format } from "date-fns";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
@@ -8,6 +7,7 @@ import { DateNav } from "./date-nav";
 import { DispatchBoard } from "./board";
 import { PrebookView } from "./prebook";
 import { loadBoardRows, parseBoardDate, prebookLoads, todayYmd } from "./board-data";
+import { ymdLong } from "./dates";
 import type { BoardView } from "./types";
 
 export const metadata = { title: "Dispatch board" };
@@ -32,7 +32,7 @@ export default async function DispatchPage({ searchParams }: PageProps<"/dispatc
     return `/dispatch${s ? `?${s}` : ""}`;
   };
 
-  const dayLabel = format(new Date(`${date}T12:00:00`), "EEEE, d MMMM yyyy");
+  const dayLabel = ymdLong(date);
   const dayHint = date === today ? "Today" : date < today ? "Past day — status shown as it was at end of day" : "Upcoming day — planned loads";
 
   const [board, prebook] = await Promise.all([
@@ -45,7 +45,7 @@ export default async function DispatchPage({ searchParams }: PageProps<"/dispatc
       <PageHeader
         eyebrow="Dispatch"
         title={view === "prebook" ? "Prebook board" : "Daily board"}
-        subtitle={view === "prebook" ? "Loads with a pickup more than 24 hours out, by team. Reserve drivers here without occupying them today." : <>{dayLabel} <span className="text-fg-subtle">· {dayHint}</span></>}
+        subtitle={view === "prebook" ? "Loads with a pickup more than 24 hours out, by team. Drivers reserved here stay ready on today's board until the pickup is inside 24 hours." : <>{dayLabel} <span className="text-fg-subtle">· {dayHint}</span></>}
         actions={
           <>
             {view !== "prebook" && <DateNav date={date} today={today} />}
@@ -75,7 +75,7 @@ export default async function DispatchPage({ searchParams }: PageProps<"/dispatc
       {board && (
         <DispatchBoard key={`${date}:${team ?? ""}:${view}`} initial={board} view={view === "flat" ? "flat" : "teams"} canEdit={canEdit} team={team} initialQ={q} focusDriverId={focusDriver} />
       )}
-      {prebook && <PrebookView loads={prebook.loads} now={prebook.at} teams={teams} canAssign={can(user.role, "loads.edit")} showMoney={can(user.role, "finance.view") || can(user.role, "loads.edit")} />}
+      {prebook && <PrebookView loads={prebook.loads} total={prebook.total} limit={prebook.limit} now={prebook.at} teams={teams} canAssign={can(user.role, "loads.edit")} showMoney={can(user.role, "finance.view") || can(user.role, "loads.edit")} />}
     </>
   );
 }

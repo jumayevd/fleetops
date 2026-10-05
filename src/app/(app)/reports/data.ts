@@ -37,11 +37,13 @@ function totals(xs: L[]) {
   const cost = sum(xs, directCost);
   const loaded = sum(xs, (l) => l.distanceKm);
   const empty = sum(xs, (l) => l.emptyKm);
+  const onTimeCount = xs.filter(onTime).length;
   return {
     loads: xs.length, revenue, cost, margin: revenue - cost, marginPct: pct(revenue - cost, revenue),
     loadedKm: loaded, emptyKm: empty, km: loaded + empty,
     perKm: ratio(revenue, loaded + empty),
-    onTimePct: pct(xs.filter(onTime).length, xs.length),
+    onTime: onTimeCount,
+    onTimePct: pct(onTimeCount, xs.length),
     emptyPct: pct(empty, loaded + empty),
   };
 }

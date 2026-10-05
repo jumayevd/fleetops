@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Check, Copy, ExternalLink, MoreHorizontal, Pencil, RefreshCw, ShieldAlert } from "lucide-react";
 import { buttonClass, cn } from "@/components/ui";
+import { openRecoverPanel } from "./[id]/recover-details";
 
 type Item = { key: string; label: string; icon: ReactNode; href?: string; onSelect?: () => void; hint?: string };
 
@@ -104,7 +105,7 @@ export function LoadRowMenu({ id, reference, status, canEdit, canClaim, trigger 
           className="z-50 rounded-md border border-line bg-overlay p-1 shadow-float">
           {items.map((it) =>
             it.href ? (
-              <Link key={it.key} role="menuitem" href={it.href} className={itemClass} onClick={() => setOpen(false)}>
+              <Link key={it.key} role="menuitem" href={it.href} className={itemClass} onClick={() => { if (it.key === "recover") openRecoverPanel(); setOpen(false); }}>
                 {it.icon}<span className="flex-1">{it.label}</span>{it.hint && <span className="text-[10px] text-fg-faint">{it.hint}</span>}
               </Link>
             ) : (

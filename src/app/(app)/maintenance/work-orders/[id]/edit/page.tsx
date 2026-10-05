@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { toDateInput } from "@/lib/format";
+import { toDateInput, toLocalInput } from "@/lib/format";
 import { saveWorkOrder } from "@/app/actions/fleet";
 import { Badge, PageHeader } from "@/components/ui";
 import { workOrderFormOptions } from "../../../_lib/data";
@@ -23,25 +23,33 @@ export default async function EditWorkOrder({ params }: PageProps<"/maintenance/
   ]);
   if (!wo) notFound();
   const unit = wo.truck?.unitNumber ?? wo.trailer?.unitNumber;
+  // Only starting and completing go through the shop and PM side effects from this form; cancelling a job in
+  // progress is the Cancel button's move (it releases the unit), so the form doesn't offer it.
+  const effects = wo.status === "IN_PROGRESS"
+    ? "Completing it here releases the unit, like the Complete button. To stop without finishing, use Cancel on the work order."
+    : "Starting or completing it here has the same effect on the unit and its PM schedule as the buttons.";
 
   return (
     <>
       <PageHeader
         eyebrow={<>Work order <span className="num">#{wo.number}</span></>}
         title={`Edit · ${wo.title}`}
-        subtitle={<span className="inline-flex items-center gap-2"><Badge value={wo.status} dot />{unit && <span className="num">{unit}</span>}<span>Changing the status here applies the same shop and PM side effects as the buttons.</span></span>}
+        subtitle={<span className="inline-flex flex-wrap items-center gap-2"><Badge value={wo.status} dot />{unit && <span className="num">{unit}</span>}<span>{effects}</span></span>}
       />
       <WorkOrderForm
         action={saveWorkOrder.bind(null, id)}
         trucks={options.trucks}
         trailers={options.trailers}
         vendors={options.vendors}
+        savedStatus={wo.status}
+        now={toLocalInput(new Date())}
         submitLabel="Save changes"
         cancelHref={workOrderHref(id)}
         initial={{
           truckId: wo.truckId, trailerId: wo.trailerId,
           title: wo.title, description: wo.description, category: wo.category, priority: wo.priority, status: wo.status, vendor: wo.vendor,
-          scheduledAt: toDateInput(wo.scheduledAt), inAt: toDateInput(wo.inAt), outAt: toDateInput(wo.outAt),
+          scheduledAt: toDateInput(wo.scheduledAt), inAt: toLocalInput(wo.inAt), outAt: toLocalInput(wo.outAt),
+          stamps: { scheduledAt: wo.scheduledAt.toISOString(), inAt: wo.inAt?.toISOString() ?? null, outAt: wo.outAt?.toISOString() ?? null },
           odometerKm: wo.odometerKm, laborCost: wo.laborCost, partsCost: wo.partsCost, cost: wo.cost, notes: wo.notes,
         }}
       />

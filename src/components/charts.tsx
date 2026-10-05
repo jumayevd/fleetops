@@ -292,9 +292,13 @@ export function TrendLine({ data, lines, height = 240, suffix = "", xKey = "mont
   );
 }
 
-type Slice = { name: string; value: number; other?: boolean };
-/** Part-to-whole reads at a glance only up to ~6 slices; the tail folds into "Other". */
-function foldSlices(data: { name: string; value: number }[], max: number): Slice[] {
+type Slice = { name: string; value: number; other?: boolean; tone?: ChartTone };
+/**
+ * Part-to-whole reads at a glance only up to ~6 slices; the tail folds into "Other".
+ * Zero slices are dropped and long lists re-sorted, so a per-slice tone must ride on the datum
+ * (never be looked up by position afterwards).
+ */
+function foldSlices(data: Slice[], max: number): Slice[] {
   const clean = data.filter((d) => d.value > 0);
   if (clean.length <= max) return clean;
   const sorted = [...clean].sort((a, b) => b.value - a.value);
@@ -317,17 +321,17 @@ function DonutCenter({ viewBox, value, label, theme }: { viewBox?: { cx?: number
 export function Donut({ data, height = 220, tones, total = true, totalLabel }: {
   data: { name: string; value: number }[];
   height?: number;
-  /** Override the palette per slice, e.g. status tones. */
+  /** Override the palette per slice, e.g. status tones. Indexed like `data` (before zero slices are dropped). */
   tones?: ChartTone[];
   /** Centre figure: the sum by default; `false` to hide, or any node to override. */
   total?: ReactNode;
   totalLabel?: string;
 }) {
   const t = useChartTheme();
-  const slices = foldSlices(data, 6);
+  const slices = foldSlices(data.map((d, i) => ({ ...d, tone: tones?.[i] })), 6);
   const sum = slices.reduce((a, d) => a + d.value, 0);
   if (slices.length === 0) return <ChartEmpty height={height} />;
-  const colorAt = (s: Slice, i: number) => (s.other ? t.fgSubtle : tones?.[i] ? toneColor(t, tones[i]) : seriesColor(t, i));
+  const colorAt = (s: Slice, i: number) => (s.other ? t.fgSubtle : s.tone ? toneColor(t, s.tone) : seriesColor(t, i));
   return (
     <ResponsiveContainer width="100%" height={height}>
       <PieChart>

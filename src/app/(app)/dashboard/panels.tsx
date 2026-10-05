@@ -1,11 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Badge, Chip, EmptyState, LinkButton, Progress, StatusDot, Table, cn } from "@/components/ui";
+import { Badge, Chip, EmptyState, LinkButton, Progress, StatusDot, Table, cn, type Tone } from "@/components/ui";
 import { ago, dateTime, km, money, money2 } from "@/lib/format";
-import { humanize } from "@/lib/constants";
+import { LOAD_STATUS_LABELS, humanize, type LoadStatus } from "@/lib/constants";
 import type { monthlyFinancials, weeklyProduction } from "@/lib/stats";
 import type { billingQueue, RecentEvent, UpcomingPickup } from "./queries";
-import { EVENT_TONE, plural } from "./lib";
+import { EVENT_TONE, plural, type FleetLegend } from "./lib";
 
 type Weekly = Awaited<ReturnType<typeof weeklyProduction>>;
 type Month = Awaited<ReturnType<typeof monthlyFinancials>>[number];
@@ -37,12 +37,47 @@ function QueueRow({ href, label, hint, count, sum, tone }: { href: string; label
 }
 
 export function BillingQueue({ queue, overdue, showMoney }: { queue: Billing; overdue: { count: number; amount: number } | null; showMoney: boolean }) {
-  const loadsHref = showMoney ? "/finance" : "/loads?status=DELIVERED";
+  // Finance roles work the queue on /finance (its default tab); everyone else gets the loads list filtered by billing stage.
   return (
     <div className="space-y-0.5">
-      <QueueRow href={loadsHref} label="Missing documents" hint="delivered, waiting on RC or POD" count={queue.missingDocs.count} sum={showMoney ? queue.missingDocs.sum : undefined} tone="warn" />
-      <QueueRow href={loadsHref} label="Ready to invoice" hint="paperwork complete, not yet billed" count={queue.ready.count} sum={showMoney ? queue.ready.sum : undefined} tone="info" />
+      <QueueRow href={showMoney ? "/finance" : "/loads?billing=MISSING_DOCS"} label="Missing documents" hint="delivered, waiting on RC or POD" count={queue.missingDocs.count} sum={showMoney ? queue.missingDocs.sum : undefined} tone="warn" />
+      <QueueRow href={showMoney ? "/finance" : "/loads?billing=READY_TO_INVOICE"} label="Ready to invoice" hint="paperwork complete, not yet billed" count={queue.ready.count} sum={showMoney ? queue.ready.sum : undefined} tone="info" />
       {overdue && <QueueRow href="/finance?status=overdue" label="Overdue invoices" hint="sent, past due date" count={overdue.count} sum={overdue.amount} tone="danger" />}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Fleet snapshot (roles without the live map)                         */
+/* ------------------------------------------------------------------ */
+
+const MOTION: { key: "rolling" | "idle" | "stopped" | "inService"; label: string; tone: Tone; faded?: boolean }[] = [
+  { key: "rolling", label: "Rolling", tone: "progress" },
+  { key: "idle", label: "Idle", tone: "info" },
+  { key: "stopped", label: "Stopped", tone: "info", faded: true },
+  { key: "inService", label: "In service", tone: "warn" },
+];
+
+/** The live map's legend as static numbers, for roles that cannot open /tracking or poll /api/fleet. */
+export function FleetSummary({ legend: f }: { legend: FleetLegend }) {
+  return (
+    <div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        {MOTION.map((m) => (
+          <div key={m.key} className="min-w-0">
+            <dt className="flex items-center gap-1.5 text-[11px] text-fg-subtle">
+              <StatusDot tone={m.tone} className={cn(m.faded && "opacity-50")} />{m.label}
+            </dt>
+            <dd className="num mt-0.5 text-[15px] font-semibold text-fg">{f[m.key]}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-4 text-[12px] text-fg-muted">
+        <span className="num">{f.onLoad}</span> of <span className="num">{plural(f.trucks, "truck")}</span> on loads
+        {f.late > 0 && <> · <span className="num text-danger">{f.late} running late</span></>}
+        {f.noSignal > 0 && <> · <span className="num text-warn">{f.noSignal} no signal</span></>}
+      </p>
+      <p className="mt-2 text-[11px] text-fg-subtle">Counts as of this page load. The live map is for dispatch and fleet roles; loads in transit show where each delivery stands.</p>
     </div>
   );
 }
@@ -121,7 +156,7 @@ export function MonthSoFar({ month, note }: { month: Month; note?: string }) {
 /* Upcoming pickups                                                    */
 /* ------------------------------------------------------------------ */
 
-export function UpcomingPickups({ loads, now, canEdit }: { loads: UpcomingPickup[]; now: Date; canEdit: boolean }) {
+export function UpcomingPickups({ loads, total, now, canEdit }: { loads: UpcomingPickup[]; total: number; now: Date; canEdit: boolean }) {
   if (loads.length === 0) {
     return (
       <EmptyState
@@ -131,53 +166,61 @@ export function UpcomingPickups({ loads, now, canEdit }: { loads: UpcomingPickup
       />
     );
   }
+  const more = total - loads.length;
   return (
-    <Table dense stickyHead={false} head={["Pickup", "Load", "Customer", "Team", "Truck / driver", "Status"]}>
-      {loads.map((l) => {
-        const late = l.pickupAt < now;
-        return (
-          <tr key={l.id}>
-            <td className="whitespace-nowrap">
-              <Link href={`/loads/${l.id}`} className="block">
-                <span className="num block text-fg">{dateTime(l.pickupAt)}</span>
-                <span className={cn("block text-[11px]", late ? "font-medium text-danger" : "text-fg-subtle")}>{late ? `overdue · ${ago(l.pickupAt)}` : ago(l.pickupAt)}</span>
-              </Link>
-            </td>
-            <td className="min-w-0">
-              <Link href={`/loads/${l.id}`} className="block min-w-0">
-                <span className="flex items-center gap-1.5">
-                  <span className="num font-medium text-fg">{l.reference}</span>
-                  {l.priority !== "NORMAL" && l.priority !== "LOW" && <Chip tone={l.priority === "URGENT" ? "danger" : "warn"}>{l.priority}</Chip>}
-                  {l.hazmat && <Chip tone="warn">Hazmat</Chip>}
-                </span>
-                <span className="block truncate text-[11px] text-fg-subtle">{l.originCity} → {l.destCity} · {l.commodity}</span>
-              </Link>
-            </td>
-            <td className="max-w-44 truncate text-fg-muted">{l.customer.name}</td>
-            <td className="whitespace-nowrap text-fg-muted">
-              {l.team ? (
-                <span className="inline-flex items-center gap-1.5">
-                  {l.team.color && <span className="h-1.5 w-1.5 rounded-full" style={{ background: l.team.color }} aria-hidden />}
-                  {l.team.name}
-                </span>
-              ) : <span className="text-fg-faint">—</span>}
-            </td>
-            <td className="whitespace-nowrap">
-              {l.truck ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="num text-fg">{l.truck.unitNumber}</span>
-                  <span className="text-fg-muted">{l.driver?.name ?? "no driver"}</span>
-                  {l.driver?.hold && <Chip tone="warn">Hold</Chip>}
-                </span>
-              ) : (
-                <Link href={canEdit ? `/loads/${l.id}/edit` : `/loads/${l.id}`} className="inline-flex"><Chip tone="warn">Needs truck</Chip></Link>
-              )}
-            </td>
-            <td><Badge value={l.status} label={l.status === "PLANNED" ? "Booked" : l.status === "ASSIGNED" ? "Dispatched" : undefined} /></td>
-          </tr>
-        );
-      })}
-    </Table>
+    <>
+      <Table dense stickyHead={false} head={["Pickup", "Load", "Customer", "Team", "Truck / driver", "Status"]}>
+        {loads.map((l) => {
+          const late = l.pickupAt < now;
+          return (
+            <tr key={l.id}>
+              <td className="whitespace-nowrap">
+                <Link href={`/loads/${l.id}`} className="block">
+                  <span className="num block text-fg">{dateTime(l.pickupAt)}</span>
+                  <span className={cn("block text-[11px]", late ? "font-medium text-danger" : "text-fg-subtle")}>{late ? `overdue · ${ago(l.pickupAt)}` : ago(l.pickupAt)}</span>
+                </Link>
+              </td>
+              <td className="min-w-0">
+                <Link href={`/loads/${l.id}`} className="block min-w-0">
+                  <span className="flex items-center gap-1.5">
+                    <span className="num font-medium text-fg">{l.reference}</span>
+                    {l.priority !== "NORMAL" && l.priority !== "LOW" && <Chip tone={l.priority === "URGENT" ? "danger" : "warn"}>{l.priority}</Chip>}
+                    {l.hazmat && <Chip tone="warn">Hazmat</Chip>}
+                  </span>
+                  <span className="block truncate text-[11px] text-fg-subtle">{l.originCity} → {l.destCity} · {l.commodity}</span>
+                </Link>
+              </td>
+              <td className="max-w-44 truncate text-fg-muted">{l.customer.name}</td>
+              <td className="whitespace-nowrap text-fg-muted">
+                {l.team ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    {l.team.color && <span className="h-1.5 w-1.5 rounded-full" style={{ background: l.team.color }} aria-hidden />}
+                    {l.team.name}
+                  </span>
+                ) : <span className="text-fg-faint">—</span>}
+              </td>
+              <td className="whitespace-nowrap">
+                {l.truck ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="num text-fg">{l.truck.unitNumber}</span>
+                    <span className="text-fg-muted">{l.driver?.name ?? "no driver"}</span>
+                    {l.driver?.hold && <Chip tone="warn">Hold</Chip>}
+                  </span>
+                ) : (
+                  <Link href={canEdit ? `/loads/${l.id}/edit` : `/loads/${l.id}`} className="inline-flex"><Chip tone="warn">Needs truck</Chip></Link>
+                )}
+              </td>
+              <td><Badge value={l.status} label={LOAD_STATUS_LABELS[l.status as LoadStatus]} /></td>
+            </tr>
+          );
+        })}
+      </Table>
+      {more > 0 && (
+        <Link href="/dispatch" className="block border-t border-line px-3 py-1.5 text-[11px] text-fg-muted transition-colors hover:bg-raised hover:text-fg">
+          +<span className="num">{plural(more, "more pickup")}</span> · Dispatch board →
+        </Link>
+      )}
+    </>
   );
 }
 

@@ -8,16 +8,31 @@ import { Card, Field, Input, Select, Textarea, buttonClass, cn } from "@/compone
 import { WORK_ORDER_CATEGORIES, WORK_ORDER_CATEGORY_LABELS, WORK_ORDER_PRIORITIES, WORK_ORDER_STATUSES, humanize } from "@/lib/constants";
 import { money2, number } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
+import { IN_HOUSE_VENDOR, onLoadReason } from "../_lib/shared";
 
-export type UnitOption = { id: string; unitNumber: string; detail: string; odometerKm?: number };
+export type UnitOption = {
+  id: string; unitNumber: string; detail: string; odometerKm?: number;
+  /** Odometer at the truck's last PM, to flag a PM reading below it. */
+  lastPmKm?: number | null;
+  /** Load the unit is on (assigned or in transit): it cannot go into the shop until the load is recovered. */
+  onLoad?: string | null;
+};
 
-/** Serialisable initial values (dates as yyyy-mm-dd strings). */
+type DateKey = "scheduledAt" | "inAt" | "outAt";
+
+/**
+ * Serialisable initial values. Dates are input strings rendered on the server, in the zone the action reads them
+ * back in: `scheduledAt` as yyyy-MM-dd, `inAt` / `outAt` as yyyy-MM-ddTHH:mm. `stamps` are the stored ISO
+ * timestamps: a date the user leaves alone is sent back exactly as stored, so saving an unrelated change (a cost,
+ * a note) never rounds the check-in time the Start / Complete buttons recorded.
+ */
 export type WorkOrderFormValues = {
   truckId?: string | null; trailerId?: string | null;
   title?: string | null; description?: string | null;
   category?: string | null; priority?: string | null; status?: string | null;
   vendor?: string | null;
   scheduledAt?: string | null; inAt?: string | null; outAt?: string | null;
+  stamps?: Partial<Record<DateKey, string | null>>;
   odometerKm?: number | null; laborCost?: number | null; partsCost?: number | null; cost?: number | null;
   notes?: string | null;
 };
@@ -25,26 +40,38 @@ export type WorkOrderFormValues = {
 type Mode = "truck" | "trailer";
 
 const CATEGORY_OPTIONS = WORK_ORDER_CATEGORIES.map((c) => ({ value: c, label: WORK_ORDER_CATEGORY_LABELS[c] ?? humanize(c) }));
+const statusOptions = (list: readonly string[]) => list.map((s) => ({ value: s, label: humanize(s) }));
+/**
+ * A job already in the shop can only be completed from this form. Cancelling it (which releases the unit) is the
+ * Cancel button's job, and moving it back to open or draft would leave the unit in the shop.
+ */
+const IN_SHOP_STATUSES = ["IN_PROGRESS", "DONE"] as const;
 const STATUS_HINT: Record<string, string> = {
   DRAFT: "Draft: visible in the list, no effect on the unit.",
   OPEN: "Open: scheduled work, the unit stays in service until you start it.",
   IN_PROGRESS: "In progress puts the unit in the shop (truck → maintenance, trailer → shop).",
-  DONE: "Done releases the unit. For a PM it also resets the service interval from the odometer below.",
-  CANCELLED: "Cancelled: kept for history, nothing changes on the unit.",
+  DONE: "Done releases the unit. Out of the shop is when the work finished; for a PM the service interval restarts from the odometer below.",
+  CANCELLED: "Cancelled: kept for history, nothing changes on the unit. A job already in the shop is cancelled from its page, which releases the unit.",
 };
+const IN_SHOP_HINT = "In the shop now. Complete it here, or use Cancel on the work order to stop without finishing; both release the unit.";
 
 const numOrEmpty = (v: number | null | undefined) => (v == null ? "" : String(v));
 
-export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial = {}, submitLabel, cancelHref }: {
+export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial = {}, savedStatus, now, submitLabel, cancelHref }: {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   trucks: UnitOption[];
   trailers: UnitOption[];
   /** Known vendors, offered as autocomplete suggestions. */
   vendors?: string[];
   initial?: WorkOrderFormValues;
+  /** Status stored on the work order being edited; omit when creating one. */
+  savedStatus?: string;
+  /** Server time as yyyy-MM-ddTHH:mm: fills "Out of the shop" when the job is set to done. */
+  now?: string;
   submitLabel: string;
   cancelHref: string;
 }) {
+  const inShop = savedStatus === "IN_PROGRESS";
   const [mode, setMode] = useState<Mode>(initial.trailerId && !initial.truckId ? "trailer" : "truck");
   const [truckId, setTruckId] = useState(initial.truckId ?? "");
   const [trailerId, setTrailerId] = useState(initial.trailerId ?? "");
@@ -57,10 +84,27 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
   const sumOf = (a: string, b: string) => (Number(a) || 0) + (Number(b) || 0);
   const [manualTotal, setManualTotal] = useState(initial.cost != null && initial.cost !== sumOf(numOrEmpty(initial.laborCost), numOrEmpty(initial.partsCost)));
   const [total, setTotal] = useState(numOrEmpty(initial.cost));
+  const [dates, setDates] = useState<Record<DateKey, string>>({ scheduledAt: initial.scheduledAt ?? "", inAt: initial.inAt ?? "", outAt: initial.outAt ?? "" });
 
   const sum = sumOf(labor, parts);
   const shownTotal = manualTotal ? total : sum ? String(sum) : "";
   const truck = trucks.find((t) => t.id === truckId);
+  const unit = mode === "truck" ? truck : trailers.find((t) => t.id === trailerId);
+  // Starting work on a unit that is still on a load would take it off the board under the load: the fleet pages refuse it.
+  const loadBlock = status === "IN_PROGRESS" && !inShop && unit?.onLoad ? `${onLoadReason(unit.unitNumber, unit.onLoad)} Keep the job open until then.` : null;
+  const lastPmKm = mode === "truck" && category === "PM" ? truck?.lastPmKm : null;
+  const belowLastPm = lastPmKm != null && odometer !== "" && Number(odometer) < lastPmKm;
+
+  const setDate = (k: DateKey, v: string) => setDates((d) => ({ ...d, [k]: v }));
+  /** The stored timestamp while the field still shows it, else what was typed. */
+  const submitted = (k: DateKey) => {
+    const stamp = initial.stamps?.[k];
+    return stamp && dates[k] === (initial[k] ?? "") ? stamp : dates[k];
+  };
+  const changeStatus = (next: string) => {
+    setStatus(next);
+    if (next === "DONE" && !dates.outAt && now) setDate("outAt", now);
+  };
 
   // The odometer follows the picked truck until the user types a reading of their own.
   const pickTruck = (id: string) => {
@@ -85,14 +129,20 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
   return (
     <ActionForm action={action} className="grid gap-4 xl:grid-cols-3">
       <div className="space-y-4 xl:col-span-2">
-        <Card title="Unit" actions={<div className="inline-flex rounded-md border border-line bg-surface p-0.5">{toggle("truck")}{toggle("trailer")}</div>}>
-          {mode === "truck" ? (
-            <Field label="Truck" required hint={truck ? `Odometer ${number(truck.odometerKm)} km · ${truck.detail}` : "Pick the tractor this work is for."}>
+        <Card title="Unit" actions={!inShop && <div className="inline-flex rounded-md border border-line bg-surface p-0.5">{toggle("truck")}{toggle("trailer")}</div>}>
+          {inShop ? (
+            // Swapping the unit of a job in progress would leave the first unit in the shop.
+            <Field label={mode === "truck" ? "Truck" : "Trailer"} hint="In the shop on this job. Complete or cancel it before moving the work to another unit.">
+              <Input readOnly value={unit ? `${unit.unitNumber} · ${unit.detail}` : "—"} className="bg-sunken text-fg-muted" />
+              <input type="hidden" name={mode === "truck" ? "truckId" : "trailerId"} value={mode === "truck" ? truckId : trailerId} />
+            </Field>
+          ) : mode === "truck" ? (
+            <Field label="Truck" required hint={truck ? `Odometer ${number(truck.odometerKm)} km · ${truck.detail}${truck.onLoad ? ` · on ${truck.onLoad}` : ""}` : "Pick the tractor this work is for."}>
               <Select name="truckId" required value={truckId} onChange={(e) => pickTruck(e.target.value)} placeholder="Select a truck…"
                 options={trucks.map((t) => ({ value: t.id, label: `${t.unitNumber} · ${t.detail}` }))} />
             </Field>
           ) : (
-            <Field label="Trailer" required hint="Pick the trailer this work is for.">
+            <Field label="Trailer" required hint={unit?.onLoad ? `On ${unit.onLoad}.` : "Pick the trailer this work is for."}>
               <Select name="trailerId" required value={trailerId} onChange={(e) => setTrailerId(e.target.value)} placeholder="Select a trailer…"
                 options={trailers.map((t) => ({ value: t.id, label: `${t.unitNumber} · ${t.detail}` }))} />
             </Field>
@@ -110,10 +160,10 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
             <Field label="Priority">
               <Select name="priority" defaultValue={initial.priority ?? "MEDIUM"} options={WORK_ORDER_PRIORITIES.map((p) => ({ value: p, label: humanize(p) }))} />
             </Field>
-            <Field label="Status" hint={STATUS_HINT[status]}>
-              <Select name="status" value={status} onChange={(e) => setStatus(e.target.value)} options={WORK_ORDER_STATUSES.map((s) => ({ value: s, label: humanize(s) }))} />
+            <Field label="Status" hint={loadBlock ? <span className="text-warn">{loadBlock}</span> : inShop && status === "IN_PROGRESS" ? IN_SHOP_HINT : STATUS_HINT[status]}>
+              <Select name="status" value={status} onChange={(e) => changeStatus(e.target.value)} options={statusOptions(inShop ? IN_SHOP_STATUSES : WORK_ORDER_STATUSES)} />
             </Field>
-            <Field label="Vendor / shop" hint="Leave empty for the in-house workshop.">
+            <Field label="Vendor / shop" hint={<>Your own shop is <span className="font-medium text-fg-muted">{IN_HOUSE_VENDOR}</span>; outside shops are suggested as you type.</>}>
               <Input name="vendor" defaultValue={initial.vendor ?? ""} placeholder="e.g. Volvo Center Tashkent" list={vendors.length ? "wo-vendors" : undefined} />
               {vendors.length > 0 && <datalist id="wo-vendors">{vendors.map((v) => <option key={v} value={v} />)}</datalist>}
             </Field>
@@ -130,10 +180,22 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
       <div className="space-y-4">
         <Card title="Schedule">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-            <Field label="Scheduled for" required><Input name="scheduledAt" type="date" required defaultValue={initial.scheduledAt ?? new Date().toISOString().slice(0, 10)} /></Field>
-            <Field label="Into the shop"><Input name="inAt" type="date" defaultValue={initial.inAt ?? ""} /></Field>
-            <Field label="Out of the shop"><Input name="outAt" type="date" defaultValue={initial.outAt ?? ""} /></Field>
-            <Field label="Odometer (km)" hint={mode === "truck" ? (category === "PM" ? "Used to reset the PM interval when this work order is done." : "Prefilled from the truck; adjust to the reading at check-in.") : "Optional for trailers."}>
+            {/* Visible inputs carry no name: the hidden twins submit the stored timestamp or the edited value. */}
+            <Field label="Scheduled for" required>
+              <Input type="date" required value={dates.scheduledAt} onChange={(e) => setDate("scheduledAt", e.target.value)} />
+              <input type="hidden" name="scheduledAt" value={submitted("scheduledAt")} />
+            </Field>
+            <Field label="Into the shop">
+              <Input type="datetime-local" value={dates.inAt} onChange={(e) => setDate("inAt", e.target.value)} className="num" />
+              <input type="hidden" name="inAt" value={submitted("inAt")} />
+            </Field>
+            <Field label="Out of the shop" required={status === "DONE"} hint={status === "DONE" ? "When the work finished." : undefined}>
+              <Input type="datetime-local" required={status === "DONE"} min={dates.inAt || undefined} value={dates.outAt} onChange={(e) => setDate("outAt", e.target.value)} className="num" />
+              <input type="hidden" name="outAt" value={submitted("outAt")} />
+            </Field>
+            <Field label="Odometer (km)" hint={belowLastPm
+              ? <span className="text-warn">Below this truck&apos;s last PM reading of {number(lastPmKm)} km.</span>
+              : mode === "truck" ? (category === "PM" ? "Used to reset the PM interval when this work order is done." : "Prefilled from the truck; adjust to the reading at check-in.") : "Optional for trailers."}>
               <Input name="odometerKm" type="number" inputMode="numeric" min={0} value={odometer} onChange={(e) => { setOdometer(e.target.value); setOdometerTouched(true); }} className="num" />
             </Field>
           </div>
@@ -152,7 +214,9 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
         </Card>
 
         <div className="flex items-center gap-2">
-          <SubmitButton className="flex-1">{submitLabel}</SubmitButton>
+          <span className="flex flex-1" title={loadBlock ?? undefined}>
+            <SubmitButton className="flex-1" disabled={Boolean(loadBlock)}>{submitLabel}</SubmitButton>
+          </span>
           <Link href={cancelHref} className={buttonClass("secondary")}>Cancel</Link>
         </div>
       </div>

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { setWorkOrderStatus } from "@/app/actions/fleet";
 import { buttonClass, type ButtonVariant } from "@/components/ui";
+import { setWorkOrderStatus } from "./actions";
 
 const NEXT: Record<string, { to: string; label: string; variant: ButtonVariant }> = {
   DRAFT: { to: "OPEN", label: "Open", variant: "secondary" },
@@ -20,8 +20,12 @@ export function WorkOrderActions({ id, status, size = "sm" }: { id: string; stat
     if (confirmText && !window.confirm(confirmText)) return;
     start(async () => {
       setError(null);
-      try { await setWorkOrderStatus(id, to); }
-      catch (e) { setError(e instanceof Error && e.message ? e.message : "Could not update the work order"); }
+      try {
+        const res = await setWorkOrderStatus(id, to);
+        if (res?.error) setError(res.error);
+      } catch {
+        setError("Could not update the work order. Refresh the page and try again.");
+      }
     });
   };
   return (

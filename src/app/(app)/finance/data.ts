@@ -1,11 +1,13 @@
 import "server-only";
+import { cache } from "react";
 import { format, startOfMonth, subMonths } from "date-fns";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { receivables } from "@/lib/stats";
-import { missingLoadDocs } from "@/lib/workflow";
 import { daysAgo } from "@/lib/format";
-import { daysLate, invoiceTotal, parseLetterhead, type InvoiceFilter, type Letterhead } from "./shared";
+import {
+  INVOICE_PAGE_SIZE, billableSince, daysLate, invoiceOrder, invoiceTotal, parseLetterhead, requiredDocsFor, type InvoiceFilter, type Letterhead,
+} from "./shared";
 
 const COMPANY_PROFILE_KEY = "company.profile";
 
@@ -16,14 +18,11 @@ const COMPANY_PROFILE_KEY = "company.profile";
 export async function financeKpis(now = new Date()) {
   const monthStart = startOfMonth(now);
   const lastMonthStart = startOfMonth(subMonths(now, 1));
-  const [ar, paidThisMonth, paidLastMonth, unbilled, ready, missing, oldestOverdue, overdueCount, paidRecent] = await Promise.all([
+  // Unbilled, ready and missing-docs figures come from the billing queue itself (see billingQueueLoads).
+  const [ar, paidThisMonth, paidLastMonth, oldestOverdue, overdueCount, paidRecent] = await Promise.all([
     receivables(),
     db.invoice.findMany({ where: { status: "PAID", paidAt: { gte: monthStart } }, select: { amount: true, taxRate: true } }),
     db.invoice.findMany({ where: { status: "PAID", paidAt: { gte: lastMonthStart, lt: monthStart } }, select: { amount: true, taxRate: true } }),
-    // Completed work with no invoice yet (delivered or TONU), whatever the paperwork state.
-    db.load.aggregate({ where: { status: { in: ["DELIVERED", "TONU"] }, invoice: null }, _count: true, _sum: { rate: true } }),
-    db.load.aggregate({ where: { billingStage: "READY_TO_INVOICE" }, _count: true, _sum: { rate: true } }),
-    db.load.aggregate({ where: { billingStage: "MISSING_DOCS" }, _count: true, _sum: { rate: true } }),
     db.invoice.findFirst({ where: { status: "SENT", dueAt: { lt: now } }, orderBy: { dueAt: "asc" }, select: { id: true, number: true, dueAt: true, customer: { select: { name: true } } } }),
     db.invoice.count({ where: { status: "SENT", dueAt: { lt: now } } }),
     db.invoice.findMany({ where: { status: "PAID", paidAt: { gte: daysAgo(90) } }, select: { issuedAt: true, paidAt: true } }),
@@ -38,9 +37,6 @@ export async function financeKpis(now = new Date()) {
     oldestOverdue: oldestOverdue ? { ...oldestOverdue, days: daysLate(oldestOverdue.dueAt, now) } : null,
     collected: sum(paidThisMonth), collectedCount: paidThisMonth.length, collectedLastMonth: sum(paidLastMonth),
     monthLabel: format(now, "MMMM"), lastMonthShort: format(lastMonthStart, "MMM"),
-    unbilled: unbilled._sum.rate ?? 0, unbilledCount: unbilled._count,
-    ready: ready._sum.rate ?? 0, readyCount: ready._count,
-    missing: missing._sum.rate ?? 0, missingCount: missing._count,
     dso, dsoSample: paidRecent.length,
   };
 }
@@ -51,7 +47,7 @@ export type FinanceKpis = Awaited<ReturnType<typeof financeKpis>>;
 /* ------------------------------------------------------------------ */
 
 const QUEUE_SELECT = {
-  id: true, reference: true, status: true, billingStage: true, rate: true, deliveredAt: true, deliveryAt: true, podSignedBy: true,
+  id: true, reference: true, status: true, billingStage: true, rate: true, deliveredAt: true, deliveryAt: true, pickupAt: true, podSignedBy: true,
   originCity: true, destCity: true, customerRef: true,
   customer: { select: { id: true, name: true } },
   broker: { select: { id: true, name: true } },
@@ -61,19 +57,28 @@ const QUEUE_SELECT = {
 
 export type QueueLoad = Prisma.LoadGetPayload<{ select: typeof QUEUE_SELECT }> & { missingDocs: string[] };
 
-/** Loads waiting on paperwork and loads ready to bill, oldest delivery first. */
+/**
+ * Completed work with no invoice yet (delivered or TONU), split into loads waiting on paperwork and loads
+ * ready to bill, longest-waiting first. Split on the documents themselves with the TONU-aware list
+ * (requiredDocsFor), so a TONU load with its rate confirmation can be billed without a proof of delivery.
+ */
 export async function billingQueueLoads() {
   const loads = await db.load.findMany({
-    where: { billingStage: { in: ["MISSING_DOCS", "READY_TO_INVOICE"] } },
-    orderBy: [{ deliveredAt: "asc" }, { deliveryAt: "asc" }],
+    where: { status: { in: ["DELIVERED", "TONU"] }, invoice: null },
     select: QUEUE_SELECT,
   });
-  const rows: QueueLoad[] = loads.map((l) => ({ ...l, missingDocs: missingLoadDocs(l.documents) }));
+  const rows: QueueLoad[] = loads
+    .map((l) => {
+      const have = new Set(l.documents.map((d) => d.kind));
+      return { ...l, missingDocs: requiredDocsFor(l.status).filter((k) => !have.has(k)) };
+    })
+    .sort((a, b) => billableSince(a).getTime() - billableSince(b).getTime());
   return {
-    missing: rows.filter((l) => l.billingStage === "MISSING_DOCS"),
-    ready: rows.filter((l) => l.billingStage === "READY_TO_INVOICE"),
+    missing: rows.filter((l) => l.missingDocs.length > 0),
+    ready: rows.filter((l) => l.missingDocs.length === 0),
   };
 }
+export type BillingQueue = Awaited<ReturnType<typeof billingQueueLoads>>;
 
 /* ------------------------------------------------------------------ */
 /* Invoices                                                            */
@@ -94,11 +99,14 @@ const INVOICE_INCLUDE = {
 } satisfies Prisma.InvoiceInclude;
 export type InvoiceRow = Prisma.InvoiceGetPayload<{ include: typeof INVOICE_INCLUDE }>;
 
-export function invoiceList(filter: InvoiceFilter, now: Date, take = 200) {
-  // Open work sorts by what is due soonest; history by most recent.
-  const orderBy: Prisma.InvoiceOrderByWithRelationInput[] = filter === "open" || filter === "overdue" || filter === "SENT"
-    ? [{ dueAt: "asc" }] : [{ issuedAt: "desc" }];
-  return db.invoice.findMany({ where: invoiceWhere(filter, now), orderBy, take, include: INVOICE_INCLUDE });
+/** One page of invoices for a filter (`page` from 1, INVOICE_PAGE_SIZE per page). */
+export function invoiceList(filter: InvoiceFilter, now: Date, page = 1) {
+  const orderBy: Prisma.InvoiceOrderByWithRelationInput[] = invoiceOrder(filter) === "due"
+    ? [{ dueAt: "asc" }, { number: "asc" }] : [{ issuedAt: "desc" }, { number: "desc" }];
+  return db.invoice.findMany({
+    where: invoiceWhere(filter, now), orderBy, include: INVOICE_INCLUDE,
+    skip: (page - 1) * INVOICE_PAGE_SIZE, take: INVOICE_PAGE_SIZE,
+  });
 }
 
 export async function invoiceCounts(now: Date): Promise<Record<InvoiceFilter, number>> {
@@ -154,8 +162,9 @@ export async function agingByCustomer(now = new Date()): Promise<CustomerAging[]
 /* Invoice detail                                                      */
 /* ------------------------------------------------------------------ */
 
-export function invoiceDetail(id: string) {
-  return db.invoice.findUnique({
+/** Cached per request: generateMetadata and the page both read it. */
+export const invoiceDetail = cache((id: string) =>
+  db.invoice.findUnique({
     where: { id },
     include: {
       customer: true,
@@ -168,8 +177,8 @@ export function invoiceDetail(id: string) {
         },
       },
     },
-  });
-}
+  }),
+);
 
 /** Letterhead for printed invoices from AppSetting "company.profile", with fallbacks for anything unset. */
 export async function getLetterhead(): Promise<Letterhead> {

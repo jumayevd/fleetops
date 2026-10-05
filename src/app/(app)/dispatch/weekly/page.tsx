@@ -1,32 +1,31 @@
 import { Download, Plus } from "lucide-react";
-import { addDays, format, startOfWeek } from "date-fns";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { weeklyProduction } from "@/lib/stats";
 import { money, money2, number } from "@/lib/format";
 import { buttonClass, Card, EmptyState, LinkButton, PageHeader, Stat } from "@/components/ui";
 import { WeekPicker } from "./week-picker";
 import { GoalsControl } from "./goals";
 import { WeeklyBoard } from "./weekly-board";
+import { parseWeek, thisWeekMonday, weeklyProductionTz } from "./weekly-data";
+import { shiftYmd, todayYmd, ymdDayMonth, ymdDayMonthYear } from "../dates";
 
 export const metadata = { title: "Weekly production" };
 
 export default async function WeeklyPage({ searchParams }: PageProps<"/dispatch/weekly">) {
   const user = await requireUser("loads.view");
   const sp = await searchParams;
-  const raw = typeof sp.week === "string" ? sp.week : "";
-  const requested = raw && !Number.isNaN(Date.parse(raw)) ? new Date(`${raw.slice(0, 10)}T12:00:00`) : new Date();
-  const data = await weeklyProduction(startOfWeek(requested, { weekStartsOn: 1 }));
-  const weekYmd = format(data.start, "yyyy-MM-dd");
-  const today = format(new Date(), "yyyy-MM-dd");
-  const thisWeekYmd = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+  // Strict YYYY-MM-DD (a real date) in company time; anything else, e.g. ?week=1, shows this week instead of failing.
+  const weekYmd = parseWeek(sp.week);
+  const data = await weeklyProductionTz(weekYmd);
+  const today = todayYmd();
+  const thisWeekYmd = thisWeekMonday();
   const canManage = can(user.role, "users.manage");
 
   const goalTotal = data.groups.reduce((a, g) => a + g.rows.reduce((b, r) => b + r.goal, 0), 0);
   const loadsCount = data.groups.reduce((a, g) => a + g.rows.reduce((b, r) => b + r.days.reduce((c, d) => c + d.loads.length, 0), 0), 0);
   const worked = data.groups.reduce((a, g) => a + g.rows.filter((r) => r.daysWorked > 0).length, 0);
   const planPct = goalTotal ? Math.round((data.grand.total / goalTotal) * 100) : 0;
-  const rangeLabel = `${format(data.start, "d MMM")} – ${format(addDays(data.start, 6), "d MMM yyyy")}`;
+  const rangeLabel = `${ymdDayMonth(weekYmd)} – ${ymdDayMonthYear(shiftYmd(weekYmd, 6))}`;
 
   return (
     <>
@@ -66,7 +65,7 @@ export default async function WeeklyPage({ searchParams }: PageProps<"/dispatch/
           />
         </Card>
       ) : (
-        <WeeklyBoard groups={data.groups} start={data.start.toISOString()} today={today} grand={data.grand} goalTotal={goalTotal} />
+        <WeeklyBoard groups={data.groups} days={data.days} today={today} grand={data.grand} goalTotal={goalTotal} />
       )}
     </>
   );

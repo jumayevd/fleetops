@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { date, money, number } from "@/lib/format";
-import { Badge, Card, Cell, Chip, FilterPills, Table, cn } from "@/components/ui";
+import { Badge, Card, Cell, Chip, FilterPills, LinkButton, Table, cn } from "@/components/ui";
 import type { InvoiceRow } from "./data";
-import { FILTER_LABELS, INVOICE_FILTERS, daysLate, financeHref, invoiceBadge, invoiceTotal, isOverdue, type InvoiceFilter } from "./shared";
+import {
+  FILTER_LABELS, INVOICE_FILTERS, INVOICE_PAGE_SIZE, daysLate, financeHref, invoiceBadge, invoiceOrder, invoiceTotal, isOverdue, type InvoiceFilter,
+} from "./shared";
 import { InvoiceActions } from "./invoice-actions";
 
 const EMPTY: Record<InvoiceFilter, [string, string]> = {
@@ -39,9 +41,30 @@ function Due({ i, now }: { i: InvoiceRow; now: Date }) {
   );
 }
 
-export function InvoicesTab({ invoices, filter, counts, editable, now }: {
-  invoices: InvoiceRow[]; filter: InvoiceFilter; counts: Record<InvoiceFilter, number>; editable: boolean; now: Date;
+/** Range shown and links to the neighbouring pages, when a filter has more invoices than one page holds. */
+function Pager({ filter, page, pages, shown, count }: { filter: InvoiceFilter; page: number; pages: number; shown: number; count: number }) {
+  const from = (page - 1) * INVOICE_PAGE_SIZE + 1;
+  const href = (p: number) => financeHref({ tab: "invoices", status: filter, page: p });
+  const [prev, next] = invoiceOrder(filter) === "due" ? ["Due sooner", "Due later"] : ["Newer", "Older"];
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-2 text-[11px] text-fg-subtle">
+      <span>
+        <span className="num">{number(from)}–{number(from + shown - 1)}</span> of <span className="num">{number(count)}</span>,{" "}
+        {invoiceOrder(filter) === "due" ? "due soonest first" : "most recent first"}
+      </span>
+      <div className="flex items-center gap-1">
+        {page > 1 && <LinkButton href={href(page - 1)} variant="ghost" size="sm"><ArrowLeft />{prev}</LinkButton>}
+        <span className="num px-1">Page {page} of {pages}</span>
+        {page < pages && <LinkButton href={href(page + 1)} variant="ghost" size="sm">{next}<ArrowRight /></LinkButton>}
+      </div>
+    </div>
+  );
+}
+
+export function InvoicesTab({ invoices, filter, counts, page, pages, editable, now }: {
+  invoices: InvoiceRow[]; filter: InvoiceFilter; counts: Record<InvoiceFilter, number>; page: number; pages: number; editable: boolean; now: Date;
 }) {
+  const count = counts[filter];
   const total = invoices.reduce((a, i) => a + invoiceTotal(i), 0);
   const overdueTotal = invoices.filter((i) => isOverdue(i, now)).reduce((a, i) => a + invoiceTotal(i), 0);
   const [emptyTitle, emptyDescription] = EMPTY[filter];
@@ -51,7 +74,7 @@ export function InvoicesTab({ invoices, filter, counts, editable, now }: {
       <Card flush
         actions={
           <span className="num text-[11px] text-fg-subtle">
-            {number(invoices.length)} {invoices.length === 1 ? "invoice" : "invoices"} · {money(total)} incl. VAT
+            {number(count)} {count === 1 ? "invoice" : "invoices"} · {money(total)} incl. VAT{pages > 1 && " on this page"}
             {overdueTotal > 0 && filter !== "overdue" && <> · <span className="text-danger">{money(overdueTotal)} overdue</span></>}
           </span>
         }
@@ -79,10 +102,11 @@ export function InvoicesTab({ invoices, filter, counts, editable, now }: {
               <td><Due i={i} now={now} /></td>
               <td className="num text-right font-medium">{money(invoiceTotal(i))}</td>
               <td><Badge value={invoiceBadge(i, now)} dot /></td>
-              <td className="w-px whitespace-nowrap">{editable && <InvoiceActions id={i.id} number={i.number} status={i.status} compact />}</td>
+              <td className="w-px whitespace-nowrap">{editable && <InvoiceActions id={i.id} number={i.number} status={i.status} loadRef={i.load?.reference} compact />}</td>
             </tr>
           ))}
         </Table>
+        {pages > 1 && <Pager filter={filter} page={page} pages={pages} shown={invoices.length} count={count} />}
       </Card>
     </div>
   );

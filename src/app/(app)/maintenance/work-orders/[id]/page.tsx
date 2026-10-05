@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil } from "lucide-react";
+import type { ReactNode } from "react";
+import { AlertTriangle, Pencil } from "lucide-react";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
@@ -8,8 +9,9 @@ import { WORK_ORDER_CATEGORY_LABELS, humanize } from "@/lib/constants";
 import { ago, date, dateTime, km, money, number } from "@/lib/format";
 import { Badge, Card, Chip, DL, LinkButton, PageHeader, Table, cn } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents/panel";
-import { daysBetween, shopTone } from "../../_lib/data";
-import { maintenanceHref, trailerHref, truckHref, workOrderHref } from "../../_lib/links";
+import { activeLoadsByUnit, daysBetween, pmNextService, shopTone } from "../../_lib/data";
+import { loadHref, maintenanceHref, trailerHref, truckHref, workOrderHref } from "../../_lib/links";
+import { NO_VENDOR, onLoadReason } from "../../_lib/shared";
 import { UnitLink } from "../../_components/unit-link";
 import { WorkOrderStatusButtons } from "../../_components/work-order-status";
 
@@ -29,21 +31,44 @@ export default async function WorkOrderDetail({ params }: PageProps<"/maintenanc
   if (!wo) notFound();
   const editable = can(user.role, "fleet.edit");
   const path = workOrderHref(id);
+  const unitId = wo.truckId ?? wo.trailerId;
   const unitWhere = wo.truckId ? { truckId: wo.truckId } : wo.trailerId ? { trailerId: wo.trailerId } : null;
-  const related = unitWhere
-    ? await db.workOrder.findMany({ where: { ...unitWhere, id: { not: id } }, orderBy: { scheduledAt: "desc" }, take: 6, select: { id: true, number: true, title: true, status: true, category: true, cost: true, scheduledAt: true, completedAt: true } })
-    : [];
+  const [related, loads] = await Promise.all([
+    unitWhere
+      ? db.workOrder.findMany({ where: { ...unitWhere, id: { not: id } }, orderBy: { scheduledAt: "desc" }, take: 6, select: { id: true, number: true, title: true, status: true, category: true, cost: true, scheduledAt: true, completedAt: true } })
+      : [],
+    unitId ? activeLoadsByUnit([unitId]) : null,
+  ]);
+  const load = unitId ? loads?.get(unitId) : undefined;
+  const unitNumber = wo.truck?.unitNumber ?? wo.trailer?.unitNumber;
+  // Not started yet and the unit is out on a load: Start stays disabled until the load is recovered.
+  const startBlocked = load && unitNumber && (wo.status === "DRAFT" || wo.status === "OPEN") ? onLoadReason(unitNumber, load.reference) : null;
 
+  const now = new Date();
   const shopDays = wo.inAt ? daysBetween(wo.inAt, wo.outAt ?? undefined) : null;
   const inShop = wo.status === "IN_PROGRESS";
   const labourShare = wo.cost > 0 ? Math.min(100, Math.round((wo.laborCost / wo.cost) * 100)) : 0;
   const partsShare = wo.cost > 0 ? Math.min(100 - labourShare, Math.round((wo.partsCost / wo.cost) * 100)) : 0;
   const unitHref = wo.truck ? truckHref(wo.truck.id) : wo.trailer ? trailerHref(wo.trailer.id) : null;
   const unitLabel = wo.truck ? `${wo.truck.unitNumber} · ${wo.truck.make} ${wo.truck.model}` : wo.trailer ? `${wo.trailer.unitNumber} · ${humanize(wo.trailer.type)} trailer` : "No unit";
+  // Same PM rule as the PM board and alerts: explicit next service, else last PM + interval.
+  const nextService = wo.truck ? pmNextService(wo.truck) : null;
+  const kmToService = wo.truck && nextService != null ? nextService - wo.truck.odometerKm : null;
+  const unitFacts: [string, ReactNode][] = [];
+  if (wo.truck) {
+    unitFacts.push(
+      ["Odometer", km(wo.truck.odometerKm)],
+      ["Next service", kmToService == null ? "—"
+        : kmToService < 0 ? <span key="n" className="num text-danger">{number(-kmToService)} km overdue</span>
+        : <span key="n" className={cn("num", kmToService <= 2000 && "text-warn")}>in {number(kmToService)} km</span>],
+    );
+  }
+  if (load) unitFacts.push(["On load", <Link key="l" href={loadHref(load.id)} className="num hover:underline">{load.reference}</Link>]);
 
-  const steps: { label: string; at: Date | null; hint?: string }[] = [
+  // `done` defaults to "has a date"; the scheduled date exists from the start, so it only counts once it has passed.
+  const steps: { label: string; at: Date | null; hint?: string; done?: boolean; dateOnly?: boolean }[] = [
     { label: "Created", at: wo.createdAt, hint: wo.createdBy?.name ? `by ${wo.createdBy.name}` : undefined },
-    { label: "Scheduled", at: wo.scheduledAt },
+    { label: "Scheduled", at: wo.scheduledAt, done: wo.scheduledAt <= now || Boolean(wo.inAt), dateOnly: true },
     { label: "Into the shop", at: wo.inAt, hint: wo.vendor ?? undefined },
     { label: "Out of the shop", at: wo.outAt, hint: shopDays != null ? `${shopDays}d in shop` : undefined },
     { label: wo.status === "CANCELLED" ? "Cancelled" : "Completed", at: wo.status === "CANCELLED" ? wo.updatedAt : wo.completedAt },
@@ -65,11 +90,22 @@ export default async function WorkOrderDetail({ params }: PageProps<"/maintenanc
         }
         actions={editable && (
           <>
-            <WorkOrderStatusButtons id={wo.id} status={wo.status} number={wo.number} size="md" />
+            <WorkOrderStatusButtons id={wo.id} status={wo.status} number={wo.number} size="md" blockedBy={startBlocked} />
             <LinkButton href={`${path}/edit`} variant="secondary"><Pencil />Edit</LinkButton>
           </>
         )}
       />
+
+      {startBlocked && load && (
+        <p role="note" className="mb-4 flex items-start gap-2 rounded-md bg-warn-soft px-3 py-2 text-[12px] leading-4 text-warn">
+          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>
+            <span className="num font-medium">{unitNumber}</span> is on load{" "}
+            <Link href={loadHref(load.id)} className="num font-medium underline underline-offset-2">{load.reference}</Link> ({humanize(load.status).toLowerCase()}).
+            {" "}Recover the load to another unit before starting this job.
+          </span>
+        </p>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
@@ -78,7 +114,7 @@ export default async function WorkOrderDetail({ params }: PageProps<"/maintenanc
               ["Unit", unitHref ? <Link key="u" href={unitHref} className="hover:underline">{wo.truck?.unitNumber ?? wo.trailer?.unitNumber}</Link> : "—"],
               ["Category", WORK_ORDER_CATEGORY_LABELS[wo.category] ?? humanize(wo.category)],
               ["Priority", humanize(wo.priority)],
-              ["Vendor / shop", wo.vendor ?? "In-house workshop"],
+              ["Vendor / shop", wo.vendor ?? <span key="v" className="font-normal text-fg-subtle">{NO_VENDOR}</span>],
               ["Scheduled for", date(wo.scheduledAt)],
               ["Odometer at service", wo.odometerKm != null ? km(wo.odometerKm) : wo.truck ? `${km(wo.truck.odometerKm)} (truck, current)` : "—"],
               ["Into the shop", wo.inAt ? dateTime(wo.inAt) : "—"],
@@ -146,7 +182,7 @@ export default async function WorkOrderDetail({ params }: PageProps<"/maintenanc
           <Card title="Timeline">
             <ol className="space-y-3">
               {steps.map((s, i) => {
-                const done = Boolean(s.at);
+                const done = s.done ?? Boolean(s.at);
                 const cancelled = wo.status === "CANCELLED" && i === steps.length - 1;
                 return (
                   <li key={s.label} className="flex items-start gap-3">
@@ -154,7 +190,7 @@ export default async function WorkOrderDetail({ params }: PageProps<"/maintenanc
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className={cn("text-[13px]", done ? "font-medium text-fg" : "text-fg-subtle")}>{s.label}</span>
-                        <span className="num shrink-0 text-[11px] text-fg-subtle">{s.at ? dateTime(s.at) : "—"}</span>
+                        <span className="num shrink-0 text-[11px] text-fg-subtle">{s.at ? (s.dateOnly ? date(s.at) : dateTime(s.at)) : "—"}</span>
                       </div>
                       {s.hint && <p className="text-[11px] text-fg-subtle">{s.hint}</p>}
                     </div>
@@ -177,12 +213,7 @@ export default async function WorkOrderDetail({ params }: PageProps<"/maintenanc
                 <UnitLink truck={wo.truck} trailer={wo.trailer} secondary={wo.truck ? `${wo.truck.make} ${wo.truck.model} · ${wo.truck.plate}` : wo.trailer ? `${humanize(wo.trailer.type)} · ${wo.trailer.plate ?? "no plate"}` : undefined} />
                 <Badge value={(wo.truck ?? wo.trailer)!.status} dot />
               </div>
-              {wo.truck && (
-                <DL items={[
-                  ["Odometer", km(wo.truck.odometerKm)],
-                  ["Next service", wo.truck.nextServiceKm != null ? `${number(wo.truck.nextServiceKm - wo.truck.odometerKm)} km` : "—"],
-                ]} />
-              )}
+              {unitFacts.length > 0 && <div className="mt-3"><DL items={unitFacts} /></div>}
             </Card>
           )}
         </div>

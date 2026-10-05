@@ -1,7 +1,11 @@
 import { Card, Kbd, LinkButton } from "@/components/ui";
+import { getCurrentUser } from "@/lib/auth";
+import { homeFor } from "@/lib/permissions";
 
 /** 404 inside the signed-in shell: a record that doesn't exist or was removed. */
-export default function AppNotFound() {
+export default async function AppNotFound() {
+  const user = await getCurrentUser();
+  const driver = user?.role === "DRIVER";
   return (
     <>
       <title>Not found · FleetOps</title>
@@ -14,8 +18,8 @@ export default function AppNotFound() {
             so start from one of them or search for what you need.
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <LinkButton href="/" variant="primary">Go to home</LinkButton>
-            <LinkButton href="/loads" variant="secondary">Open loads</LinkButton>
+            <LinkButton href={user ? homeFor(user.role) : "/"} variant="primary">{driver ? "Go to my trips" : "Go to home"}</LinkButton>
+            {!driver && <LinkButton href="/loads" variant="secondary">Open loads</LinkButton>}
             <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-fg-subtle">Search <Kbd>⌘K</Kbd></span>
           </div>
         </Card>

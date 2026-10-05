@@ -1,14 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { format, startOfWeek } from "date-fns";
 import { getCurrentUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { weeklyProduction } from "@/lib/stats";
 import { DRIVER_TYPE_SHORT } from "@/lib/constants";
+import { parseWeek, weeklyProductionTz } from "@/app/(app)/dispatch/weekly/weekly-data";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * One CSV field. Text starting with = + - @ (or a tab / CR) is prefixed with ' so Excel and Sheets don't run it as a
+ * formula; numbers are left alone so negative plan deltas stay numeric.
+ */
 const csvCell = (v: string | number | null | undefined) => {
-  const s = v == null ? "" : String(v);
+  let s = v == null ? "" : String(v);
+  if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
@@ -18,10 +22,9 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   if (!can(user.role, "loads.view")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const raw = req.nextUrl.searchParams.get("week");
-  const parsed = raw && !Number.isNaN(Date.parse(raw)) ? new Date(raw) : new Date();
-  const data = await weeklyProduction(startOfWeek(parsed, { weekStartsOn: 1 }));
-  const days = Array.from({ length: 7 }, (_, i) => format(new Date(data.start.getTime() + i * 86_400_000), "EEE dd MMM"));
+  // Same week rules as the page: a real YYYY-MM-DD in company time, otherwise this week.
+  const data = await weeklyProductionTz(parseWeek(req.nextUrl.searchParams.get("week")));
+  const days = data.days.map((d) => `${d.weekday} ${d.label}`);
 
   const lines: string[] = [];
   lines.push(["Team", "Driver", "Type", "Truck", "Hold", ...days.flatMap((d) => [`${d} $`, `${d} km`, `${d} loads`]), "Total $", "Total km", "Avg $/km", "Goal $", "Plan delta $", "Days worked", "Efficiency %"].map(csvCell).join(","));
@@ -37,7 +40,7 @@ export async function GET(req: NextRequest) {
   }
   lines.push(["All teams", "Grand total", "", "", "", ...Array(21).fill(""), Math.round(data.grand.total), Math.round(data.grand.km), data.grand.rpk.toFixed(2), "", "", "", ""].map(csvCell).join(","));
 
-  const name = `weekly-production-${format(data.start, "yyyy-MM-dd")}.csv`;
+  const name = `weekly-production-${data.monday}.csv`;
   return new NextResponse(`﻿${lines.join("\r\n")}\r\n`, {
     headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${name}"`, "cache-control": "no-store" },
   });

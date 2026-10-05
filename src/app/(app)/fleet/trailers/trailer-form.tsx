@@ -1,25 +1,27 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import type { Trailer } from "@prisma/client";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Card, Field, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { EQUIPMENT, EQUIPMENT_LABELS, TRAILER_STATUSES, TRAILER_STATUS_LABELS } from "@/lib/constants";
 import { toDateInput } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
-import { GPS_PROVIDERS } from "../lib";
+import { GPS_PROVIDERS, UNHOOKED_TRAILER_STATUSES } from "../lib";
 
-export function TrailerForm({ action, trailer, trucks, redirectTo, cancelHref }: {
+/** Saving opens the trailer page (the action redirects). */
+export function TrailerForm({ action, trailer, trucks, cancelHref }: {
   action: (p: ActionState, fd: FormData) => Promise<ActionState>;
   trailer?: Trailer | null;
   trucks: { id: string; label: string }[];
-  /** Where to go after a successful save (saveTrailer returns a message rather than redirecting). */
-  redirectTo: string;
   cancelHref: string;
 }) {
-  const router = useRouter();
+  // A new trailer starts in the yard; pick In use or Empty to pair it with a tractor.
+  const [status, setStatus] = useState(trailer?.status ?? "YARD");
+  const [truckId, setTruckId] = useState(trailer?.truckId ?? "");
+  const unhooked = UNHOOKED_TRAILER_STATUSES.includes(status);
   return (
-    <ActionForm action={action} onSuccess={() => { router.push(redirectTo); router.refresh(); }} className="space-y-4">
+    <ActionForm action={action} className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
           <Card title="Identity">
@@ -34,11 +36,12 @@ export function TrailerForm({ action, trailer, trucks, redirectTo, cancelHref }:
 
           <Card title="Status & pairing">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Status" hint={trailer ? "Changing it here resets the status timer." : undefined}>
-                <Select name="status" defaultValue={trailer?.status ?? "EMPTY"} options={TRAILER_STATUSES.map((s) => ({ value: s, label: TRAILER_STATUS_LABELS[s] }))} />
+              <Field label="Status" hint={trailer ? "Changing it resets the status timer. A trailer on an active load stays In use." : undefined}>
+                <Select name="status" value={status} onChange={(e) => setStatus(e.target.value)} options={TRAILER_STATUSES.map((s) => ({ value: s, label: TRAILER_STATUS_LABELS[s] }))} />
               </Field>
-              <Field label="Paired truck" hint="The tractor currently pulling this trailer.">
-                <Select name="truckId" defaultValue={trailer?.truckId ?? ""} placeholder="Not paired" options={trucks.map((t) => ({ value: t.id, label: t.label }))} />
+              <Field label="Paired truck" hint={unhooked ? `${TRAILER_STATUS_LABELS[status]} trailers aren't paired. Set In use or Empty to pair a tractor.` : "The tractor currently pulling this trailer."}>
+                <Select name="truckId" value={unhooked ? "" : truckId} onChange={(e) => setTruckId(e.target.value)} disabled={unhooked}
+                  placeholder="Not paired" options={trucks.map((t) => ({ value: t.id, label: t.label }))} />
               </Field>
               <Field label="Location" hint="Yard, customer site or city."><Input name="locationName" defaultValue={trailer?.locationName ?? ""} placeholder="Tashkent yard" /></Field>
               <Field label="GPS provider" hint="Leave empty if the trailer has no tracker.">

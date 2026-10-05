@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
 import { updateStop } from "@/app/actions/loads";
+import { actionError } from "../shared";
 
 /** Dispatcher marks a stop arrived / complete on the driver's behalf. Completing the final stop delivers the load. */
 export function StopActions({ loadId, stopId, status, isLast }: { loadId: string; stopId: string; status: string; isLast: boolean }) {
@@ -11,10 +12,12 @@ export function StopActions({ loadId, stopId, status, isLast }: { loadId: string
   const run = (action: "arrive" | "complete") => {
     setError(null);
     start(async () => {
+      const fallback = "Could not update the stop — it may already be marked by the driver. Reload the page and try again.";
       try {
-        await updateStop(loadId, stopId, action);
+        const res: unknown = await updateStop(loadId, stopId, action);
+        setError(actionError(res, undefined, fallback));
       } catch (e) {
-        setError(e instanceof Error && e.message ? e.message : "Could not update the stop — reload and try again.");
+        setError(actionError(undefined, e, fallback));
       }
     });
   };

@@ -14,11 +14,21 @@ export const OWNERSHIP_SHORT: Record<string, string> = { COMPANY: "Company", OWN
 export const FUEL_TYPES = [
   { value: "DIESEL", label: "Diesel" }, { value: "LNG", label: "LNG" }, { value: "CNG", label: "CNG" }, { value: "ELECTRIC", label: "Electric" },
 ];
+export const FUEL_TYPE_LABELS: Record<string, string> = Object.fromEntries(FUEL_TYPES.map((f) => [f.value, f.label]));
 
 /** Telematics vendors offered in the trailer form's datalist (free text is still allowed). */
 export const GPS_PROVIDERS = ["Teltonika", "Wialon", "Samsara", "Geotab", "Navixy"];
 
 export const COMPLETED_LOAD_STATUSES = ["DELIVERED", "INVOICED"];
+
+/**
+ * Trailer statuses that physically leave the tractor, so setting one clears the pairing. In use and Empty stay hooked:
+ * the load workflow marks a trailer Empty on delivery and keeps it on the truck (src/lib/workflow.ts).
+ */
+export const UNHOOKED_TRAILER_STATUSES: readonly string[] = ["DROPPED", "YARD", "SHOP", "OUT_OF_SERVICE"];
+
+/** The truck and trailer tables stop at this many rows (KPI tiles still count every unit). */
+export const LIST_LIMIT = 500;
 
 /* ------------------------------------------------------------------ */
 /* Preventive maintenance                                              */
@@ -126,6 +136,16 @@ export function sinceShort(d: Date | string | null | undefined) {
 /** Whole days since a timestamp (status timers, time in shop). */
 export function daysSince(d: Date | string) {
   return Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000));
+}
+
+/**
+ * Earliest of the given dates, ignoring missing ones. Paperwork expiry is the earlier of the date on the unit record and
+ * the expiry on the newest uploaded document of that kind, so a stale record date can't hide an expired certificate.
+ */
+export function earliest(...dates: (Date | null | undefined)[]): Date | null {
+  let min: Date | null = null;
+  for (const d of dates) if (d && (!min || d < min)) min = d;
+  return min;
 }
 
 /* ------------------------------------------------------------------ */

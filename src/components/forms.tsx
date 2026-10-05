@@ -58,6 +58,8 @@ export function ActionForm({ action, children, className, resetOnSuccess, confir
   }, [state, resetOnSuccess]);
   return (
     <form
+      // A submit before hydration falls back to a native POST, so field values never land in the URL.
+      method="post"
       {...rest}
       ref={ref}
       className={className}

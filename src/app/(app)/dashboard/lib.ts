@@ -16,11 +16,13 @@ export const KIND_LABEL: Record<AlertKind, string> = {
 export const KINDS: AlertKind[] = ["dispatch", "compliance", "fleet", "money", "safety"];
 export const isKind = (v: unknown): v is AlertKind => typeof v === "string" && (KINDS as string[]).includes(v);
 
-// Which permission a destination needs. Alerts pointing somewhere this role cannot open are hidden
-// rather than shown as dead links (requireUser would bounce them back to the dashboard).
+// Which permission a destination needs (mirrors each page's requireUser). Alerts and KPI tiles pointing
+// somewhere this role cannot open are hidden or re-targeted rather than shown as dead links
+// (requireUser would bounce them straight back to the dashboard).
 const ROUTE_PERMS: [prefix: string, perm: Permission][] = [
   ["/finance", "finance.view"], ["/claims", "claims.view"], ["/fleet", "fleet.view"], ["/drivers", "drivers.view"],
   ["/customers", "customers.view"], ["/admin", "company.manage"], ["/loads", "loads.view"], ["/dispatch", "loads.view"],
+  ["/tracking", "tracking.view"], ["/reports", "reports.view"], ["/maintenance", "fleet.view"],
 ];
 export function canOpen(role: string, href: string) {
   const hit = ROUTE_PERMS.find(([p]) => href === p || href.startsWith(`${p}/`) || href.startsWith(`${p}?`));
@@ -46,10 +48,37 @@ export function groupAlerts(alerts: Alert[]): AlertGroup[] {
 /* Fleet                                                               */
 /* ------------------------------------------------------------------ */
 
-/** Same threshold the live map uses: above this a truck counts as moving. */
+/** Same thresholds the live map uses: above this a truck counts as moving; a fix older than this is "no signal". */
 export const ROLLING_KMH = 5;
+export const STALE_MS = 30 * 60_000;
+
 export const movingTrucks = (fleet: Pick<FleetSnapshot[number], "status" | "speedKmh">[]) =>
   fleet.filter((t) => t.status === "ACTIVE" && t.speedKmh > ROLLING_KMH).length;
+
+type SnapshotLoad = NonNullable<FleetSnapshot[number]["load"]>;
+/** In transit and projected to arrive after the delivery deadline. Numeric compare, like alerts.ts and the live map. */
+export const isRunningLate = (load: Pick<SnapshotLoad, "status" | "eta" | "deliveryAt"> | null) =>
+  Boolean(load && load.status === "IN_TRANSIT" && load.eta && Date.parse(load.eta) > Date.parse(load.deliveryAt));
+
+export type FleetLegend = ReturnType<typeof fleetLegend>;
+/** The live map's legend, computed once on the server for roles that cannot poll /api/fleet. */
+export function fleetLegend(fleet: FleetSnapshot, now: number) {
+  const out = { trucks: fleet.length, rolling: 0, idle: 0, stopped: 0, inService: 0, onLoad: 0, late: 0, noSignal: 0 };
+  for (const t of fleet) {
+    const fixAge = t.lastPingAt ? Math.max(0, now - Date.parse(t.lastPingAt)) : null;
+    const fresh = fixAge != null && fixAge < STALE_MS;
+    if (t.status !== "ACTIVE") out.inService++;
+    else if (t.speedKmh > ROLLING_KMH) out.rolling++;
+    else if (t.engineOn || fresh) out.idle++;
+    else out.stopped++;
+    if (t.load) {
+      out.onLoad++;
+      if (!fresh) out.noSignal++;
+      if (isRunningLate(t.load)) out.late++;
+    }
+  }
+  return out;
+}
 
 /* ------------------------------------------------------------------ */
 /* Activity feed                                                       */

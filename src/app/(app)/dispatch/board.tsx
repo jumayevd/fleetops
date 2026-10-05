@@ -3,18 +3,18 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition, type CSSProperties, type ReactNode } from "react";
-import { format } from "date-fns";
 import {
   Bed, ChevronDown, ChevronRight, CircleCheck, ClockFading, Copy, Ellipsis, Eraser, House, OctagonPause, Package, Phone, Search, TreePalm, Undo2, Users, X,
 } from "lucide-react";
-import { Badge, Button, Chip, cn, EmptyState, IconButton, Kbd, LiveDot, Progress, StatusDot, inputClass, type Tone } from "@/components/ui";
+import { Badge, Button, Chip, cn, EmptyState, IconButton, Kbd, LiveDot, Progress, STATUS_TONE, StatusDot, TONE_DOT, inputClass, type Tone } from "@/components/ui";
 import { BOARD_STATUS_LABELS, BOARD_STATUS_ORDER, DRIVER_TYPE_LABELS, DRIVER_TYPE_SHORT, EQUIPMENT_LABELS, MANUAL_BOARD_STATUSES, type BoardStatus } from "@/lib/constants";
-import { ago, dateTime, number } from "@/lib/format";
+import { ago, number } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
 import { restoreAutoStatus, setBoardNote, setBoardStatus, setRowColor } from "@/app/actions/board";
 import { Drawer, Menu, MenuDivider, MenuItem, MenuLabel } from "./overlays";
+import { fmtDateTime, fmtDayMonth, fmtHm, fmtHms, ymdOf } from "./dates";
 import {
-  duration, hoursBetween, rowHaystack, ROW_COLORS, ROW_COLOR_BG, ROW_COLOR_LABEL,
+  duration, durationUntil, hoursBetween, rowHaystack, ROW_COLORS, ROW_COLOR_BG, ROW_COLOR_LABEL,
   type BoardPayload, type BoardRow, type RowColor, type StatusEvent,
 } from "./types";
 
@@ -42,7 +42,8 @@ const useNow = () => useSyncExternalStore(subscribeTick, () => Math.floor(Date.n
 type ColKey = "load" | "driver" | "truck" | "trailer" | "phone" | "status" | "since" | "eta" | "km" | "next" | "notes";
 type Column = { key: ColKey; label: string; copy: (r: BoardRow, now: number) => string };
 
-const hhmm = (iso: string | null) => (iso ? format(new Date(iso), "HH:mm") : "");
+// All clock times are company time (dates.ts), so the server render and hydration produce the same text.
+const hhmm = fmtHm;
 const remainingKm = (l: NonNullable<BoardRow["load"]>) => (l.status === "IN_TRANSIT" ? Math.max(0, Math.round(l.distanceKm * (1 - l.progress))) : Math.round(l.distanceKm));
 
 const COLUMNS: Column[] = [
@@ -53,7 +54,7 @@ const COLUMNS: Column[] = [
   { key: "phone", label: "Phone", copy: (r) => [r.driver.phone, r.driver.phone2].filter(Boolean).join(" / ") },
   { key: "status", label: "Status", copy: (r) => BOARD_STATUS_LABELS[r.status as BoardStatus] ?? r.status },
   { key: "since", label: "Active since", copy: (r, now) => (now ? duration(r.statusSince, now) : "") },
-  { key: "eta", label: "ETA / next", copy: (r) => (r.load?.status === "IN_TRANSIT" ? `ETA ${hhmm(r.load.eta)}` : r.load ? `Pickup ${dateTime(r.load.pickupAt)}` : "") },
+  { key: "eta", label: "ETA / next", copy: (r) => (r.load?.status === "IN_TRANSIT" ? `ETA ${hhmm(r.load.eta)}` : r.load ? `Pickup ${fmtDateTime(r.load.pickupAt)}` : "") },
   { key: "km", label: "Km", copy: (r) => (r.load ? String(remainingKm(r.load)) : "") },
   { key: "next", label: "Next stop", copy: (r) => (r.load?.nextStop ? `${r.load.nextStop.name}, ${r.load.nextStop.city}` : "") },
   { key: "notes", label: "Notes", copy: (r) => r.cell.note ?? "" },
@@ -63,9 +64,6 @@ const STATUS_ICON: Record<string, ReactNode> = {
   STOP: <OctagonPause />, REST: <Bed />, HOME: <House />, VACATION: <TreePalm />, READY: <CircleCheck />,
 };
 const SWATCH: Record<RowColor, string> = { amber: "bg-accent", green: "bg-ok", red: "bg-danger", blue: "bg-info", violet: "bg-progress" };
-const STATUS_TONE: Record<string, Tone> = {
-  READY: "ok", DISPATCHED: "info", AT_PICKUP: "info", EN_ROUTE: "progress", UNLOADING: "info", STOP: "danger", REST: "neutral", HOME: "neutral", VACATION: "warn",
-};
 
 type Filter = { kind: "status" | "flag"; value: string } | null;
 type Group = { key: string; name: string; color: string | null; rows: BoardRow[] };
@@ -130,9 +128,13 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
 
   const run = useCallback((fn: () => Promise<ActionState>, opts: { quiet?: boolean } = {}) => {
     startTransition(async () => {
-      const res = await fn();
-      if (res?.error) setFlash({ tone: "error", text: res.error });
-      else if (res?.ok && !opts.quiet) setFlash({ tone: "ok", text: res.ok });
+      try {
+        const res = await fn();
+        if (res?.error) setFlash({ tone: "error", text: res.error });
+        else if (res?.ok && !opts.quiet) setFlash({ tone: "ok", text: res.ok });
+      } catch {
+        setFlash({ tone: "error", text: "Could not save. Check your connection and try again." });
+      }
       await refresh();
     });
   }, [refresh]);
@@ -207,6 +209,10 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
     }
     if (typing) return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
+    // Enter / Space on a focused link or button (load, driver, row actions, team toggle, column header) is that control's own
+    // activation; the grid shortcuts only apply when the grid itself or a plain cell has focus. Arrows and Esc still work.
+    const onControl = t !== e.currentTarget && t.closest("a, button, [role=menuitem]") !== null;
+    if (onControl && e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Escape") return;
     switch (e.key) {
       case "ArrowDown": e.preventDefault(); moveFocus(1); break;
       case "ArrowUp": e.preventDefault(); moveFocus(-1); break;
@@ -228,18 +234,25 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
     if (value.trim() === current.trim()) { setDrafts((d) => { const n = { ...d }; delete n[r.driver.id]; return n; }); return; }
     setNoteState((s) => ({ ...s, [r.driver.id]: "saving" }));
     startTransition(async () => {
-      const res = await setBoardNote(data.date, r.driver.id, value);
-      setNoteState((s) => ({ ...s, [r.driver.id]: res?.error ? "error" : "saved" }));
-      if (res?.error) setFlash({ tone: "error", text: res.error });
+      let failed = false;
+      try {
+        const res = await setBoardNote(data.date, r.driver.id, value);
+        if (res?.error) { failed = true; setFlash({ tone: "error", text: res.error }); }
+      } catch {
+        failed = true;
+        setFlash({ tone: "error", text: "Could not save the note. Check your connection and try again." });
+      }
+      setNoteState((s) => ({ ...s, [r.driver.id]: failed ? "error" : "saved" }));
       await refresh();
-      setDrafts((d) => { const n = { ...d }; delete n[r.driver.id]; return n; });
-      setTimeout(() => setNoteState((s) => { const n = { ...s }; delete n[r.driver.id]; return n; }), 1500);
+      // On failure the typed text stays in the cell so it can be saved again.
+      if (!failed) setDrafts((d) => { const n = { ...d }; delete n[r.driver.id]; return n; });
+      setTimeout(() => setNoteState((s) => { const n = { ...s }; delete n[r.driver.id]; return n; }), failed ? 4000 : 1500);
     });
   };
 
   const menuRow = rowById(menu?.id ?? null);
   const drawerRow = rowById(drawerId);
-  const endOfDay = useMemo(() => new Date(`${data.date}T23:59:59`).getTime(), [data.date]);
+  const endOfDay = useMemo(() => Date.parse(data.dayEnd) - 1, [data.dayEnd]);
   const clock = data.today ? now : Math.min(now, endOfDay);
 
   return (
@@ -278,7 +291,7 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
             </button>
           )}
           <span className="num">{visible.length} of {data.rows.length} drivers</span>
-          {live ? <LiveDot label={updatedAt ? `Live · ${format(new Date(updatedAt), "HH:mm:ss")}` : "Live"} /> : <span>{data.rows[0]?.statusMode === "history" ? "Status as of end of day" : "Planned · statuses are today's"}</span>}
+          {live ? <LiveDot label={updatedAt ? `Live · ${fmtHms(updatedAt)}` : "Live"} /> : <span>{data.rows[0]?.statusMode === "history" ? "Status as of end of day" : "Planned · statuses are today's"}</span>}
         </div>
       </div>
 
@@ -292,11 +305,11 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
                 const sticky = i === 0 ? { left: 0, width: STICKY_LOAD } : i === 1 ? { left: STICKY_LOAD, width: STICKY_DRIVER } : null;
                 const active = selectedCol === c.key;
                 return (
-                  <th key={c.key} scope="col" aria-sort="none" style={sticky ? { left: sticky.left, width: sticky.width, minWidth: sticky.width, maxWidth: sticky.width } : undefined}
+                  <th key={c.key} scope="col" style={sticky ? { left: sticky.left, width: sticky.width, minWidth: sticky.width, maxWidth: sticky.width } : undefined}
                     className={cn("h-8 whitespace-nowrap border-b border-line bg-sunken px-3 font-medium", sticky && "sticky z-30", i === 1 && "border-r border-line")}>
-                    <button type="button" onClick={() => setSelectedCol(active ? null : c.key)} title={active ? "Click to deselect" : "Select column (Ctrl+C copies it)"}
+                    <button type="button" onClick={() => setSelectedCol(active ? null : c.key)} aria-pressed={active} title={active ? "Click to deselect" : "Select column (Ctrl+C copies it)"}
                       className={cn("-mx-1.5 inline-flex h-6 items-center gap-1 rounded px-1.5 uppercase tracking-wide transition-colors hover:text-fg", active && "bg-accent-soft text-accent-text")}>
-                      {c.label}{active && <Copy className="h-3 w-3" />}
+                      {c.label}<span className="sr-only">, select column for copying</span>{active && <Copy className="h-3 w-3" />}
                     </button>
                   </th>
                 );
@@ -379,7 +392,7 @@ function Row({ r, date, now, liveClock, canEdit, focused, selectedCol, draft, no
   const projected = r.statusMode === "projected";
 
   return (
-    <tr data-row={r.driver.id} style={rowStyle} onMouseDown={onFocus} className={cn("group/row", !color && "hover:[--row-bg:var(--raised)]")}>
+    <tr data-row={r.driver.id} style={rowStyle} onMouseDown={onFocus} onFocusCapture={onFocus} className={cn("group/row", !color && "hover:[--row-bg:var(--raised)]")}>
       {/* Load */}
       <td className={cn(cell("load"), "sticky left-0 z-10")} style={{ background: stickyBg, width: STICKY_LOAD, minWidth: STICKY_LOAD, maxWidth: STICKY_LOAD }}>
         {focused && <span className="absolute inset-y-0 left-0 w-0.5 bg-accent" aria-hidden />}
@@ -389,8 +402,15 @@ function Row({ r, date, now, liveClock, canEdit, focused, selectedCol, draft, no
               <Link href={`/loads/${l.id}`} className="num truncate font-medium text-fg hover:text-accent-text hover:underline">{l.reference}</Link>
               {!l.hasRc && <Chip tone="warn" title="No rate confirmation on file — upload the RC on the load">No RC</Chip>}
               {(l.priority === "URGENT" || l.priority === "HIGH") && <Chip tone={l.priority === "URGENT" ? "danger" : "warn"}>{l.priority === "URGENT" ? "Urgent" : "High"}</Chip>}
+              {r.prebooked && <Chip tone="info" title={`Also prebooked: ${r.prebooked.reference}, pickup ${fmtDateTime(r.prebooked.pickupAt)}`}>+1<span className="sr-only"> prebooked load</span></Chip>}
             </div>
             <div className="truncate text-[11px] text-fg-subtle">{l.customer}</div>
+          </div>
+        ) : r.prebooked ? (
+          // Prebooked (pickup > 24 h out): shown quietly, the driver stays Ready until the pickup is inside 24 h.
+          <div className="min-w-0" title={`Prebooked, pickup ${fmtDateTime(r.prebooked.pickupAt)}. The driver stays ready today; the load moves onto the board once pickup is inside 24 hours.`}>
+            <Link href={`/loads/${r.prebooked.id}`} className="num block truncate text-fg-muted hover:text-accent-text hover:underline">{r.prebooked.reference}</Link>
+            <div className="truncate text-[11px] text-info">Prebooked · <span className="num">{liveClock ? `in ${durationUntil(r.prebooked.pickupAt, now)}` : fmtDayMonth(r.prebooked.pickupAt)}</span></div>
           </div>
         ) : <span className="text-fg-faint">—</span>}
       </td>
@@ -447,7 +467,7 @@ function Row({ r, date, now, liveClock, canEdit, focused, selectedCol, draft, no
         </div>
       </td>
       {/* Active since */}
-      <td className={cn(cell("since"), "num whitespace-nowrap")} title={`Since ${dateTime(r.statusSince)}`}>
+      <td className={cn(cell("since"), "num whitespace-nowrap")} title={`Since ${fmtDateTime(r.statusSince)}`}>
         {projected ? <span className="text-fg-faint">—</span> : liveClock ? <span className={cn(r.status === "READY" && now - new Date(r.statusSince).getTime() > 2 * 86_400_000 ? "text-warn" : "text-fg")}>{duration(r.statusSince, now)}</span> : <span className="text-fg-faint">…</span>}
       </td>
       {/* ETA / next */}
@@ -507,11 +527,11 @@ function EtaCell({ l, date }: { l: BoardRow["load"]; date: string }) {
   if (!l) return <span className="text-fg-faint">—</span>;
   if (l.status === "IN_TRANSIT") {
     if (!l.eta) return <span className="text-fg-subtle">—</span>;
-    const sameDay = format(new Date(l.eta), "yyyy-MM-dd") === date;
+    const sameDay = ymdOf(l.eta) === date;
     return (
       <div className="flex items-center gap-1.5">
-        <span className="text-fg">{l.progress >= 1 ? "Arriving" : <>ETA <span className="num">{hhmm(l.eta)}</span>{!sameDay && <span className="text-fg-subtle"> {format(new Date(l.eta), "dd MMM")}</span>}</>}</span>
-        {l.late && <Chip tone="danger" title={`Delivery window ${dateTime(l.deliveryAt)}`}>late {hoursBetween(l.eta, l.deliveryAt)}h</Chip>}
+        <span className="text-fg">{l.progress >= 1 ? "Arriving" : <>ETA <span className="num">{hhmm(l.eta)}</span>{!sameDay && <span className="text-fg-subtle"> {fmtDayMonth(l.eta)}</span>}</>}</span>
+        {l.late && <Chip tone="danger" title={`Delivery window ${fmtDateTime(l.deliveryAt)}`}>late {hoursBetween(l.eta, l.deliveryAt)}h</Chip>}
       </div>
     );
   }
@@ -520,7 +540,7 @@ function EtaCell({ l, date }: { l: BoardRow["load"]; date: string }) {
   }
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-fg">Pickup <span className="num">{dateTime(l.pickupAt)}</span></span>
+      <span className="text-fg">Pickup <span className="num">{fmtDateTime(l.pickupAt)}</span></span>
       {l.latePickup && <Chip tone="warn" title="Pickup window has passed and the load hasn't departed">late pickup</Chip>}
     </div>
   );
@@ -552,10 +572,11 @@ function RowMenu({ row, anchor, date, canEdit, onClose, run, onHistory }: {
 
   if (step) {
     return (
-      <Menu anchor={anchor} onClose={onClose} width={260}>
+      <Menu anchor={anchor} onClose={onClose} width={260} role="dialog" label={`Set ${row.driver.name} to ${BOARD_STATUS_LABELS[step.status]}`}>
         <div className="p-2">
           <p className="mb-2 text-[12px] text-fg">Set <span className="font-semibold">{row.driver.name}</span> to <Badge value={step.status} label={BOARD_STATUS_LABELS[step.status]} /></p>
           <input autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for the history (optional)" className={cn(inputClass, "h-7 text-[12px]")}
+            aria-label={`Note for setting ${row.driver.name} to ${BOARD_STATUS_LABELS[step.status]}`}
             onKeyDown={(e) => { if (e.key === "Enter") { run(() => setBoardStatus(row.driver.id, step.status, note)); onClose(); } }} />
           <p className="mt-1.5 text-[11px] text-fg-subtle">Overrides the automatic status until you restore it.</p>
           <div className="mt-2 flex justify-end gap-1.5">
@@ -632,9 +653,15 @@ function DriverDrawer({ row, now, onClose }: { row: BoardRow; now: number; onClo
           <Badge value={row.status} label={BOARD_STATUS_LABELS[row.status as BoardStatus] ?? row.status} dot />
           {row.statusManual && <Chip tone="accent">manual</Chip>}
           {row.driver.hold && <Chip tone="warn" title={row.driver.holdReason ?? undefined}>Hold</Chip>}
-          <span className="num text-[12px] text-fg-muted">{now ? `for ${duration(row.statusSince, now)}` : ""} · since {dateTime(row.statusSince)}</span>
+          <span className="num text-[12px] text-fg-muted">{now ? `for ${duration(row.statusSince, now)}` : ""} · since {fmtDateTime(row.statusSince)}</span>
         </div>
         {row.driver.hold && row.driver.holdReason && <p className="rounded-md bg-warn-soft px-3 py-2 text-[12px] text-warn">On hold: {row.driver.holdReason}</p>}
+        {row.prebooked && (
+          <p className="rounded-md bg-info-soft px-3 py-2 text-[12px] text-info">
+            Prebooked on <Link href={`/loads/${row.prebooked.id}`} className="num font-medium hover:underline">{row.prebooked.reference}</Link>, pickup <span className="num">{fmtDateTime(row.prebooked.pickupAt)}</span>.
+            The driver stays ready today; the load moves onto the board once pickup is inside 24 hours.
+          </p>
+        )}
 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-[13px]">
           <Item k="Phone" v={row.driver.phone ? <span className="num">{row.driver.phone}{row.driver.phone2 && <span className="block text-fg-subtle">{row.driver.phone2}</span>}</span> : null} />
@@ -674,11 +701,11 @@ function DriverDrawer({ row, now, onClose }: { row: BoardRow; now: number; onClo
             <ol className="relative ml-1.5 border-l border-line">
               {events.map((e) => (
                 <li key={e.id} className="relative mb-3 pl-4 last:mb-0">
-                  <span className="absolute -left-[4.5px] top-1.5 h-2 w-2 rounded-full ring-2 ring-overlay" style={{ background: `var(--${STATUS_TONE[e.status] === "neutral" || !STATUS_TONE[e.status] ? "fg-faint" : STATUS_TONE[e.status]})` }} />
+                  <span className={cn("absolute -left-[4.5px] top-1.5 h-2 w-2 rounded-full ring-2 ring-overlay", TONE_DOT[STATUS_TONE[e.status] ?? "neutral"])} />
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge value={e.status} label={BOARD_STATUS_LABELS[e.status as BoardStatus] ?? e.status} />
                     <Chip tone={e.source === "MANUAL" ? "accent" : "neutral"}>{e.source === "MANUAL" ? "manual" : "auto"}</Chip>
-                    <span className="num text-[11px] text-fg-subtle">{dateTime(e.at)}</span>
+                    <span className="num text-[11px] text-fg-subtle">{fmtDateTime(e.at)}</span>
                   </div>
                   {(e.user || e.note) && <p className="mt-0.5 text-[12px] text-fg-muted">{e.user && <span className="text-fg">{e.user}</span>}{e.user && e.note && " — "}{e.note}</p>}
                 </li>

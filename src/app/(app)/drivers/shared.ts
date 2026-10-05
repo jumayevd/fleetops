@@ -89,21 +89,29 @@ export function tenure(d: Date | string) {
 /* ------------------------------------------------------------------ */
 
 export type DoneLoad = { rate: number; driverPay: number; distanceKm: number; emptyKm: number; deliveredAt: Date | null; deliveryAt: Date };
+export type PerfTotals = { loads: number; km: number; emptyKm: number; revenue: number; pay: number; onTime: number };
 
-export function performance(loads: DoneLoad[]) {
-  const n = loads.length;
-  const km = loads.reduce((a, l) => a + l.distanceKm, 0);
-  const emptyKm = loads.reduce((a, l) => a + l.emptyKm, 0);
-  const revenue = loads.reduce((a, l) => a + l.rate, 0);
-  const pay = loads.reduce((a, l) => a + l.driverPay, 0);
-  const onTime = loads.filter((l) => l.deliveredAt && l.deliveredAt <= l.deliveryAt).length;
+/** Derived figures from summed totals (e.g. a load aggregate). Same shape as performance(). */
+export function perfFromTotals(t: PerfTotals) {
+  const { loads: n, km, emptyKm, revenue, onTime } = t;
   return {
-    loads: n, km, emptyKm, revenue, pay, onTime,
+    ...t,
     onTimePct: n ? Math.round((onTime / n) * 100) : null,
     avgRevenue: n ? revenue / n : null,
     revPerKm: km ? revenue / km : null,
     emptyPct: km + emptyKm ? Math.round((emptyKm / (km + emptyKm)) * 100) : null,
   };
+}
+
+export function performance(loads: DoneLoad[]) {
+  return perfFromTotals({
+    loads: loads.length,
+    km: loads.reduce((a, l) => a + l.distanceKm, 0),
+    emptyKm: loads.reduce((a, l) => a + l.emptyKm, 0),
+    revenue: loads.reduce((a, l) => a + l.rate, 0),
+    pay: loads.reduce((a, l) => a + l.driverPay, 0),
+    onTime: loads.filter((l) => l.deliveredAt && l.deliveredAt <= l.deliveryAt).length,
+  });
 }
 
 export const onTimeTone = (pct: number | null): Tone => (pct == null ? "neutral" : pct >= 95 ? "ok" : pct >= 85 ? "warn" : "danger");

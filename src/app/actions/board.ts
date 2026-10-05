@@ -8,13 +8,27 @@ import { attempt, fields, FormError, type ActionState } from "@/lib/action";
 import { BOARD_STATUSES, BOARD_STATUS_LABELS, MANUAL_BOARD_STATUSES, type BoardStatus } from "@/lib/constants";
 import { WEEKLY_GOAL_KEYS } from "@/lib/stats";
 import { clearDriverBoardOverride, setDriverBoardStatus } from "@/lib/workflow";
+import { isYmd } from "@/app/(app)/dispatch/dates";
 
-const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const ROW_COLORS = ["amber", "green", "red", "blue", "violet"];
 
 function cellDate(ymd: string) {
-  if (!YMD.test(ymd) || Number.isNaN(Date.parse(ymd))) throw new FormError("Invalid board date");
+  if (!isYmd(ymd)) throw new FormError("Invalid board date");
   return new Date(`${ymd}T00:00:00.000Z`);
+}
+
+/**
+ * Run a write against a driver that may have been deleted while the board was open: Prisma's "record not found" (P2025)
+ * and foreign-key (P2003) errors become a message instead of an error boundary.
+ */
+async function forDriver<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    const code = typeof e === "object" && e !== null && "code" in e ? (e as { code: unknown }).code : null;
+    if (code === "P2025" || code === "P2003") throw new FormError("That driver no longer exists. Refresh the board.");
+    throw e;
+  }
 }
 
 /** Dispatcher override: STOP / REST / HOME / VACATION, or READY to park a driver. Optional note goes into the history. */
@@ -24,7 +38,7 @@ export async function setBoardStatus(driverId: string, status: string, note?: st
     if (!BOARD_STATUSES.includes(status as BoardStatus) || !MANUAL_BOARD_STATUSES.includes(status as BoardStatus)) {
       throw new FormError("That status is set automatically from the driver's load");
     }
-    await setDriverBoardStatus(driverId, status as BoardStatus, me.id, note?.trim() || null);
+    await forDriver(() => setDriverBoardStatus(driverId, status as BoardStatus, me.id, note?.trim() || null));
     revalidatePath("/dispatch");
     revalidatePath("/drivers");
     return { ok: `Status set to ${BOARD_STATUS_LABELS[status as BoardStatus]}` };
@@ -36,7 +50,7 @@ export async function restoreAutoStatus(driverId: string): Promise<ActionState> 
   const me = await requireUser("board.edit");
   return attempt(async () => {
     await clearDriverBoardOverride(driverId, me.id);
-    const d = await db.driver.findUniqueOrThrow({ where: { id: driverId }, select: { name: true, boardStatus: true } });
+    const d = await forDriver(() => db.driver.findUniqueOrThrow({ where: { id: driverId }, select: { name: true, boardStatus: true } }));
     await audit(me.id, "board_status", "driver", driverId, `${d.name} → automatic (${BOARD_STATUS_LABELS[d.boardStatus as BoardStatus] ?? d.boardStatus})`);
     revalidatePath("/dispatch");
     revalidatePath("/drivers");
@@ -53,11 +67,11 @@ export async function setRowColor(date: string, driverId: string, color: string 
     if (color === null) {
       await db.boardCell.deleteMany({ where: key });
     } else {
-      await db.boardCell.upsert({
+      await forDriver(() => db.boardCell.upsert({
         where: { date_driverId_column: key },
         create: { ...key, color, updatedById: me.id },
         update: { color, updatedById: me.id },
-      });
+      }));
     }
     revalidatePath("/dispatch");
     return { ok: color ? "Row coloured" : "Colour cleared" };
@@ -73,11 +87,11 @@ export async function setBoardNote(date: string, driverId: string, note: string)
     if (!text) {
       await db.boardCell.deleteMany({ where: key });
     } else {
-      await db.boardCell.upsert({
+      await forDriver(() => db.boardCell.upsert({
         where: { date_driverId_column: key },
         create: { ...key, note: text, updatedById: me.id },
         update: { note: text, updatedById: me.id },
-      });
+      }));
     }
     revalidatePath("/dispatch");
     return { ok: text ? "Note saved" : "Note cleared" };

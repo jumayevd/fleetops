@@ -7,7 +7,7 @@ import { EQUIPMENT_LABELS } from "@/lib/constants";
 import { date, kg, km, money2 } from "@/lib/format";
 import { Badge, LinkButton, cn } from "@/components/ui";
 import { getLetterhead, invoiceDetail } from "../../data";
-import { daysLate, financeHref, hasBankDetails, invoiceBadge, invoiceTotal, isOverdue } from "../../shared";
+import { daysLate, financeHref, hasBankDetails, invoiceBadge, invoiceTotal, isOverdue, wasTonu } from "../../shared";
 import { InvoiceActions } from "../../invoice-actions";
 
 export async function generateMetadata({ params }: PageProps<"/finance/invoices/[id]">) {
@@ -51,6 +51,8 @@ export default async function InvoicePage({ params }: PageProps<"/finance/invoic
   const overdue = isOverdue(inv, now);
   const late = daysLate(inv.dueAt, now);
   const load = inv.load;
+  // Truck ordered, not used: bill the fee, not a delivery (the load reads Invoiced by now, never stamped delivered).
+  const tonu = load ? wasTonu(load) : false;
   const billTo = inv.customer;
   const viaBroker = billTo.kind === "BROKER" && load && load.customer.id !== billTo.id;
   const statusLine = inv.status === "PAID" ? `Paid ${date(inv.paidAt)}`
@@ -71,7 +73,7 @@ export default async function InvoicePage({ params }: PageProps<"/finance/invoic
           <Badge value={invoiceBadge(inv, now)} dot />
           <span className={cn("text-[12px]", overdue ? "text-danger" : "text-fg-muted")}>{statusLine}</span>
         </div>
-        <InvoiceActions id={inv.id} number={inv.number} status={inv.status} readOnly={!can(user.role, "finance.edit")} />
+        <InvoiceActions id={inv.id} number={inv.number} status={inv.status} loadRef={load?.reference} readOnly={!can(user.role, "finance.edit")} />
       </div>
 
       <article className="rounded-lg border border-line bg-surface p-8 sm:p-10 print:border-0 print:p-0">
@@ -120,12 +122,23 @@ export default async function InvoicePage({ params }: PageProps<"/finance/invoic
                 <Row k="Route" mono={false} v={<span className="inline-flex items-center gap-1">{load.originName}, {load.originCity}<ArrowRight className="h-3 w-3 shrink-0 text-fg-faint" />{load.destName}, {load.destCity}</span>} />
                 <Row k="Equipment" mono={false} v={EQUIPMENT_LABELS[load.equipment] ?? load.equipment} />
                 {(load.driver || load.truck) && <Row k="Driver · truck" mono={false} v={[load.driver?.name, load.truck?.unitNumber].filter(Boolean).join(" · ")} />}
-                <Row k="Picked up" v={date(load.pickupAt)} />
-                <Row k="Delivered" v={date(load.deliveredAt)} />
-                <Row k="Proof of delivery" mono={false} v={load.podSignedBy ? `signed by ${load.podSignedBy}` : <span className="text-fg-subtle">on file</span>} />
+                {tonu ? (
+                  <>
+                    <Row k="Ordered for" v={date(load.pickupAt)} />
+                    <Row k="Outcome" mono={false} v="Truck ordered, not used" />
+                  </>
+                ) : (
+                  <>
+                    <Row k="Picked up" v={date(load.pickupAt)} />
+                    <Row k="Delivered" v={date(load.deliveredAt)} />
+                    <Row k="Proof of delivery" mono={false} v={load.podSignedBy ? `signed by ${load.podSignedBy}` : <span className="text-fg-subtle">on file</span>} />
+                  </>
+                )}
               </dl>
             ) : (
-              <p className="mt-1.5 text-[12px] text-fg-muted">Transportation services (no load attached).</p>
+              <p className="mt-1.5 text-[12px] text-fg-muted">
+                {inv.status === "VOID" ? "No load attached. A load is released when its invoice is voided, so it can be invoiced again." : "Transportation services (no load attached)."}
+              </p>
             )}
           </div>
         </section>
@@ -142,7 +155,14 @@ export default async function InvoicePage({ params }: PageProps<"/finance/invoic
           <tbody>
             <tr className="border-b border-line align-top">
               <td className="py-3 pr-4">
-                {load ? (
+                {load && tonu ? (
+                  <>
+                    <p className="font-medium text-fg">Truck ordered, not used — TONU fee, {load.originCity} to {load.destCity}</p>
+                    <p className="mt-0.5 text-[12px] leading-5 text-fg-muted">
+                      <span className="num">{load.reference}</span> · {EQUIPMENT_LABELS[load.equipment] ?? load.equipment} ordered for {date(load.pickupAt)}
+                    </p>
+                  </>
+                ) : load ? (
                   <>
                     <p className="font-medium text-fg">Freight transportation, {load.originCity} to {load.destCity}</p>
                     <p className="mt-0.5 text-[12px] leading-5 text-fg-muted">

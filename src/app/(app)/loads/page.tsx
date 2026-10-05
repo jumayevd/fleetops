@@ -1,21 +1,38 @@
 import Link from "next/link";
-import { ArrowRight, Download, LayoutGrid, List, Plus } from "lucide-react";
+import { redirect } from "next/navigation";
+import type { ReactNode } from "react";
+import type { Prisma } from "@prisma/client";
+import { ArrowRight, ChevronLeft, ChevronRight, Download, LayoutGrid, List, Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { BILLING_STAGE_LABELS, LOAD_STATUSES, LOAD_STATUS_LABELS, type BillingStage, type LoadStatus } from "@/lib/constants";
 import { money, dateTime, number } from "@/lib/format";
 import { estimatedArrival } from "@/lib/telemetry";
-import { Badge, Card, Cell, Chip, FilterPills, LinkButton, PageHeader, STATUS_TONE, Segmented, Stat, Table, cn } from "@/components/ui";
-import { LIST_INCLUDE, hasActiveFilters, loadWhere, loadsHref, parseLoadFilters, periodLabel } from "./query";
-import { PRIORITY_TONE, fmtRpk, lateness, ratePerKm } from "./shared";
+import { Badge, Card, Cell, Chip, FilterPills, LinkButton, PageHeader, STATUS_TONE, Segmented, Stat, Table, buttonClass, cn } from "@/components/ui";
+import { BOARD_COLUMN_CAP, LIST_INCLUDE, PAGE_SIZE, hasActiveFilters, loadWhere, loadsHref, parseLoadFilters, periodLabel, type LoadFilters } from "./query";
+import { BOARD_COLUMNS, PRIORITY_TONE, fmtRpk, lateness, ratePerKm } from "./shared";
 import { LoadFilterBar } from "./filters";
 import { LoadRowMenu } from "./row-menu";
 import { LoadBoard } from "./board";
 
 export const metadata = { title: "Loads" };
 
-const TAKE = 200;
+/** One query per board column so every column gets its own cap (the board shows at most BOARD_COLUMN_CAP cards each). */
+function boardColumns(where: Prisma.LoadWhereInput) {
+  return Promise.all(BOARD_COLUMNS.map(async (status) => {
+    const w: Prisma.LoadWhereInput = { AND: [where, { status }] };
+    const [loads, total] = await Promise.all([
+      db.load.findMany({
+        where: w, take: BOARD_COLUMN_CAP, include: LIST_INCLUDE,
+        // Work waiting to happen: soonest pickup first. Deliveries: most recent first.
+        orderBy: status === "DELIVERED" ? { deliveredAt: "desc" } : { pickupAt: "asc" },
+      }),
+      db.load.count({ where: w }),
+    ]);
+    return { status, loads, total };
+  }));
+}
 
 export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
   const user = await requireUser("loads.view");
@@ -28,8 +45,9 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
   // Soonest first when triaging booked / dispatched work; otherwise newest pickups first.
   const asc = board || f.status === "PLANNED" || f.status === "ASSIGNED";
 
-  const [loads, total, byStatus, kpi, parties, teams] = await Promise.all([
-    db.load.findMany({ where, orderBy: { pickupAt: asc ? "asc" : "desc" }, take: TAKE, include: LIST_INCLUDE }),
+  const [loads, columns, total, byStatus, kpi, parties, teams] = await Promise.all([
+    board ? [] : db.load.findMany({ where, orderBy: [{ pickupAt: asc ? "asc" : "desc" }, { id: "asc" }], take: PAGE_SIZE, skip: (f.page - 1) * PAGE_SIZE, include: LIST_INCLUDE }),
+    board ? boardColumns(where) : [],
     db.load.count({ where }),
     db.load.groupBy({ by: ["status"], where: loadWhere({ ...f, view: "table" }, { withStatus: false }), _count: true }),
     db.load.aggregate({
@@ -39,6 +57,10 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
     db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, kind: true } }),
     db.team.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true, name: true } }),
   ]);
+
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // A stale link past the last page (filters narrowed since) lands on the last page instead of an empty table.
+  if (!board && f.page > pages) redirect(loadsHref(f, { page: String(pages) }));
 
   const countOf = (s: string) => byStatus.find((c) => c.status === s)?._count ?? 0;
   const allCount = byStatus.reduce((a, c) => a + c._count, 0);
@@ -85,7 +107,8 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
       </div>
 
       <div className="mb-3 space-y-2.5">
-        <LoadFilterBar values={f} teams={teams} customers={customers} brokers={brokers} />
+        {/* Keyed on the URL so the search box resets when the filters change underneath it (back button, pills). */}
+        <LoadFilterBar key={loadsHref(f)} values={f} teams={teams} customers={customers} brokers={brokers} />
         {!board && (
           <FilterPills active={f.status ?? "ALL"} items={[
             { key: "ALL", href: loadsHref(f, { status: undefined }), label: "All", count: allCount },
@@ -95,7 +118,10 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
       </div>
 
       {board ? (
-        <LoadBoard loads={loads} showMoney={showMoney} canEdit={canEdit} />
+        <LoadBoard
+          columns={columns.map((c) => ({ ...c, moreHref: loadsHref(f, { view: undefined, status: c.status }) }))}
+          showMoney={showMoney} canEdit={canEdit}
+        />
       ) : (
         <Card flush>
           <Table dense
@@ -159,13 +185,36 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
               );
             })}
           </Table>
-          {total > loads.length && (
-            <p className="border-t border-line px-4 py-2 text-[12px] text-fg-muted">
-              Showing the first {number(loads.length)} of {number(total)} loads — narrow the date range or search to see the rest, or export the full set as CSV.
-            </p>
-          )}
+          {total > PAGE_SIZE && <Pager f={f} total={total} pages={pages} shown={loads.length} />}
         </Card>
       )}
     </>
+  );
+}
+
+/** "51–100 of 121 loads" with previous / next links; the URL carries the page so it survives reloads and sharing. */
+function Pager({ f, total, pages, shown }: { f: LoadFilters; total: number; pages: number; shown: number }) {
+  const first = (f.page - 1) * PAGE_SIZE + 1;
+  const last = first + shown - 1;
+  const step = (label: string, page: number, icon: ReactNode, iconAfter = false) =>
+    page >= 1 && page <= pages ? (
+      <LinkButton href={loadsHref(f, { page: String(page) })} variant="secondary" size="sm" rel={iconAfter ? "next" : "prev"}>
+        {!iconAfter && icon}{label}{iconAfter && icon}
+      </LinkButton>
+    ) : (
+      <span aria-disabled="true" className={cn(buttonClass("secondary", "sm"), "pointer-events-none opacity-50")}>{!iconAfter && icon}{label}{iconAfter && icon}</span>
+    );
+  return (
+    <nav aria-label="Loads pages" className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-[12px] text-fg-muted">
+      <p>
+        <span className="num text-fg">{number(first)}–{number(last)}</span> of <span className="num text-fg">{number(total)}</span> loads
+        {f.page === pages && <span className="text-fg-subtle"> · narrow the filters to find one faster, or export the full set as CSV</span>}
+      </p>
+      <div className="flex items-center gap-1.5">
+        <span className="num mr-1 text-fg-subtle">Page {f.page} of {pages}</span>
+        {step("Previous", f.page - 1, <ChevronLeft />)}
+        {step("Next", f.page + 1, <ChevronRight />, true)}
+      </div>
+    </nav>
   );
 }

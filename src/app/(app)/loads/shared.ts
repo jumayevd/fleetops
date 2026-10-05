@@ -162,3 +162,19 @@ export const TRANSITION_LABEL: Partial<Record<LoadStatus, string>> = {
 /** GPS fix older than 15 minutes (or none) — the marker is drawn faded on the map. */
 export const pingStale = (lastPingAt: Date | string | null | undefined, maxAgeMs = 15 * 60_000) =>
   !lastPingAt || Date.now() - new Date(lastPingAt).getTime() > maxAgeMs;
+
+/* ------------------------------------------------------------------ */
+/* Imperative action calls (client-safe)                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Error text for an action called imperatively (not through ActionForm). Accepts either a returned `{ error }` or a
+ * thrown error. Production builds replace thrown server-action messages with a generic digest text, so there the
+ * caller's fallback (which says what to do next) is shown instead of that text.
+ */
+export function actionError(result: unknown, thrown: unknown, fallback: string): string | null {
+  if (result && typeof result === "object" && "error" in result && typeof result.error === "string" && result.error) return result.error;
+  if (thrown === undefined) return null;
+  if (process.env.NODE_ENV !== "production" && thrown instanceof Error && thrown.message) return thrown.message;
+  return fallback;
+}

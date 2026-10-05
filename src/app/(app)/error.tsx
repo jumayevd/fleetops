@@ -6,7 +6,12 @@ import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Button, buttonClass } from "@/components/ui";
 
 /** Error boundary inside the app shell: the sidebar and top bar stay, only the page content is replaced. */
-export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function AppError({ error, reset, retry }: {
+  error: Error & { digest?: string };
+  reset: () => void;
+  /** Next 16.3+: re-fetches the segment. `reset` only re-renders the cached (failed) payload. */
+  retry?: () => void;
+}) {
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -26,7 +31,7 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
         </div>
       </div>
       <div className="mt-5 flex flex-wrap gap-2">
-        <Button variant="primary" onClick={reset}><RotateCcw className="h-4 w-4" />Try again</Button>
+        <Button variant="primary" onClick={() => (retry ?? reset)()}><RotateCcw className="h-4 w-4" />Try again</Button>
         <Link href="/dashboard" className={buttonClass("secondary")}>Go to overview</Link>
       </div>
     </div>

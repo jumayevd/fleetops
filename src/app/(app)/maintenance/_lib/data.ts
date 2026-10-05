@@ -68,16 +68,58 @@ export async function fleetUnits() {
   return { trucks, trailers };
 }
 
+/** Distinct units across work orders: two jobs on one truck count as one unit. */
+export const countUnits = (rows: { truckId: string | null; trailerId: string | null }[]) =>
+  new Set(rows.map((r) => r.truckId ?? r.trailerId).filter(Boolean)).size;
+
+/** Units with a job in progress (not the number of jobs). */
+export async function unitsInShopCount() {
+  const rows = await db.workOrder.groupBy({ by: ["truckId", "trailerId"], where: { status: "IN_PROGRESS" } });
+  return countUnits(rows);
+}
+
+export type ActiveLoad = { id: string; reference: string; status: string };
+
+/**
+ * Loads holding a unit right now (assigned or in transit), keyed by truck / trailer id. A unit on one of these
+ * must not go into the shop: the fleet pages refuse it too ("recover the load first"). Pass ids to narrow the lookup.
+ */
+export async function activeLoadsByUnit(ids?: string[]) {
+  const loads = await db.load.findMany({
+    where: {
+      status: { in: ["ASSIGNED", "IN_TRANSIT"] },
+      OR: ids ? [{ truckId: { in: ids } }, { trailerId: { in: ids } }] : [{ truckId: { not: null } }, { trailerId: { not: null } }],
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 1000,
+    select: { id: true, reference: true, status: true, truckId: true, trailerId: true },
+  });
+  const byUnit = new Map<string, ActiveLoad>();
+  for (const l of loads) {
+    const load = { id: l.id, reference: l.reference, status: l.status };
+    if (l.truckId && !byUnit.has(l.truckId)) byUnit.set(l.truckId, load);
+    if (l.trailerId && !byUnit.has(l.trailerId)) byUnit.set(l.trailerId, load);
+  }
+  return byUnit;
+}
+
 /** Pickers for the work order form: units with a one-line description, plus known vendors for autocomplete. */
 export async function workOrderFormOptions() {
-  const [trucks, trailers, vendors] = await Promise.all([
-    db.truck.findMany({ orderBy: { unitNumber: "asc" }, select: { id: true, unitNumber: true, make: true, model: true, odometerKm: true, status: true } }),
+  const [trucks, trailers, vendors, loads] = await Promise.all([
+    db.truck.findMany({ orderBy: { unitNumber: "asc" }, select: { id: true, unitNumber: true, make: true, model: true, odometerKm: true, lastPmKm: true, status: true } }),
     db.trailer.findMany({ orderBy: { unitNumber: "asc" }, select: { id: true, unitNumber: true, type: true, status: true } }),
     db.workOrder.findMany({ where: { vendor: { not: null } }, distinct: ["vendor"], select: { vendor: true }, orderBy: { vendor: "asc" } }),
+    activeLoadsByUnit(),
   ]);
   return {
-    trucks: trucks.map((t) => ({ id: t.id, unitNumber: t.unitNumber, detail: `${t.make} ${t.model}${t.status !== "ACTIVE" ? ` · ${t.status.toLowerCase().replace(/_/g, " ")}` : ""}`, odometerKm: t.odometerKm })),
-    trailers: trailers.map((t) => ({ id: t.id, unitNumber: t.unitNumber, detail: `${EQUIPMENT_LABELS[t.type] ?? t.type}${t.status !== "EMPTY" && t.status !== "YARD" ? ` · ${t.status.toLowerCase().replace(/_/g, " ")}` : ""}` })),
+    trucks: trucks.map((t) => ({
+      id: t.id, unitNumber: t.unitNumber, odometerKm: t.odometerKm, lastPmKm: t.lastPmKm, onLoad: loads.get(t.id)?.reference ?? null,
+      detail: `${t.make} ${t.model}${t.status !== "ACTIVE" ? ` · ${t.status.toLowerCase().replace(/_/g, " ")}` : ""}`,
+    })),
+    trailers: trailers.map((t) => ({
+      id: t.id, unitNumber: t.unitNumber, onLoad: loads.get(t.id)?.reference ?? null,
+      detail: `${EQUIPMENT_LABELS[t.type] ?? t.type}${t.status !== "EMPTY" && t.status !== "YARD" ? ` · ${t.status.toLowerCase().replace(/_/g, " ")}` : ""}`,
+    })),
     vendors: vendors.map((v) => v.vendor!).filter(Boolean),
   };
 }
@@ -87,6 +129,8 @@ export async function workOrderFormOptions() {
 /* ------------------------------------------------------------------ */
 
 export type OpenPm = { id: string; number: number; status: string; truckId: string | null };
+/** The truck's most recent completed PM work order: what it cost and where it was done. */
+export type LastPmJob = { id: string; number: number; cost: number; vendor: string | null; completedAt: Date | null; truckId: string | null };
 export type PmRow = {
   truck: Truck;
   /** Odometer reading the next PM is due at (explicit, else last PM + interval). */
@@ -96,18 +140,37 @@ export type PmRow = {
   /** Share of the interval already driven (can exceed 1). */
   used: number | null;
   openPm: OpenPm | null;
+  lastJob: LastPmJob | null;
 };
 
-export function pmRows(trucks: Truck[], openPm: OpenPm[]): PmRow[] {
+type PmFields = Pick<Truck, "nextServiceKm" | "lastPmKm" | "pmIntervalKm">;
+/** Odometer reading the next PM is due at: the explicit reading, else last PM + interval (same rule as the alerts). */
+export const pmNextService = (t: PmFields) => t.nextServiceKm ?? (t.lastPmKm != null ? t.lastPmKm + t.pmIntervalKm : null);
+
+export function pmRows(trucks: Truck[], openPm: OpenPm[], lastPm: Map<string, LastPmJob> = new Map()): PmRow[] {
   return trucks
     .filter((t) => t.status !== "INACTIVE")
     .map((t) => {
-      const nextService = t.nextServiceKm ?? (t.lastPmKm != null ? t.lastPmKm + t.pmIntervalKm : null);
+      const nextService = pmNextService(t);
       const kmLeft = nextService != null ? nextService - t.odometerKm : null;
       const used = t.pmIntervalKm > 0 && kmLeft != null ? (t.pmIntervalKm - kmLeft) / t.pmIntervalKm : null;
-      return { truck: t, nextService, kmLeft, used, openPm: openPm.find((w) => w.truckId === t.id) ?? null };
+      return { truck: t, nextService, kmLeft, used, openPm: openPm.find((w) => w.truckId === t.id) ?? null, lastJob: lastPm.get(t.id) ?? null };
     })
     .sort((a, b) => (a.kmLeft ?? Infinity) - (b.kmLeft ?? Infinity));
+}
+
+/**
+ * Latest completed PM work order per truck. `distinct` keeps the first row per truck in this order, so the
+ * result is at most one row per id passed.
+ */
+export async function lastPmJobs(truckIds: string[]) {
+  const rows = await db.workOrder.findMany({
+    where: { category: "PM", status: "DONE", truckId: { in: truckIds } },
+    distinct: ["truckId"],
+    orderBy: [{ completedAt: { sort: "desc", nulls: "last" } }, { scheduledAt: "desc" }],
+    select: { id: true, number: true, cost: true, vendor: true, completedAt: true, truckId: true },
+  });
+  return new Map(rows.map((r) => [r.truckId!, r]));
 }
 
 export const pmTone = (kmLeft: number | null): Tone =>

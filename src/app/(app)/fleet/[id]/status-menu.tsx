@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { ChevronDown } from "lucide-react";
-import { setTruckStatus } from "@/app/actions/fleet";
 import { TRUCK_STATUSES } from "@/lib/constants";
 import { Badge, STATUS_TONE, StatusDot, buttonClass, cn } from "@/components/ui";
+import { setTruckStatus } from "../actions";
 import { DropMenu } from "../menu";
 import { TRUCK_STATUS_LABELS } from "../lib";
 
@@ -17,13 +17,17 @@ export function TruckStatusMenu({ id, status }: { id: string; status: string }) 
     icon: <StatusDot tone={STATUS_TONE[s]} />,
     onSelect: () => start(async () => {
       setError(null);
-      try { await setTruckStatus(id, s); }
-      catch (e) { setError(e instanceof Error && e.message ? e.message : "Could not change status"); }
+      try {
+        const res = await setTruckStatus(id, s);
+        if (res?.error) setError(res.error);
+      } catch {
+        setError("Could not change the status. Refresh the page and try again.");
+      }
     }),
   }));
   return (
     <span className="inline-flex items-center gap-2">
-      {error && <span role="alert" className="max-w-64 truncate text-[11px] text-danger" title={error}>{error}</span>}
+      {error && <span role="alert" className="max-w-80 truncate text-[12px] text-danger" title={error}>{error}</span>}
       <DropMenu items={items} label="Change status" className={cn(buttonClass("secondary"), "gap-2 pl-2", pending && "opacity-60")}>
         <Badge value={status} label={TRUCK_STATUS_LABELS[status]} dot />
         <ChevronDown className="text-fg-subtle" />

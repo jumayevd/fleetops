@@ -17,7 +17,13 @@ export type LoadFilters = {
   from?: string;
   to?: string;
   q: string;
+  /** 1-based table page (ignored by the board and the export). */
+  page: number;
 };
+
+/** Table rows per page, and cards per board column before "+n more". */
+export const PAGE_SIZE = 50;
+export const BOARD_COLUMN_CAP = 25;
 
 const str = (v: string | string[] | undefined) => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined);
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -36,14 +42,19 @@ export function parseLoadFilters(sp: Record<string, string | string[] | undefine
     from: from && DAY_RE.test(from) ? from : undefined,
     to: to && DAY_RE.test(to) ? to : undefined,
     q: str(sp.q) ?? "",
+    page: Math.max(1, Math.min(10_000, Math.trunc(Number(str(sp.page))) || 1)),
   };
 }
 
-/** `/loads?…` with the current filters, patched. Pass `undefined` in the patch to drop a key. */
+/**
+ * `/loads?…` with the current filters, patched. Pass `undefined` in the patch to drop a key.
+ * The page number is kept only when the patch sets it, so any filter change starts again at page 1.
+ */
 export function loadsHref(f: LoadFilters, patch: Partial<Record<keyof LoadFilters, string | undefined>> = {}, base = "/loads") {
   const merged: Record<string, string | undefined> = {
     view: f.view === "board" ? "board" : undefined, status: f.status, billing: f.billing, team: f.team, party: f.party,
     from: f.from, to: f.to, q: f.q || undefined, ...patch,
+    page: patch.page && patch.page !== "1" ? patch.page : undefined,
   };
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);

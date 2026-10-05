@@ -3,9 +3,10 @@
 import { ArrowDown, ArrowUp, Crosshair, Plus, X } from "lucide-react";
 import { CITIES } from "@/lib/constants";
 import { roadKm, type LatLng } from "@/lib/geo";
-import { dateTime, toLocalInput } from "@/lib/format";
+import { number } from "@/lib/format";
 import { Badge, Chip, IconButton, buttonClass, cn, inputClass } from "@/components/ui";
 import { STOP_TONE, STOP_TYPE_LABEL, STOP_TYPE_TONE } from "./shared";
+import { ZONE_LABEL, fromZonedInput, sameZonedDay, toZonedInput, zonedDateTime, zonedTime } from "./tz";
 
 export type StopDraft = {
   key: string;
@@ -17,6 +18,7 @@ export type StopDraft = {
   lat: string;
   lng: string;
   address: string;
+  /** ISO instants ("" when unset). Shown and typed as company time; submitted as ISO so the server never guesses a zone. */
   windowStart: string;
   windowEnd: string;
   notes: string;
@@ -50,11 +52,21 @@ export function toDraft(s: StopDefault, i: number): StopDraft {
   return {
     key: `s${i}`, type: s.type === "DELIVERY" ? "DELIVERY" : "PICKUP", name: s.name, city: s.city, custom,
     lat: custom ? String(s.lat) : "", lng: custom ? String(s.lng) : "", address: s.address ?? "",
-    windowStart: toLocalInput(s.windowStart), windowEnd: toLocalInput(s.windowEnd), notes: s.notes ?? "", status: s.status,
+    windowStart: s.windowStart ?? "", windowEnd: s.windowEnd ?? "", notes: s.notes ?? "", status: s.status,
   };
 }
 
 const windowInvalid = (s: StopDraft) => Boolean(s.windowStart && s.windowEnd && new Date(s.windowEnd) < new Date(s.windowStart));
+
+/** "05 Oct, 08:00 – 12:00", "05 Oct, 08:00 – 06 Oct, 18:00", "by 06 Oct, 18:00" — company time, identical on server and client. */
+function lockedWindow(s: StopDraft) {
+  if (s.windowStart && s.windowEnd) {
+    return `${zonedDateTime(s.windowStart)} – ${sameZonedDay(s.windowStart, s.windowEnd) ? zonedTime(s.windowEnd) : zonedDateTime(s.windowEnd)}`;
+  }
+  if (s.windowStart) return `from ${zonedDateTime(s.windowStart)}`;
+  if (s.windowEnd) return `by ${zonedDateTime(s.windowEnd)}`;
+  return "No window";
+}
 
 /**
  * Ordered pickups and deliveries. Emits the parallel arrays saveLoad expects
@@ -76,8 +88,8 @@ export function StopsEditor({ stops, onChange, locked }: { stops: StopDraft[]; o
     const base = prev?.windowEnd || prev?.windowStart;
     const start = base ? new Date(new Date(base).getTime() + 6 * 3_600_000) : null;
     const draft = newStop(type, {
-      windowStart: type === "PICKUP" && start ? toLocalInput(start) : "",
-      windowEnd: start ? toLocalInput(new Date(start.getTime() + (type === "PICKUP" ? 4 : 8) * 3_600_000)) : "",
+      windowStart: type === "PICKUP" && start ? start.toISOString() : "",
+      windowEnd: start ? new Date(start.getTime() + (type === "PICKUP" ? 4 : 8) * 3_600_000).toISOString() : "",
     });
     if (type === "PICKUP") {
       const lastPickup = stops.map((s) => s.type).lastIndexOf("PICKUP");
@@ -101,7 +113,7 @@ export function StopsEditor({ stops, onChange, locked }: { stops: StopDraft[]; o
               <p className="truncate text-[11px] text-fg-subtle">{s.city}{s.address && ` · ${s.address}`}</p>
             </div>
             <span className="num hidden text-[12px] text-fg-muted sm:block">
-              {s.windowStart || s.windowEnd ? <>{dateTime(s.windowStart || null)}{s.windowStart && s.windowEnd && " – "}{s.windowEnd && (s.windowStart ? new Date(s.windowEnd).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : dateTime(s.windowEnd))}</> : "No window"}
+              {lockedWindow(s)}
             </span>
             {s.status && <Badge value={s.status} tone={STOP_TONE[s.status]} />}
           </li>
@@ -152,8 +164,10 @@ export function StopsEditor({ stops, onChange, locked }: { stops: StopDraft[]; o
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <input name="stopAddress" aria-label={`Stop ${i + 1} address`} value={s.address} onChange={(e) => update(i, { address: e.target.value })} placeholder="Address, dock or gate (optional)" className={cn(inputClass, "min-w-48 flex-1")} />
-                  <input type="datetime-local" name="stopWindowStart" aria-label={`Stop ${i + 1} window start`} value={s.windowStart} onChange={(e) => update(i, { windowStart: e.target.value })} className={cn(inputClass, "num w-44", invalid && "border-danger")} />
-                  <input type="datetime-local" name="stopWindowEnd" aria-label={`Stop ${i + 1} window end`} value={s.windowEnd} onChange={(e) => update(i, { windowEnd: e.target.value })} className={cn(inputClass, "num w-44", invalid && "border-danger")} />
+                  <input type="datetime-local" aria-label={`Stop ${i + 1} window start (${ZONE_LABEL})`} value={toZonedInput(s.windowStart)} onChange={(e) => update(i, { windowStart: fromZonedInput(e.target.value) })} className={cn(inputClass, "num w-44", invalid && "border-danger")} />
+                  <input type="datetime-local" aria-label={`Stop ${i + 1} window end (${ZONE_LABEL})`} value={toZonedInput(s.windowEnd)} onChange={(e) => update(i, { windowEnd: fromZonedInput(e.target.value) })} className={cn(inputClass, "num w-44", invalid && "border-danger")} />
+                  <input type="hidden" name="stopWindowStart" value={s.windowStart} />
+                  <input type="hidden" name="stopWindowEnd" value={s.windowEnd} />
                   <input name="stopNotes" aria-label={`Stop ${i + 1} notes`} value={s.notes} onChange={(e) => update(i, { notes: e.target.value })} placeholder="Notes for the driver" className={cn(inputClass, "min-w-40 flex-1")} />
                 </div>
                 {invalid && <p className="text-[11px] text-danger">This window ends before it starts.</p>}
@@ -167,7 +181,7 @@ export function StopsEditor({ stops, onChange, locked }: { stops: StopDraft[]; o
             {i < stops.length - 1 && (
               <div className="ml-[21px] flex h-6 items-center gap-2 text-[11px] text-fg-subtle" aria-hidden>
                 <span className="h-full w-px bg-line-strong" />
-                <span className="num">{leg != null ? `${leg.toLocaleString()} km` : "distance unknown — pick both cities"}</span>
+                <span className="num">{leg != null ? `${number(leg)} km` : "distance unknown — pick both cities"}</span>
               </div>
             )}
           </div>
@@ -176,13 +190,13 @@ export function StopsEditor({ stops, onChange, locked }: { stops: StopDraft[]; o
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <button type="button" onClick={() => add("PICKUP")} className={buttonClass("secondary", "sm")}><Plus />Add pickup</button>
         <button type="button" onClick={() => add("DELIVERY")} className={buttonClass("secondary", "sm")}><Plus />Add delivery</button>
-        <span className="text-[11px] text-fg-subtle">Pickups are inserted after the last pickup; deliveries go to the end. Drag order with the arrows.</span>
+        <span className="text-[11px] text-fg-subtle">Pickups are inserted after the last pickup; deliveries go to the end. Reorder with the arrows. Windows are in {ZONE_LABEL}.</span>
       </div>
     </div>
   );
 }
 
-/** Every field for a stop as hidden inputs (locked loads still submit their stops). */
+/** Every field for a stop as hidden inputs (locked loads still submit their stops; windows are ISO instants). */
 function HiddenStop({ s }: { s: StopDraft }) {
   return (
     <>

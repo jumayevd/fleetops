@@ -77,6 +77,10 @@ export function DocumentUploader({ target, kinds, labels, defaultKind, withExpir
   };
 
   const size = camera ? "md" : "sm";
+  // Driver phones: every control in the camera layout is a 44 px touch target.
+  const touch = camera && "h-11 text-[14px]";
+  // The file inputs are visually hidden, so the label shows the keyboard focus ring instead.
+  const fileLabel = "cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-accent";
   const hint = withExpiry
     ? "Drop files here. Add an expiry date to get a reminder 30 days before it lapses."
     : "Drop files here. PDF, images and Office files up to 4 MB.";
@@ -90,20 +94,20 @@ export function DocumentUploader({ target, kinds, labels, defaultKind, withExpir
     >
       <div className={cn("flex flex-wrap items-center gap-2", camera && "flex-col items-stretch")}>
         <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Document type"
-          className={cn(inputClass, camera ? "w-full" : "h-7 w-auto min-w-0 flex-1 text-[12px]")}>
+          className={cn(inputClass, camera ? cn("w-full", touch) : "h-7 w-auto min-w-0 flex-1 text-[12px]")}>
           {kinds.map((k) => <option key={k} value={k}>{labels[k] ?? k}</option>)}
         </select>
         {withExpiry && (
           <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} aria-label="Expiry date" title="Expiry date (optional)"
-            className={cn(inputClass, camera ? "w-full" : "h-7 w-[9.5rem] text-[12px]")} />
+            className={cn(inputClass, camera ? cn("w-full", touch) : "h-7 w-[9.5rem] text-[12px]")} />
         )}
         <div className={cn("flex gap-2", camera && "w-full")}>
-          <label className={cn(buttonClass("secondary", size), "cursor-pointer", camera && "flex-1", busy && "pointer-events-none opacity-50")}>
+          <label className={cn(buttonClass("secondary", size), fileLabel, camera && "flex-1", touch, busy && "pointer-events-none opacity-50")}>
             {busy ? <Loader2 className="animate-spin" /> : <Upload />} Upload
             <input ref={fileRef} type="file" multiple className="sr-only" accept={ACCEPT} disabled={busy} onChange={(e) => upload(e.target.files)} />
           </label>
           {camera && (
-            <label className={cn(buttonClass("primary", size), "flex-1 cursor-pointer", busy && "pointer-events-none opacity-50")}>
+            <label className={cn(buttonClass("primary", size), fileLabel, "flex-1", touch, busy && "pointer-events-none opacity-50")}>
               <Camera /> Take photo
               <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={busy} onChange={(e) => upload(e.target.files)} />
             </label>

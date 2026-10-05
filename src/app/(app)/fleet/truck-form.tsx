@@ -53,7 +53,7 @@ export function TruckForm({ action, truck, drivers, groups, cancelHref }: {
               <Field label="Make" required><Input name="make" required defaultValue={truck?.make} placeholder="Volvo" /></Field>
               <Field label="Model" required><Input name="model" required defaultValue={truck?.model} placeholder="FH 500" /></Field>
               <Field label="Year"><Input name="year" type="number" min={1990} max={2100} defaultValue={truck?.year ?? new Date().getFullYear()} className="num" /></Field>
-              <Field label="Status" hint={truck ? "Status changes from the truck page keep the audit trail." : undefined}>
+              <Field label="Status" hint={truck ? "A truck on an active load stays Active until the load is recovered." : undefined}>
                 <Select name="status" defaultValue={truck?.status ?? "ACTIVE"} options={TRUCK_STATUSES.map((s) => ({ value: s, label: TRUCK_STATUS_LABELS[s] }))} />
               </Field>
               <Field label="Group" hint="Depot, company or fleet label used for filtering.">

@@ -50,10 +50,13 @@ export type BoardRow = {
   truck: { id: string; unitNumber: string; locationName: string | null; fuelPct: number | null; lastPingAt: string | null; speedKmh: number | null } | null;
   trailer: { id: string; unitNumber: string; type: string } | null;
   load: BoardLoad | null;
+  /** Dispatched load with a pickup more than 24 h out: reserves the driver without occupying them today (live and upcoming days only). */
+  prebooked: { id: string; reference: string; pickupAt: string } | null;
   cell: { color: RowColor | null; note: string | null };
 };
 
-export type BoardPayload = { date: string; today: boolean; rows: BoardRow[]; at: string };
+/** `dayEnd`: ISO instant the board's calendar day ends in the company timezone. */
+export type BoardPayload = { date: string; today: boolean; rows: BoardRow[]; at: string; dayEnd: string };
 
 export type StatusEvent = { id: string; status: string; source: string; note: string | null; user: string | null; at: string };
 
@@ -78,7 +81,16 @@ export const ROW_COLOR_LABEL: Record<RowColor, string> = { amber: "Amber", green
 
 /** Compact elapsed time: 42m · 16h 4m · 3d 2h. */
 export function duration(fromIso: string, now: number) {
-  const ms = Math.max(0, now - new Date(fromIso).getTime());
+  return span(now - new Date(fromIso).getTime());
+}
+
+/** Compact time left until an instant (same format as `duration`). */
+export function durationUntil(toIso: string, now: number) {
+  return span(new Date(toIso).getTime() - now);
+}
+
+function span(msIn: number) {
+  const ms = Math.max(0, msIn);
   const m = Math.floor(ms / 60_000);
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
@@ -97,6 +109,6 @@ export function hoursBetween(aIso: string, bIso: string) {
 export function rowHaystack(r: BoardRow) {
   return [
     r.driver.name, r.driver.phone, r.driver.phone2, r.truck?.unitNumber, r.trailer?.unitNumber, r.team?.name,
-    r.load?.reference, r.load?.customer, r.load?.originCity, r.load?.destCity, r.load?.nextStop?.city, r.load?.nextStop?.name, r.truck?.locationName,
+    r.load?.reference, r.prebooked?.reference, r.load?.customer, r.load?.originCity, r.load?.destCity, r.load?.nextStop?.city, r.load?.nextStop?.name, r.truck?.locationName,
   ].filter(Boolean).join(" ").toLowerCase();
 }
