@@ -1,36 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition, type ChangeEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, type KeyboardEvent } from "react";
 import { ArrowDown, Building2, ExternalLink, Package, SendHorizontal, Users } from "lucide-react";
 import { sendMessage, type SendState } from "@/app/actions/chat";
 import { FormMessage } from "@/components/forms";
 import { Avatar, Badge, Button, EmptyState, Kbd, LiveDot, cn } from "@/components/ui";
 import { LOAD_STATUS_LABELS, type LoadStatus } from "@/lib/constants";
+import { useHydrated, useToday } from "./hooks";
 import { Linkified } from "./linkify";
 import {
   MAX_BODY, POLL_MS, byCreatedAt, fullTimeLabel, markSeen, parseRoom, parseSeen, readSeenRaw, sectionize, timeLabel,
   type ChatApiResponse, type ChatMe, type ChatMessageDTO, type MessageGroup, type RoomSummary,
 } from "./shared";
 
-const noop = () => () => {};
-/** False during SSR and hydration, true afterwards — gates markup that depends on localStorage. */
-const useHydrated = () => useSyncExternalStore(noop, () => true, () => false);
-
 const EMPTY_COPY: Record<string, { title: string; description: string }> = {
   company: { title: "No messages yet", description: "Say hello — everyone in the company sees this room." },
   team: { title: "Nothing here yet", description: "Use this room for team-only coordination: swaps, cover, hand-offs." },
   load: { title: "Start the thread", description: "Dispatch and the driver see it here and from the load page. Mention a load as LD-10102 to link it." },
 };
+/** Drivers get LD-numbers as plain text, so their copy doesn't promise links. */
+const DRIVER_LOAD_EMPTY = { title: "Start the thread", description: "Dispatch sees this thread and your messages from the load page." };
 
 /**
  * A chat room: day separators, messages grouped by author, auto-linked bodies, a composer (Enter sends,
  * Shift+Enter breaks the line), optimistic append and polling every 4 s via /api/chat.
  *
  * Standalone use: `<ChatThread room="load:<id>" compact />` fetches its own history and viewer identity.
- * The chat page passes `initial`, `me` and `meta` so the first paint comes from the server.
+ * The chat page passes `initial`, `me`, `meta` and `today` so the first paint comes from the server.
  */
-export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = false, me: meProp, notice, onLatest, compact = false, className }: {
+export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = false, me: meProp, notice, onLatest, today: serverToday, compact = false, className }: {
   room: string;
   /** Header details (name, route, status). Omitted in compact / embedded mode. */
   meta?: RoomSummary | null;
@@ -42,6 +41,8 @@ export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = fals
   notice?: string | null;
   /** Called with the newest message whenever one arrives (sent or polled) — keeps room previews fresh. */
   onLatest?: (m: ChatMessageDTO) => void;
+  /** The server's company-calendar day ("yyyy-MM-dd") — required with `initial` so day labels hydrate unchanged. */
+  today?: string;
   compact?: boolean;
   className?: string;
 }) {
@@ -236,7 +237,8 @@ export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = fals
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
-  const sections = useMemo(() => sectionize(messages), [messages]);
+  const today = useToday(serverToday);
+  const sections = useMemo(() => sectionize(messages, today), [messages, today]);
   const firstUnreadId = useMemo(() => {
     if (!hydrated || !seenAtOpen) return null;
     return messages.find((m) => m.createdAt > seenAtOpen && m.userId !== me?.id && !m.pending && !m.failed)?.id ?? null;
@@ -246,7 +248,8 @@ export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = fals
   const Icon = kind === "load" ? Package : kind === "team" ? Users : Building2;
   const status = meta?.status && meta.status in LOAD_STATUS_LABELS ? (meta.status as LoadStatus) : null;
   const placeholder = kind === "company" ? "Message everyone in the company" : kind === "team" && meta ? `Message ${meta.name}` : kind === "load" && meta ? `Message the ${meta.name} thread` : "Write a message";
-  const empty = EMPTY_COPY[kind];
+  const loadLinks = me?.canViewLoads ?? true;
+  const empty = kind === "load" && !loadLinks ? DRIVER_LOAD_EMPTY : EMPTY_COPY[kind];
   const over = draft.length > MAX_BODY;
 
   return (
@@ -272,7 +275,9 @@ export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = fals
       {notice && <p className="shrink-0 border-b border-line bg-warn-soft px-4 py-1.5 text-[12px] text-warn">{notice}</p>}
 
       <div className="relative min-h-0 flex-1">
-        <div ref={listRef} onScroll={onScroll} role="log" aria-live="polite" aria-label="Messages" className={cn("h-full overflow-y-auto", compact ? "py-1" : "py-2")}>
+        {/* Focusable so keyboard users can scroll a thread that has no links to tab through. */}
+        <div ref={listRef} onScroll={onScroll} role="log" aria-live="polite" aria-label="Messages" tabIndex={0}
+          className={cn("h-full overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40", compact ? "py-1" : "py-2")}>
           {blocked ? (
             <EmptyState title="No access to this room" description={blocked} />
           ) : loading ? (
@@ -300,7 +305,7 @@ export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = fals
                           <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-text">New</span>
                         </div>
                       )}
-                      <Group g={g} own={g.userId != null && g.userId === me?.id} loadLinks={me?.canViewLoads ?? true} compact={compact} onRetry={retry} onDiscard={discard} />
+                      <Group g={g} own={g.userId != null && g.userId === me?.id} loadLinks={loadLinks} compact={compact} onRetry={retry} onDiscard={discard} />
                     </div>
                   ))}
                 </div>
@@ -330,7 +335,9 @@ export function ChatThread({ room, meta, initial, hasMore: hasMoreInitial = fals
         </div>
         {!compact && (
           <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-fg-subtle">
-            <span className="hidden sm:inline"><Kbd>Enter</Kbd> to send · <Kbd>Shift</Kbd> + <Kbd>Enter</Kbd> for a new line · LD-numbers and links become clickable</span>
+            <span className="hidden sm:inline">
+              <Kbd>Enter</Kbd> to send · <Kbd>Shift</Kbd> + <Kbd>Enter</Kbd> for a new line · {loadLinks ? "LD-numbers and links become clickable" : "links become clickable"}
+            </span>
             {draft.length > MAX_BODY - 200 && <span className={cn("num ml-auto", over && "text-danger")}>{draft.length} / {MAX_BODY}</span>}
           </div>
         )}

@@ -11,7 +11,8 @@ import { cn } from "@/components/ui";
 export type MenuItem = {
   label: ReactNode;
   href?: string;
-  onSelect?: () => void;
+  /** Gets the menu's trigger button, e.g. to return focus there from a dialog the item opens. */
+  onSelect?: (trigger: HTMLButtonElement | null) => void;
   icon?: ReactNode;
   hint?: ReactNode;
   danger?: boolean;
@@ -102,7 +103,7 @@ export function DropMenu({ items, children, className, label, width = 224, align
                 <li key={i} role="none">
                   {it.href && !it.disabled
                     ? <Link role="menuitem" href={it.href} onClick={close} className={cls}>{inner}</Link>
-                    : <button type="button" role="menuitem" disabled={it.disabled} onClick={() => { close(); it.onSelect?.(); }} className={cls}>{inner}</button>}
+                    : <button type="button" role="menuitem" disabled={it.disabled} onClick={() => { close(); it.onSelect?.(btn.current); }} className={cls}>{inner}</button>}
                 </li>
               );
             })}

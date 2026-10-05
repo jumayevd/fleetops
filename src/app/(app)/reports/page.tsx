@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { date, fmtMoneyCompact, money, number } from "@/lib/format";
 import { Card, LinkButton, PageHeader, Segmented, Stat } from "@/components/ui";
-import { Bars, Donut, RevenueChart, TrendLine } from "@/components/charts";
+import { Bars, ChartEmpty, Donut, RevenueChart, SimpleBar, TrendLine } from "@/components/charts";
 import { reportData } from "./data";
 import { PERIODS, PERIOD_KEYS, deltaTone, exportHref, fmtDelta, fmtPerKm, fmtPts, parsePeriod, reportsHref, type ExportType, type PeriodKey } from "./shared";
 import { ClaimsTable, DriverTable, LaneTable, TruckTable } from "./tables";
@@ -26,6 +26,11 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   // Only call out a $/km move once it is visible at two decimals.
   const perKmRaw = k.perKm != null && k.perKmPrev != null ? k.perKm - k.perKmPrev : null;
   const perKmDiff = perKmRaw != null && Math.abs(perKmRaw) >= 0.005 ? perKmRaw : null;
+  // On-time % and load counts get a chart each: a percentage and a count do not share an axis. A bucket with
+  // no deliveries has no on-time rate, so it is left out of the line (a gap) rather than plotted as 0%.
+  const delivered = r.series.some((p) => p.loads > 0);
+  const onTimeSeries = r.series.map((p): Record<string, string | number> => (p.loads ? { month: p.month, onTimePct: p.onTimePct } : { month: p.month }));
+  const loadsSeries = r.series.map((p) => ({ month: p.month, Loads: p.loads }));
 
   return (
     <>
@@ -53,7 +58,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
           hint={k.perKmPrev != null ? `over loaded and empty km · ${fmtPerKm(k.perKmPrev)} before` : "over loaded and empty km"} />
         <Stat label="On time" value={k.loads ? `${k.onTimePct}%` : "—"} delta={fmtPts(k.onTimeDelta)} deltaTone={deltaTone(k.onTimeDelta)}
           tone={k.loads ? (k.onTimePct < 80 ? "danger" : k.onTimePct < 90 ? "warn" : "ok") : "neutral"}
-          hint={k.loads ? `${plural(Math.round((k.onTimePct / 100) * k.loads), "delivery", "deliveries")} inside the window` : "—"} />
+          hint={k.loads ? `${plural(k.onTime, "delivery", "deliveries")} inside the window` : "—"} />
         <Stat label="Empty km" value={k.km ? `${k.emptyPct}%` : "—"} delta={fmtPts(k.emptyDelta)} deltaTone={deltaTone(k.emptyDelta, false)}
           tone={k.km ? (k.emptyPct > 20 ? "danger" : k.emptyPct > 12 ? "warn" : "ok") : "neutral"}
           hint={k.km ? `${number(k.emptyKm)} of ${number(k.km)} km run without freight` : "—"} />
@@ -65,10 +70,19 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2" title="Revenue vs direct costs"
           actions={<span className="num text-[11px] text-fg-subtle">per {bucket} · the gap is gross margin{r.trimmedBucket ? ` · ${r.trimmedBucket} has no deliveries yet` : ""}</span>}>
-          <RevenueChart data={r.series} height={250} />
+          <RevenueChart data={r.series} height={270} />
         </Card>
-        <Card title="On-time % and loads" actions={<span className="num text-[11px] text-fg-subtle">per {bucket}</span>}>
-          <TrendLine data={r.series} height={250} lines={[{ key: "onTimePct", name: "On time %", tone: "ok" }, { key: "loads", name: "Loads", tone: "info" }]} />
+        <Card title="Delivery performance" actions={<span className="num text-[11px] text-fg-subtle">per {bucket}</span>}>
+          {delivered ? (
+            <>
+              <p className="eyebrow mb-1">On time</p>
+              <TrendLine data={onTimeSeries} height={120} suffix="%" format="percent" lines={[{ key: "onTimePct", name: "On time", tone: "ok" }]} />
+              <p className="eyebrow mb-1 mt-3">Loads delivered</p>
+              <SimpleBar data={loadsSeries} dataKey="Loads" nameKey="month" tone="info" format="number" height={98} />
+            </>
+          ) : (
+            <ChartEmpty height={270} title="No deliveries in this period" hint="On-time rate and load counts appear once loads are delivered. Try a longer period." />
+          )}
         </Card>
       </div>
 

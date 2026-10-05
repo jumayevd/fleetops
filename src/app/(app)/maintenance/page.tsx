@@ -1,12 +1,11 @@
 import { ClipboardList, Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { db } from "@/lib/db";
 import { date } from "@/lib/format";
 import { LinkButton, PageHeader, Segmented, Tabs } from "@/components/ui";
 import {
-  fleetUnits, leaseRows, openPmWorkOrders, parsePeriod, parseTab, periodRange, PERIODS, pmRows, str, TAB_LABELS, TABS, unitCompliance,
-  type PeriodKey, type TabKey,
+  fleetUnits, lastPmJobs, leaseRows, openPmWorkOrders, parsePeriod, parseTab, periodRange, PERIODS, pmRows, str, TAB_LABELS, TABS, unitCompliance,
+  unitsInShopCount, type PeriodKey, type TabKey,
 } from "./_lib/data";
 import { maintenanceHref, newWorkOrderHref } from "./_lib/links";
 import { SummaryTab } from "./_components/tab-summary";
@@ -36,12 +35,15 @@ export default async function MaintenancePage({ searchParams }: PageProps<"/main
   const periodic = tab === "summary" || tab === "log";
 
   const { trucks, trailers } = await fleetUnits();
-  const [openPm, inShop, compliance] = await Promise.all([
+  const [openPm, inShop, compliance, lastPm] = await Promise.all([
     openPmWorkOrders(),
-    db.workOrder.count({ where: { status: "IN_PROGRESS" } }),
+    // Units, not jobs: two jobs on one truck are one unit off the road.
+    unitsInShopCount(),
     unitCompliance(trucks, trailers),
+    // Last PM job (cost, shop) is only shown on the PM board.
+    tab === "pm" ? lastPmJobs(trucks.map((t) => t.id)) : undefined,
   ]);
-  const pm = pmRows(trucks, openPm);
+  const pm = pmRows(trucks, openPm, lastPm);
   const lease = leaseRows(trucks);
   const counts: Partial<Record<TabKey, number>> = {
     pm: pm.filter((r) => r.kmLeft != null && r.kmLeft < 0).length,

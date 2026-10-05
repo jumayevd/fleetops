@@ -72,41 +72,59 @@ const loadRoom = (l: LoadRow, ctx: ChatContext): RoomSummary => ({
   lastAt: null, lastPreview: null, lastBy: null,
 });
 
-/** Attach the latest message of each room (one query, newest per room). */
+type LastRow = { room: string; body: string; createdAt: Date; userName: string | null };
+
+/**
+ * Attach the latest message of each room. One round trip, bounded work: for each room a backward scan of the
+ * (room, createdAt) index stops at the first row (LATERAL … LIMIT 1), so cost grows with the number of rooms,
+ * not with the history. (Prisma's `distinct` would run in memory over every message of every room.)
+ */
 async function withLastMessage(rooms: RoomSummary[]) {
   if (!rooms.length) return rooms;
-  const last = await db.chatMessage.findMany({
-    where: { room: { in: rooms.map((r) => r.id) } },
-    orderBy: { createdAt: "desc" },
-    distinct: ["room"],
-    select: { room: true, body: true, createdAt: true, user: { select: { name: true } } },
-  });
+  const ids = rooms.map((r) => r.id);
+  const last = await db.$queryRaw<LastRow[]>`
+    SELECT r.room, m.body, m."createdAt", u.name AS "userName"
+    FROM unnest(${ids}::text[]) AS r(room)
+    CROSS JOIN LATERAL (
+      SELECT c.body, c."createdAt", c."userId" FROM "ChatMessage" c
+      WHERE c.room = r.room ORDER BY c."createdAt" DESC LIMIT 1
+    ) m
+    LEFT JOIN "User" u ON u.id = m."userId"`;
   const byRoom = new Map(last.map((m) => [m.room, m]));
   return rooms.map((r) => {
     const m = byRoom.get(r.id);
-    return m ? { ...r, lastAt: m.createdAt.toISOString(), lastPreview: previewOf(m.body), lastBy: m.user?.name ?? "Former user" } : r;
+    return m ? { ...r, lastAt: m.createdAt.toISOString(), lastPreview: previewOf(m.body), lastBy: m.userName ?? "Former user" } : r;
   });
 }
 
+/** Load threads shown in the column. */
+const LOAD_ROOMS = 60;
+/** Active loads checked for conversation before the cap (one index lookup each), so talked-in threads survive it. */
+const LOAD_SCAN = 500;
+
 /**
  * Rooms for the left column: Company; the user's team (all teams for owner / admin); active load threads —
- * every ASSIGNED / IN_TRANSIT load for staff with loads.view, the driver's own active loads for a driver.
+ * ASSIGNED / IN_TRANSIT loads for staff with loads.view, the driver's own active loads for a driver. Load threads
+ * with conversation come first (latest first), then quiet ones in-transit-first; at most LOAD_ROOMS are listed and
+ * `loadTotal` counts them all.
  */
-export async function listRooms(ctx: ChatContext): Promise<RoomSummary[]> {
+export async function listRooms(ctx: ChatContext): Promise<{ rooms: RoomSummary[]; loadTotal: number }> {
   const teamWhere = ctx.allTeams ? {} : ctx.teamId ? { id: ctx.teamId } : { id: "__none__" };
   const loadWhere = ctx.loadsView
     ? { status: { in: ["ASSIGNED", "IN_TRANSIT"] } }
     : ctx.driverId ? { driverId: ctx.driverId, status: { in: ["ASSIGNED", "IN_TRANSIT"] } } : null;
   const [teams, loads] = await Promise.all([
     db.team.findMany({ where: teamWhere, orderBy: { sortOrder: "asc" }, select: TEAM_SELECT }),
-    loadWhere ? db.load.findMany({ where: loadWhere, orderBy: [{ status: "desc" }, { pickupAt: "asc" }], select: LOAD_SELECT, take: 60 }) : Promise.resolve([] as LoadRow[]),
+    loadWhere ? db.load.findMany({ where: loadWhere, orderBy: [{ status: "desc" }, { pickupAt: "asc" }], select: LOAD_SELECT, take: LOAD_SCAN }) : Promise.resolve([] as LoadRow[]),
   ]);
-  const rooms = await withLastMessage([companyRoom(), ...teams.map(teamRoom), ...loads.map((l) => loadRoom(l, ctx))]);
-  // Load threads with conversation float to the top; the rest keep in-transit-first order.
+  const [rooms, loadTotal] = await Promise.all([
+    withLastMessage([companyRoom(), ...teams.map(teamRoom), ...loads.map((l) => loadRoom(l, ctx))]),
+    loadWhere && loads.length === LOAD_SCAN ? db.load.count({ where: loadWhere }) : Promise.resolve(loads.length),
+  ]);
   const loadRooms = rooms.filter((r) => r.kind === "load");
   const talked = loadRooms.filter((r) => r.lastAt).sort((a, b) => ((a.lastAt as string) < (b.lastAt as string) ? 1 : -1));
   const quiet = loadRooms.filter((r) => !r.lastAt);
-  return [...rooms.filter((r) => r.kind !== "load"), ...talked, ...quiet];
+  return { rooms: [...rooms.filter((r) => r.kind !== "load"), ...[...talked, ...quiet].slice(0, LOAD_ROOMS)], loadTotal };
 }
 
 /** Summary for a room that is accessible but not in the column (e.g. a delivered load opened from its page). */

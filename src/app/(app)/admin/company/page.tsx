@@ -94,7 +94,7 @@ export default async function CompanyPage() {
                 <Card title="Legal entity">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label="Legal name" required className="sm:col-span-2"><Input name="legalName" required defaultValue={profile.legalName} placeholder="«Fleet Logistics» LLC" /></Field>
-                    <Field label="Brand / trading name" hint="Shown in the app header and on documents."><Input name="brand" defaultValue={profile.brand} placeholder="FleetOps" /></Field>
+                    <Field label="Brand / trading name" hint="Heads printed invoices. Leave empty to use the legal name."><Input name="brand" defaultValue={profile.brand} placeholder="FleetOps" /></Field>
                     <Field label="Director"><Input name="director" defaultValue={profile.director} placeholder="Full name" /></Field>
                     <Field label="INN (tax ID)"><Input name="taxId" defaultValue={profile.taxId} placeholder="123456789" className="num" inputMode="numeric" /></Field>
                     <Field label="Carrier licence number"><Input name="licenseNumber" defaultValue={profile.licenseNumber} placeholder="AA 0000000" className="num" /></Field>

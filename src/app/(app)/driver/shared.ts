@@ -17,6 +17,13 @@ export const EVENT_LABEL: Record<string, string> = {
   NOTE: "Note", CHECK_CALL: "Check-in", ISSUE: "Issue",
 };
 
+/**
+ * Board statuses only dispatch can lift (a dispatcher override, never derived from a load). The portal's status
+ * toggle is locked while one is set and setDriverStatus refuses to change it.
+ */
+export const DISPATCH_HELD_STATUSES: readonly string[] = ["STOP", "VACATION"];
+export const isDispatchHeld = (status: string) => DISPATCH_HELD_STATUSES.includes(status);
+
 /** Message types a driver can send from the portal (addLoadEvent accepts NOTE, CHECK_CALL, ISSUE). */
 export const UPDATE_TYPES = [
   { value: "CHECK_CALL", label: "Check-in", placeholder: "e.g. Passed Jizzakh, on schedule" },
@@ -52,7 +59,15 @@ export function fmtDuration(ms: number) {
   return `${d} d ${h % 24} h`;
 }
 
-/** Monday 00:00 of the week containing `d` (local time). */
+/** When a status started, as a point in time: "since 08:03" today, "since 02 Oct, 08:03" before that. */
+export function sinceLabel(d: Date, now = new Date()) {
+  return `since ${isSameDay(d, now) ? format(d, "HH:mm") : dateTime(d)}`;
+}
+
+/**
+ * Monday 00:00 of the week containing `d`, in server local time — which is company time (TIMEZONE): the server
+ * clock is pinned to it in src/instrumentation.ts, so these boundaries match the dashboards and date() labels.
+ */
 export function startOfWeek(d = new Date()) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Wrench } from "lucide-react";
-import { date, km, number } from "@/lib/format";
+import { date, km, money, number } from "@/lib/format";
 import { Badge, Card, Cell, LinkButton, Progress, Stat, Table } from "@/components/ui";
 import { pmTone, type PmRow } from "../_lib/data";
 import { newWorkOrderHref, truckHref, workOrderHref } from "../_lib/links";
+import { NO_VENDOR } from "../_lib/shared";
 
 export function PmTab({ rows, editable }: { rows: PmRow[]; editable: boolean }) {
   const overdue = rows.filter((r) => r.kmLeft != null && r.kmLeft < 0);
@@ -22,7 +23,7 @@ export function PmTab({ rows, editable }: { rows: PmRow[]; editable: boolean }) 
       </div>
 
       <Card className="mt-4" flush title="PM schedule" actions={<span className="text-[11px] text-fg-subtle">Sorted by km left · negative is overdue</span>}>
-        <Table head={["Unit", "Group", "Last PM", "Odometer", "Interval", "Next service", "Km left", ""]} empty={rows.length === 0}
+        <Table head={["Unit", "Group", "Last PM", "Last PM job", "Odometer", "Interval", "Next service", "Km left", ""]} empty={rows.length === 0}
           emptyTitle="No active trucks" emptyDescription="Trucks appear here once they are added to the fleet.">
           {rows.map((r) => {
             const t = r.truck;
@@ -37,6 +38,17 @@ export function PmTab({ rows, editable }: { rows: PmRow[]; editable: boolean }) 
                 <td className="text-fg-muted">{t.group ?? <span className="text-fg-faint">—</span>}</td>
                 <td>
                   <Cell primary={<span className="text-fg-muted">{date(t.lastPmAt)}</span>} secondary={t.lastPmKm != null ? <span className="num">{km(t.lastPmKm)}</span> : "no reading"} />
+                </td>
+                <td className="max-w-48">
+                  {r.lastJob ? (
+                    <Cell
+                      primary={
+                        <Link href={workOrderHref(r.lastJob.id)} className="hover:underline">
+                          <span className="num font-medium">{r.lastJob.cost ? money(r.lastJob.cost) : "No cost"}</span> <span className="num text-fg-subtle">#{r.lastJob.number}</span>
+                        </Link>
+                      }
+                      secondary={r.lastJob.vendor ?? NO_VENDOR} />
+                  ) : <span className="text-fg-faint">—</span>}
                 </td>
                 <td className="num">{km(t.odometerKm)}</td>
                 <td className="num text-fg-muted">{km(t.pmIntervalKm)}</td>

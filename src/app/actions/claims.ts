@@ -31,7 +31,9 @@ async function mustExist(label: string, id: string | null, find: (id: string) =>
 /**
  * Create or edit a claim. New claims start as REPORTED; on edit, a status change in the form must
  * follow the transition map (the detail page's status buttons are the usual way to move a claim).
- * When a load is given and the unit / driver / customer are left empty they are taken from the load.
+ * The form fills the driver, unit, customer and place from a picked load itself, so the server
+ * saves what was sent: a field the user cleared stays empty. Only a new claim posted without those
+ * fields at all (a bare "file from load" request) has them taken from the load.
  */
 export async function saveClaim(claimId: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requireUser("claims.edit");
@@ -65,11 +67,14 @@ export async function saveClaim(claimId: string | null, _: ActionState, fd: Form
     if (loadId) {
       const load = await db.load.findUnique({ where: { id: loadId }, select: { driverId: true, truckId: true, trailerId: true, customerId: true, brokerId: true, destName: true, destCity: true } });
       if (!load) throw new FormError("Load not found — pick it again");
-      driverId ??= load.driverId;
-      truckId ??= load.truckId;
-      trailerId ??= load.trailerId;
-      customerId ??= load.brokerId ?? load.customerId;
-      location ??= `${load.destName}, ${load.destCity}`;
+      if (!claimId) {
+        const unsent = (k: string) => !fd.has(k);
+        if (unsent("driverId")) driverId = load.driverId;
+        if (unsent("truckId")) truckId = load.truckId;
+        if (unsent("trailerId")) trailerId = load.trailerId;
+        if (unsent("customerId")) customerId = load.brokerId ?? load.customerId;
+        if (unsent("location")) location = `${load.destName}, ${load.destCity}`;
+      }
     }
     await Promise.all([
       mustExist("Driver", driverId, (x) => db.driver.findUnique({ where: { id: x }, select: { id: true } })),

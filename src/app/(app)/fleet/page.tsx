@@ -11,7 +11,7 @@ import { loadProgress, syncSimulatedPositions } from "@/lib/telemetry";
 import { Badge, Card, Cell, Chip, EmptyState, ExpiryBadge, FilterPills, LinkButton, PageHeader, Progress, Segmented, Stat, Table, cn } from "@/components/ui";
 import { ListFilters } from "./filters";
 import { LinkRow } from "./link-row";
-import { docsByUnit, fuelTone, missingDocs, OWNERSHIP_SHORT, OWNERSHIP_TONE, pmStatus, TRUCK_STATUS_LABELS } from "./lib";
+import { docExpiryByUnit, docsByUnit, fuelTone, LIST_LIMIT, missingDocs, OWNERSHIP_SHORT, OWNERSHIP_TONE, paperworkExpiry, pmStatus, TRUCK_STATUS_LABELS } from "./lib";
 
 export const metadata = { title: "Trucks" };
 
@@ -41,25 +41,39 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
     ],
   };
 
-  const [rows, all, docRows, trailerCount, onLoad] = await Promise.all([
-    db.truck.findMany({
-      where, orderBy: { unitNumber: "asc" },
-      include: {
-        driver: { select: { id: true, name: true, hold: true } },
-        loads: {
-          where: { status: { in: ["ASSIGNED", "IN_TRANSIT"] } }, orderBy: { pickupAt: "asc" }, take: 1,
-          select: { id: true, reference: true, status: true, originCity: true, destCity: true, departedAt: true, distanceKm: true },
-        },
-      },
-    }),
+  const activeLoad = { in: ["ASSIGNED", "IN_TRANSIT"] };
+  const [all, docRows, trailerCount, onLoad] = await Promise.all([
     db.truck.findMany({ select: { id: true, status: true, ownership: true, group: true, odometerKm: true, pmIntervalKm: true, lastPmKm: true, nextServiceKm: true } }),
-    db.document.findMany({ where: { truckId: { not: null }, kind: { in: [...REQUIRED_UNIT_DOCS] } }, select: { truckId: true, kind: true } }),
+    db.document.findMany({
+      where: { truckId: { not: null }, kind: { in: [...REQUIRED_UNIT_DOCS] } }, orderBy: { createdAt: "desc" }, select: { truckId: true, kind: true, expiresAt: true },
+    }),
     db.trailer.count(),
-    db.load.count({ where: { status: { in: ["ASSIGNED", "IN_TRANSIT"] }, truckId: { not: null } } }),
+    // Trucks, not loads: a truck with its next load pre-assigned while another is in transit counts once.
+    db.truck.count({ where: { loads: { some: { status: activeLoad } } } }),
   ]);
 
   const docs = docsByUnit(docRows.map((d) => ({ id: d.truckId, kind: d.kind })));
+  const docExpiry = docExpiryByUnit(docRows.map((d) => ({ id: d.truckId, kind: d.kind, expiresAt: d.expiresAt })));
   const missingFor = (id: string) => missingDocs(docs.get(id), REQUIRED_UNIT_DOCS);
+
+  // PM and paperwork filters depend on computed state: resolve them to ids first so the capped table below stays exact.
+  const computedIds = pm || docsFilter
+    ? all.filter((t) => (!pm || pmStatus(t).state === pm) && (!docsFilter || missingFor(t.id).length > 0)).map((t) => t.id)
+    : null;
+  const listWhere: Prisma.TruckWhereInput = computedIds ? { AND: [where, { id: { in: computedIds } }] } : where;
+  const rows = await db.truck.findMany({
+    where: listWhere, orderBy: { unitNumber: "asc" }, take: LIST_LIMIT + 1,
+    include: {
+      driver: { select: { id: true, name: true, hold: true } },
+      loads: {
+        where: { status: activeLoad }, orderBy: { pickupAt: "asc" }, take: 1,
+        select: { id: true, reference: true, status: true, originCity: true, destCity: true, departedAt: true, distanceKm: true },
+      },
+    },
+  });
+  const capped = rows.length > LIST_LIMIT;
+  const trucks = capped ? rows.slice(0, LIST_LIMIT) : rows;
+  const matching = capped ? await db.truck.count({ where: listWhere }) : trucks.length;
 
   // Fleet-wide KPIs (independent of the current filters).
   const byStatus = (s: string) => all.filter((t) => t.status === s).length;
@@ -71,13 +85,6 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
   const incomplete = all.filter((t) => missingFor(t.id).length > 0).length;
   const nothingOnFile = all.filter((t) => missingFor(t.id).length === REQUIRED_UNIT_DOCS.length).length;
   const groups = [...new Set(all.map((t) => t.group).filter((g): g is string => Boolean(g)))].sort();
-
-  // Post-filters that depend on computed state (PM, paperwork).
-  const trucks = rows.filter((t) => {
-    if (pm && pmStatus(t).state !== pm) return false;
-    if (docsFilter && missingFor(t.id).length === 0) return false;
-    return true;
-  });
 
   const qs = (patch: Partial<typeof params>) => {
     const p = new URLSearchParams();
@@ -133,11 +140,17 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
       </div>
 
       <Card flush>
+        {capped && (
+          <p className="border-b border-line bg-info-soft px-4 py-2 text-[12px] text-info">
+            Showing the first <span className="num">{trucks.length}</span> of <span className="num">{matching}</span> matching trucks. Narrow the search or filters to see the rest.
+          </p>
+        )}
         <Table head={["Unit", "Vehicle", "Status", "Ownership", "Driver", "Current load", "Location", "Odometer", "PM", "Insurance", "Inspection", "Registration", "Fuel"]}>
           {trucks.map((t) => {
             const l = t.loads[0];
             const p = pmStatus(t);
             const missing = missingFor(t.id);
+            const paper = paperworkExpiry(t, docExpiry.get(t.id));
             const progress = l?.status === "IN_TRANSIT" ? loadProgress(l) : null;
             return (
               <LinkRow key={t.id} href={`/fleet/${t.id}`}>
@@ -168,11 +181,11 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
                     : p.state === "due" ? <Badge value="HIGH" label={`${number(p.left)} km left`} />
                     : <span className="num text-fg-muted">{number(p.left)} km</span>}
                 </td>
-                <td><ExpiryBadge days={daysUntil(t.insuranceExpiry)} /></td>
-                <td><ExpiryBadge days={daysUntil(t.inspectionExpiry)} /></td>
+                <td><ExpiryBadge days={daysUntil(paper.INSURANCE)} /></td>
+                <td><ExpiryBadge days={daysUntil(paper.INSPECTION)} /></td>
                 <td>
                   <span className="inline-flex items-center gap-1.5">
-                    <ExpiryBadge days={daysUntil(t.registrationExpiry)} />
+                    <ExpiryBadge days={daysUntil(paper.REGISTRATION)} />
                     {missing.length > 0 && <Chip tone="warn" title={`Missing ${missing.map((m) => m.toLowerCase()).join(", ")}`}>{missing.length} doc{missing.length > 1 ? "s" : ""}</Chip>}
                   </span>
                 </td>

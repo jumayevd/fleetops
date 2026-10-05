@@ -9,8 +9,11 @@ export const KIND_TONE: Record<string, Tone> = { SHIPPER: "info", BROKER: "progr
 /** Short tag for chips; the long label lives in CUSTOMER_KIND_LABELS. */
 export const KIND_SHORT: Record<string, string> = { SHIPPER: "Shipper", BROKER: "Broker", BOTH: "Shipper + broker" };
 
-export const isShipper = (kind: string) => kind === "SHIPPER" || kind === "BOTH";
-export const isBroker = (kind: string) => kind === "BROKER" || kind === "BOTH";
+/** Kinds that count as a shipper / as a broker ("BOTH" is both). Used for filters and database queries alike. */
+export const SHIPPER_KINDS = ["SHIPPER", "BOTH"];
+export const BROKER_KINDS = ["BROKER", "BOTH"];
+export const isShipper = (kind: string) => SHIPPER_KINDS.includes(kind);
+export const isBroker = (kind: string) => BROKER_KINDS.includes(kind);
 
 export const ACTIVE_LOAD_STATUSES = ["PLANNED", "ASSIGNED", "IN_TRANSIT"] as const;
 export const COMPLETED_LOAD_STATUSES = ["DELIVERED", "INVOICED"] as const;
@@ -27,5 +30,3 @@ export function creditTone(ratio: number): Tone {
 
 /** Documents a partner should have on file: every account signs a contract, brokers also send a setup packet. */
 export const requiredCustomerDocs = (kind: string): string[] => (isBroker(kind) ? ["CONTRACT", "SETUP_PACKET"] : ["CONTRACT"]);
-
-export const onTimeTone = (pct: number | null): Tone => (pct == null ? "neutral" : pct >= 95 ? "ok" : pct >= 85 ? "warn" : "danger");

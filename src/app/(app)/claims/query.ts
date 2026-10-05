@@ -4,7 +4,7 @@ import { format, startOfMonth, subMonths } from "date-fns";
 import { db } from "@/lib/db";
 import { CLAIM_FAULTS, CLAIM_OPEN_STATUSES, CLAIM_SEVERITIES, CLAIM_STATUSES, CLAIM_TYPES } from "@/lib/constants";
 import { daysAgo } from "@/lib/format";
-import { CLAIM_TABS, STATUS_GROUPS, SEVERITY_RANK, daysOpen, type ClaimFilters, type ClaimTab } from "./shared";
+import { CLAIM_CLOSING_STATUSES, CLAIM_TABS, STATUS_GROUPS, SEVERITY_RANK, claimPhase, daysOpen, type ClaimFilters, type ClaimPhase, type ClaimTab } from "./shared";
 
 /* URL-driven filters shared by the table and the analytics tab. */
 
@@ -24,13 +24,18 @@ export function parseClaimFilters(sp: Record<string, string | string[] | undefin
 }
 
 const OPEN: string[] = [...CLAIM_OPEN_STATUSES];
+const CLOSED: string[] = [...CLAIM_CLOSING_STATUSES];
 
-/** Prisma `where` for the filters. `withStatus: false` leaves the status out (for the open / closed pill counts). */
+/**
+ * Prisma `where` for the filters. `withStatus: false` leaves the status out (for the pill counts).
+ * "closed" is paid, closed or denied — approved claims awaiting payment are in neither group (they
+ * have their own pill, `status=APPROVED`).
+ */
 export function claimWhere(f: ClaimFilters, opts: { withStatus?: boolean } = {}): Prisma.ClaimWhereInput {
   const and: Prisma.ClaimWhereInput[] = [];
   if ((opts.withStatus ?? true) && f.status) {
     if (f.status === "open") and.push({ status: { in: OPEN } });
-    else if (f.status === "closed") and.push({ status: { notIn: OPEN } });
+    else if (f.status === "closed") and.push({ status: { in: CLOSED } });
     else and.push({ status: f.status });
   }
   if (f.type) and.push({ type: f.type });
@@ -60,13 +65,17 @@ export const LIST_INCLUDE = {
 
 export type ListClaim = Prisma.ClaimGetPayload<{ include: typeof LIST_INCLUDE }>;
 
-/** Open claims first — most severe, then oldest — followed by closed claims, most recently closed first. */
+const PHASE_RANK: Record<ClaimPhase, number> = { open: 0, awaiting: 1, closed: 2 };
+
+/**
+ * Open claims first — most severe, then oldest — then approved claims awaiting payment (same order),
+ * then closed claims, most recently closed first.
+ */
 export function sortForTable<T extends { status: string; severity: string; createdAt: Date; closedAt: Date | null }>(rows: T[]) {
-  const open = (c: T) => OPEN.includes(c.status);
   return [...rows].sort((a, b) => {
-    const ao = open(a), bo = open(b);
-    if (ao !== bo) return ao ? -1 : 1;
-    if (ao) {
+    const pa = claimPhase(a.status), pb = claimPhase(b.status);
+    if (pa !== pb) return PHASE_RANK[pa] - PHASE_RANK[pb];
+    if (pa !== "closed") {
       const s = (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9);
       if (s) return s;
       return a.createdAt.getTime() - b.createdAt.getTime();
@@ -93,8 +102,11 @@ export async function claimKpis() {
   const ages = open.map((c) => daysOpen(c));
   const severe = open.filter((c) => c.severity === "HIGH" || c.severity === "CRITICAL").length;
   const contested = open.filter((c) => c.status === "NEGOTIATION" || c.status === "DISPUTED" || c.status === "LITIGATION");
+  // Denials are written with amountSettled = 0: they stay in the recovery rate (claimed, nothing back)
+  // but are not counted as settlements.
   const settled = settledYtd.reduce((a, c) => a + (c.amountSettled ?? 0), 0);
   const settledClaimed = settledYtd.reduce((a, c) => a + c.amountClaimed, 0);
+  const paidYtd = settledYtd.filter((c) => (c.amountSettled ?? 0) > 0).length;
   const closeDays = closedRecent.map((c) => daysOpen(c)).sort((a, b) => a - b);
   const avgClose = closeDays.length ? Math.round(closeDays.reduce((a, b) => a + b, 0) / closeDays.length) : null;
   const medianClose = closeDays.length ? closeDays[Math.floor(closeDays.length / 2)] : null;
@@ -106,7 +118,10 @@ export async function claimKpis() {
     contestedCount: contested.length,
     contestedClaimed: contested.reduce((a, c) => a + c.amountClaimed, 0),
     settledYtd: settled,
-    settledYtdCount: settledYtd.length,
+    /** Closed this year with money received. */
+    settledYtdCount: paidYtd,
+    /** Closed this year with nothing recovered (denials). */
+    unrecoveredYtdCount: settledYtd.length - paidYtd,
     recoveryYtdPct: settledClaimed ? Math.round((settled / settledClaimed) * 100) : null,
     avgClose, medianClose, closedCount: closedRecent.length,
     claims12, loads12,

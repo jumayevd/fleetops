@@ -20,8 +20,10 @@ export function EmploymentMenu({ id, status }: { id: string; status: string }) {
     icon: <StatusDot tone={STATUS_TONE[s] ?? "neutral"} />,
     onSelect: () => start(async () => {
       setError(null);
-      try { await setDriverEmployment(id, s); }
-      catch (e) {
+      try {
+        const res = await setDriverEmployment(id, s);
+        if (res?.error) setError(res.error);
+      } catch (e) {
         const msg = e instanceof Error ? e.message : "";
         setError(msg && !/server components|digest/i.test(msg) ? msg : "Could not change status — the driver may still be on a load");
       }

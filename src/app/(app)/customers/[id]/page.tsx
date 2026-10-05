@@ -9,7 +9,8 @@ import { DOC_KIND_LABELS } from "@/lib/documents";
 import { ago, date, dateTime, daysAgo, money, number } from "@/lib/format";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { Badge, Card, Cell, Chip, DL, EmptyState, LinkButton, PageHeader, Progress, Stat, StatusDot, Table, Tabs, cn, type Tone } from "@/components/ui";
-import { ACTIVE_LOAD_STATUSES, COMPLETED_LOAD_STATUSES, KIND_SHORT, KIND_TONE, creditTone, grossInvoice, isBroker, onTimeTone, requiredCustomerDocs } from "../shared";
+import { onTimeTone } from "../../drivers/shared";
+import { ACTIVE_LOAD_STATUSES, COMPLETED_LOAD_STATUSES, KIND_SHORT, KIND_TONE, creditTone, grossInvoice, isBroker, requiredCustomerDocs } from "../shared";
 
 const TABS = ["loads", "invoices", "documents", "details"] as const;
 type Tab = (typeof TABS)[number];
@@ -35,21 +36,24 @@ export default async function CustomerDetail({ params, searchParams }: PageProps
   if (!c) notFound();
   const broker = isBroker(c.kind);
   const party = { OR: [{ customerId: id }, { brokerId: id }] };
+  const completed = { ...party, status: { in: [...COMPLETED_LOAD_STATUSES] } };
 
-  const [done, active, openInvoices, lastLoad, docRows] = await Promise.all([
-    db.load.findMany({ where: { ...party, status: { in: [...COMPLETED_LOAD_STATUSES] } }, select: { rate: true, deliveredAt: true, deliveryAt: true, customerId: true } }),
+  // Lifetime and 90-day figures are aggregated in the database rather than loading every completed load.
+  const [totals, totals90, onTime, active, openInvoices, lastLoad, docRows] = await Promise.all([
+    db.load.aggregate({ where: completed, _sum: { rate: true }, _count: true }),
+    db.load.aggregate({ where: { ...completed, deliveredAt: { gte: daysAgo(90) } }, _sum: { rate: true } }),
+    db.load.count({ where: { ...completed, deliveredAt: { lte: db.load.fields.deliveryAt } } }),
     db.load.count({ where: { ...party, status: { in: [...ACTIVE_LOAD_STATUSES] } } }),
-    db.invoice.findMany({ where: { customerId: id, status: "SENT" }, select: { id: true, number: true, amount: true, taxRate: true, dueAt: true } }),
+    db.invoice.findMany({ where: { customerId: id, status: "SENT" }, select: { amount: true, taxRate: true, dueAt: true } }),
     db.load.findFirst({ where: party, orderBy: { pickupAt: "desc" }, select: { pickupAt: true } }),
-    db.document.findMany({ where: { customerId: id }, select: { kind: true } }),
+    db.document.findMany({ where: { customerId: id }, distinct: ["kind"], select: { kind: true } }),
   ]);
   const now = new Date();
-  const since90 = daysAgo(90);
   const lifetimeLoads = c._count.loads + c._count.brokerLoads;
-  const revenue = done.reduce((a, l) => a + l.rate, 0);
-  const revenue90 = done.filter((l) => l.deliveredAt && l.deliveredAt >= since90).reduce((a, l) => a + l.rate, 0);
-  const onTime = done.filter((l) => l.deliveredAt && l.deliveredAt <= l.deliveryAt).length;
-  const onTimePct = done.length ? Math.round((onTime / done.length) * 100) : null;
+  const delivered = totals._count;
+  const revenue = totals._sum.rate ?? 0;
+  const revenue90 = totals90._sum.rate ?? 0;
+  const onTimePct = delivered ? Math.round((onTime / delivered) * 100) : null;
   const ar = openInvoices.reduce((a, i) => a + grossInvoice(i), 0);
   const overdue = openInvoices.filter((i) => i.dueAt < now);
   const overdueAmt = overdue.reduce((a, i) => a + grossInvoice(i), 0);
@@ -60,8 +64,13 @@ export default async function CustomerDetail({ params, searchParams }: PageProps
   const missingDocs = required.filter((k) => !have.has(k));
   const dormantDays = lastLoad ? Math.floor((now.getTime() - lastLoad.pickupAt.getTime()) / 86_400_000) : null;
 
-  const attention: { tone: Tone; text: string; href: string }[] = [];
-  if (overdue.length) attention.push({ tone: "danger", text: `${money(overdueAmt)} overdue across ${overdue.length} invoice${overdue.length === 1 ? "" : "s"}`, href: finance ? `/customers/${id}?tab=invoices` : `/customers/${id}` });
+  // A row links only where the destination can resolve it; the rest are plain text.
+  const attention: { tone: Tone; text: string; href?: string }[] = [];
+  if (overdue.length) {
+    attention.push(finance
+      ? { tone: "danger", text: `${money(overdueAmt)} overdue across ${overdue.length} invoice${overdue.length === 1 ? "" : "s"}`, href: `/customers/${id}?tab=invoices` }
+      : { tone: "danger", text: `${money(overdueAmt)} overdue across ${overdue.length} invoice${overdue.length === 1 ? "" : "s"} — check with accounting before booking new loads` });
+  }
   if (ratio >= 1) attention.push({ tone: "danger", text: `Over the credit limit — ${money(ar)} open against ${money(c.creditLimit)}`, href: `/customers/${id}?tab=details` });
   else if (tone === "danger") attention.push({ tone: "warn", text: `${Math.round(ratio * 100)}% of the credit limit in use`, href: `/customers/${id}?tab=details` });
   if (missingDocs.length) attention.push({ tone: "warn", text: `${missingDocs.map((k) => DOC_KIND_LABELS[k]).join(" and ")} not on file`, href: `/customers/${id}?tab=documents` });
@@ -103,7 +112,7 @@ export default async function CustomerDetail({ params, searchParams }: PageProps
         <Stat label="Open A/R" value={money(ar)} tone={overdue.length ? "danger" : tone}
           hint={overdue.length ? `${money(overdueAmt)} overdue · ${overdue.length} of ${openInvoices.length} invoices` : openInvoices.length ? `${openInvoices.length} sent, none overdue` : "nothing outstanding"}
           spark={<div><Progress value={ratio} tone={tone} /><p className="num mt-1 text-[11px] text-fg-subtle">{Math.round(ratio * 100)}% of {money(c.creditLimit)} credit limit</p></div>} />
-        <Stat label="On-time deliveries" value={onTimePct == null ? "—" : `${onTimePct}%`} tone={onTimeTone(onTimePct)} hint={done.length ? `${onTime} of ${done.length} delivered loads` : "no completed loads yet"} />
+        <Stat label="On-time deliveries" value={onTimePct == null ? "—" : `${onTimePct}%`} tone={onTimeTone(onTimePct)} hint={delivered ? `${onTime} of ${delivered} delivered loads` : "no completed loads yet"} />
       </div>
 
       {attention.length > 0 && (
@@ -111,9 +120,13 @@ export default async function CustomerDetail({ params, searchParams }: PageProps
           <ul className="divide-y divide-line">
             {attention.map((a, i) => (
               <li key={i}>
-                <Link href={a.href} className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg hover:bg-raised">
-                  <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><span className="text-[11px] text-fg-subtle">Open →</span>
-                </Link>
+                {a.href ? (
+                  <Link href={a.href} className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg hover:bg-raised">
+                    <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><span className="text-[11px] text-fg-subtle">Open →</span>
+                  </Link>
+                ) : (
+                  <p className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg"><StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span></p>
+                )}
               </li>
             ))}
           </ul>

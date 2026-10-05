@@ -18,7 +18,8 @@ import { DocumentsPanel } from "@/components/documents/panel";
 import { TruckStatusMenu } from "./status-menu";
 import { WorkOrderActions } from "../work-order-actions";
 import {
-  COMPLETED_LOAD_STATUSES, compass, fuelTone, leaseStatus, missingDocs, OWNERSHIP_TONE, parseNotes, pingSourceLabel, pingStale, pmStatus, TRUCK_STATUS_LABELS,
+  COMPLETED_LOAD_STATUSES, compass, docExpiryByUnit, EXPIRY_SOON_DAYS, FUEL_TYPE_LABELS, fuelTone, leaseStatus, missingDocs, OWNERSHIP_TONE, paperworkExpiry, parseNotes,
+  pingSourceLabel, pingStale, pmStatus, TRUCK_STATUS_LABELS,
 } from "../lib";
 
 const TABS = ["overview", "maintenance", "specs", "financial", "compliance", "loads"] as const;
@@ -61,6 +62,9 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
   ]);
   const have = new Set(docRows.map((d) => d.kind));
   const missing = missingDocs(have, REQUIRED_UNIT_DOCS);
+  // Earlier of the record date and the newest uploaded document's expiry, so a stale record can't hide an expired paper.
+  const paper = paperworkExpiry(truck, docExpiryByUnit(docRows.map((d) => ({ id, kind: d.kind, expiresAt: d.expiresAt }))).get(id));
+  const fuelLabel = FUEL_TYPE_LABELS[truck.fuelType] ?? truck.fuelType;
   const pm = pmStatus(truck);
   const lease = leaseStatus(truck);
   const active = truck.loads[0] ?? null;
@@ -74,13 +78,14 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
   else if (pm.state === "due") attention.push({ tone: "warn", text: `PM due in ${number(pm.left ?? 0)} km`, href: `/fleet/${id}?tab=maintenance` });
   if (lease?.state === "over") attention.push({ tone: "danger", text: `${number(lease.overKm)} km over the lease cap · ${money(lease.exposure)} exposure`, href: `/fleet/${id}?tab=financial` });
   else if (lease && lease.state !== "ok") attention.push({ tone: "warn", text: `${number(lease.remainingKm)} km left before the lease hard cap`, href: `/fleet/${id}?tab=financial` });
-  for (const [kind, field] of Object.entries(DOC_FIELD)) {
-    const d = daysUntil(truck[field]);
+  for (const kind of REQUIRED_UNIT_DOCS) {
+    const d = daysUntil(paper[kind]);
     if (d != null && d < 0) attention.push({ tone: "danger", text: `${DOC_KIND_LABELS[kind]} expired ${-d}d ago`, href: `/fleet/${id}?tab=compliance` });
-    else if (d != null && d <= 30) attention.push({ tone: "warn", text: `${DOC_KIND_LABELS[kind]} expires in ${d}d`, href: `/fleet/${id}?tab=compliance` });
+    else if (d != null && d <= EXPIRY_SOON_DAYS) attention.push({ tone: "warn", text: `${DOC_KIND_LABELS[kind]} expires in ${d}d`, href: `/fleet/${id}?tab=compliance` });
   }
   if (missing.length) attention.push({ tone: "warn", text: `Paperwork incomplete: ${missing.map((m) => DOC_KIND_LABELS[m].toLowerCase()).join(", ")} not on file`, href: `/fleet/${id}?tab=compliance` });
-  if (truck.status === "ACTIVE" && !truck.driver) attention.push({ tone: "info", text: "No driver assigned", href: `/fleet/${id}/edit` });
+  // Assigning happens on the edit form; viewers without fleet.edit go to the drivers list instead of a redirect.
+  if (truck.status === "ACTIVE" && !truck.driver) attention.push({ tone: "info", text: "No driver assigned", href: editable ? `/fleet/${id}/edit` : "/drivers" });
   if (truck.status === "MAINTENANCE" && openWo === 0) attention.push({ tone: "info", text: "In shop with no open work order", href: `/fleet/${id}?tab=maintenance` });
   if (truck.status === "ACTIVE" && stale && truck.lastPingAt) attention.push({ tone: "neutral", text: `No position update for ${ago(truck.lastPingAt).replace(" ago", "")}`, href: `/fleet/${id}` });
 
@@ -163,7 +168,7 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
               {editable && (
                 <ActionForm action={addTruckNote.bind(null, id)} resetOnSuccess className="border-b border-line p-3">
                   <div className="flex items-start gap-2">
-                    <Textarea name="note" rows={1} required placeholder="Add a note — tyre change, damage, tolls tag, anything the next shift should know" className="min-h-8 flex-1 resize-y" />
+                    <Textarea name="note" rows={1} required aria-label="New note" placeholder="Add a note — tyre change, damage, tolls tag, anything the next shift should know" className="min-h-8 flex-1 resize-y" />
                     <SubmitButton size="md" variant="secondary" pendingText="Adding…">Add note</SubmitButton>
                   </div>
                 </ActionForm>
@@ -240,7 +245,7 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
                 ["Ownership", lease ? `${OWNERSHIP_LABELS[truck.ownership]} · ${truck.lessor ?? "lessor n/a"}` : OWNERSHIP_LABELS[truck.ownership] ?? truck.ownership],
                 ["Group", truck.group ?? "—"],
                 ["Odometer", <span key="o" className="num">{km(truck.odometerKm)}</span>],
-                ["Fuel", `${truck.fuelType.charAt(0) + truck.fuelType.slice(1).toLowerCase()} · ${number(truck.fuelCapacityL)} L tank`],
+                ["Fuel", `${fuelLabel} · ${number(truck.fuelCapacityL)} L tank`],
               ]} />
             </Card>
 
@@ -248,9 +253,9 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
               <DL items={[
                 ["Next PM", pm.left == null ? "—" : <span key="pm" className={cn("num", pm.tone === "danger" ? "text-danger" : pm.tone === "warn" ? "text-warn" : "")}>{pm.left < 0 ? `${number(-pm.left)} km overdue` : `in ${number(pm.left)} km`}</span>],
                 ["Documents", <span key="d" className={cn("num", missing.length ? "text-warn" : "text-ok")}>{REQUIRED_UNIT_DOCS.length - missing.length}/{REQUIRED_UNIT_DOCS.length} on file</span>],
-                ["Insurance", <ExpiryBadge key="i" days={daysUntil(truck.insuranceExpiry)} />],
-                ["Inspection", <ExpiryBadge key="n" days={daysUntil(truck.inspectionExpiry)} />],
-                ["Registration", <ExpiryBadge key="r" days={daysUntil(truck.registrationExpiry)} />],
+                ["Insurance", <ExpiryBadge key="i" days={daysUntil(paper.INSURANCE)} />],
+                ["Inspection", <ExpiryBadge key="n" days={daysUntil(paper.INSPECTION)} />],
+                ["Registration", <ExpiryBadge key="r" days={daysUntil(paper.REGISTRATION)} />],
                 ["Lease cap", lease ? <span key="l" className={cn("num", lease.tone === "danger" ? "text-danger" : lease.tone === "warn" ? "text-warn" : "")}>{lease.overKm > 0 ? `${number(lease.overKm)} km over` : `${number(lease.remainingKm)} km left`}</span> : "—"],
               ]} />
             </Card>
@@ -267,7 +272,7 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
             ["Make", truck.make],
             ["Model", truck.model],
             ["Plate", <span key="p" className="num">{truck.plate}</span>],
-            ["Fuel type", truck.fuelType.charAt(0) + truck.fuelType.slice(1).toLowerCase()],
+            ["Fuel type", fuelLabel],
             ["Tank capacity", <span key="c" className="num">{number(truck.fuelCapacityL)} L</span>],
             ["PM interval", <span key="i" className="num">{km(truck.pmIntervalKm)}</span>],
             ["Odometer", <span key="o" className="num">{km(truck.odometerKm)}</span>],
@@ -292,7 +297,8 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
               {REQUIRED_UNIT_DOCS.map((kind) => {
                 const doc = docRows.find((d) => d.kind === kind);
                 const recorded = truck[DOC_FIELD[kind]];
-                const expiry = doc?.expiresAt ?? recorded;
+                const expiry = paper[kind];
+                const fromRecord = expiry != null && recorded != null && expiry.getTime() !== doc?.expiresAt?.getTime();
                 return (
                   <tr key={kind}>
                     <td>
@@ -303,14 +309,14 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
                     <td>
                       <div className="flex flex-col gap-0.5">
                         <ExpiryBadge days={daysUntil(expiry)} />
-                        {expiry && <span className="text-[11px] text-fg-subtle">{date(expiry)}{!doc?.expiresAt && recorded ? " · from record" : ""}</span>}
+                        {expiry && <span className="text-[11px] text-fg-subtle">{date(expiry)}{fromRecord ? " · from record" : ""}</span>}
                       </div>
                     </td>
                   </tr>
                 );
               })}
             </Table>
-            <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Recorded dates come from the truck record; document dates from the uploaded file. Edit the record to change recorded dates.</p>
+            <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Expiry is the earlier of the date on the truck record and the newest uploaded file, so a stale record never hides an expired paper. Edit the record to change recorded dates.</p>
           </Card>
         </div>
       )}
@@ -413,8 +419,7 @@ async function MaintenanceTab({ truck, editable }: { truck: { id: string; odomet
         </Card>
 
         {editable && (
-          <Card title="New work order" className="scroll-mt-20" bodyClassName="p-4">
-            <div id="new-work-order" />
+          <Card id="new-work-order" title="New work order" className="scroll-mt-20" bodyClassName="p-4">
             <ActionForm action={saveMaintenance} resetOnSuccess className="space-y-3">
               <input type="hidden" name="truckId" value={truck.id} />
               <Field label="Category"><Select name="type" options={WORK_ORDER_CATEGORIES.map((c) => ({ value: c, label: WORK_ORDER_CATEGORY_LABELS[c] }))} /></Field>

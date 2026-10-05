@@ -42,13 +42,25 @@ export async function syncSimulatedPositions(force = false) {
 
   const loads = await db.load.findMany({
     where: { status: "IN_TRANSIT", truckId: { not: null } },
-    include: { truck: true, stops: { select: { lat: true, lng: true, seq: true } } },
+    include: { truck: true, stops: { select: { lat: true, lng: true, seq: true, status: true, city: true } } },
   });
 
   await Promise.all(
     loads.map(async (l) => {
       const t = l.truck!;
       if (t.pingSource && t.pingSource !== "SIMULATED" && t.lastPingAt && now - t.lastPingAt.getTime() < DEVICE_FRESH_MS) return;
+      // On site (arrived at a stop, not yet loaded / unloaded): parked at that stop, whatever the clock says.
+      const current = [...l.stops].sort((a, b) => a.seq - b.seq).find((s) => s.status !== "DONE");
+      if (current?.status === "ARRIVED") {
+        await db.truck.update({
+          where: { id: t.id },
+          data: { lat: current.lat, lng: current.lng, speedKmh: 0, engineOn: false, locationName: nearestCity(current.lat, current.lng).label, lastPingAt: new Date(now), pingSource: "SIMULATED" },
+        });
+        if (l.trailerId) {
+          await db.trailer.update({ where: { id: l.trailerId }, data: { lat: current.lat, lng: current.lng, locationName: current.city, lastPingAt: new Date(now) } }).catch(() => undefined);
+        }
+        return;
+      }
       const route = loadRoute(l);
       const p = loadProgress(l, now);
       const pos = pointAlongPolyline(route, p);
@@ -91,14 +103,15 @@ export async function fleetSnapshot() {
       loads: {
         where: { status: { in: ["IN_TRANSIT", "ASSIGNED"] } },
         orderBy: { pickupAt: "asc" },
-        take: 1,
+        take: 2,
         include: { customer: { select: { name: true } }, stops: { orderBy: { seq: "asc" } } },
       },
     },
   });
 
   return trucks.map((t) => {
-    const l = t.loads[0];
+    // The load on the road wins over an earlier-booked one that hasn't started.
+    const l = t.loads.find((x) => x.status === "IN_TRANSIT") ?? t.loads[0];
     const progress = l && l.status === "IN_TRANSIT" ? loadProgress(l) : 0;
     const nextStop = l?.stops.find((s) => s.status !== "DONE");
     return {
@@ -125,7 +138,7 @@ export async function fleetSnapshot() {
             customer: l.customer.name,
             originCity: l.originCity,
             destCity: l.destCity,
-            nextStop: nextStop ? { type: nextStop.type, name: nextStop.name, city: nextStop.city, windowEnd: (nextStop.windowEnd ?? nextStop.windowStart)?.toISOString() ?? null } : null,
+            nextStop: nextStop ? { type: nextStop.type, status: nextStop.status, name: nextStop.name, city: nextStop.city, windowEnd: (nextStop.windowEnd ?? nextStop.windowStart)?.toISOString() ?? null } : null,
             stops: l.stops.map((s) => ({ lat: s.lat, lng: s.lng, type: s.type, status: s.status, name: s.name })),
             progress,
             eta: estimatedArrival(l)?.toISOString() ?? null,

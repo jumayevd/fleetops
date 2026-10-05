@@ -3,14 +3,13 @@ import { APICallError, createAgentUIStreamResponse, NoSuchModelError } from "ai"
 import { getCurrentUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { assistantModelId, createFleetAgent, isAssistantConfigured } from "@/lib/assistant/agent";
-import { NOT_CONFIGURED_CODE, NOT_CONFIGURED_MESSAGE, type AssistantErrorBody } from "@/lib/assistant/shared";
+import { prepareHistory } from "@/lib/assistant/history";
+import { NOT_CONFIGURED_CODE, NOT_CONFIGURED_MESSAGE, introFor, promptsFor, type AssistantErrorBody, type AssistantInfo } from "@/lib/assistant/shared";
 
 export const dynamic = "force-dynamic";
 /** Tool round trips plus a long answer can take a while on a cold model. */
 export const maxDuration = 60;
 
-/** Only the recent turns go to the model; the client keeps the full transcript. */
-const HISTORY_LIMIT = 30;
 const NO_STORE = { "cache-control": "no-store" };
 
 const fail = (status: number, error: string, code?: string) =>
@@ -28,6 +27,21 @@ function describe(error: unknown): string {
   if (/AI_GATEWAY_API_KEY|OIDC|api key|unauthori[sz]ed/i.test(msg)) return "The AI Gateway rejected the credentials — check AI_GATEWAY_API_KEY.";
   if (/abort/i.test(msg)) return "The answer was stopped.";
   return "The assistant couldn't finish that answer. Try again, or ask it a different way.";
+}
+
+/**
+ * GET /api/assistant — what the panel shows before the first question: whether the gateway is
+ * configured, plus the intro and suggested prompts this role can actually get answers to.
+ * 401 signed out · 403 role lacks assistant.use.
+ */
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return fail(401, "Sign in required", "UNAUTHENTICATED");
+  if (!can(user.role, "assistant.use")) return fail(403, "Your role can't use the fleet assistant", "FORBIDDEN");
+  return NextResponse.json<AssistantInfo>(
+    { configured: isAssistantConfigured(), intro: introFor(user.role), prompts: promptsFor(user.role) },
+    { headers: NO_STORE },
+  );
 }
 
 /**
@@ -49,17 +63,18 @@ export async function POST(req: Request) {
   }
   const messages = Array.isArray(body?.messages) ? body.messages : null;
   if (!messages || messages.length === 0) return fail(400, "Send at least one message", "BAD_REQUEST");
-  // Keep the recent window, but start it on a user turn: providers reject transcripts that open with an assistant message.
-  const recent = messages.slice(-HISTORY_LIMIT);
-  const firstUser = recent.findIndex((m) => (m as { role?: unknown } | null)?.role === "user");
-  const uiMessages = firstUser > 0 ? recent.slice(firstUser) : recent;
-  if (firstUser < 0) return fail(400, "Send a message from the user", "BAD_REQUEST");
+  // Recent window from a user turn, without tool calls cut off by Stop, old tool results stubbed, long text cut.
+  const uiMessages = prepareHistory(messages);
+  if (!uiMessages) return fail(400, "The conversation payload isn't valid. Clear the chat and try again.", "BAD_REQUEST");
+  if (uiMessages.length === 0) return fail(400, "Send a message from the user", "BAD_REQUEST");
 
   const agent = createFleetAgent({ role: user.role, name: user.name });
   try {
     return await createAgentUIStreamResponse({
       agent,
       uiMessages,
+      // Stop in the panel, or a closed tab, ends the tool loop instead of letting it run (and bill) to the end.
+      abortSignal: req.signal,
       sendReasoning: false,
       headers: NO_STORE,
       onError: (error) => {

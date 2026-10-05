@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, X } from "lucide-react";
 import { ActionForm, SubmitButton } from "@/components/forms";
@@ -8,9 +8,12 @@ import { Badge, Field, Input, StatusDot, STATUS_TONE, Textarea, buttonClass, cn 
 import { money } from "@/lib/format";
 import { moveClaimStatus } from "@/app/actions/claims";
 import { DropMenu } from "../menu";
-import { TRANSITION_HINT, TRANSITION_LABEL, WANTS_AMOUNT, claimStatusLabel, type ClaimStatus } from "../shared";
+import { TRANSITION_HINT, TRANSITION_LABEL, WANTS_AMOUNT, claimStatusLabel, isClosingStatus, type ClaimStatus } from "../shared";
 
 const DANGER: readonly ClaimStatus[] = ["DENIED", "LITIGATION"];
+
+/** Controls Tab can land on inside the dialog. */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Header status controls: the next lifecycle step as a button, the alternatives in a menu.
@@ -19,14 +22,23 @@ const DANGER: readonly ClaimStatus[] = ["DENIED", "LITIGATION"];
 export function ClaimStatusActions({ claimId, number, status, transitions, amountClaimed, amountSettled }: {
   claimId: string; number: string; status: string; transitions: ClaimStatus[]; amountClaimed: number; amountSettled: number | null;
 }) {
-  const [pick, setPick] = useState<ClaimStatus | null>(null);
+  /** The status being confirmed, and the control that opened the dialog (focus goes back there). */
+  const [pick, setPick] = useState<{ to: ClaimStatus; opener: HTMLElement | null } | null>(null);
   const [primary, ...rest] = transitions;
   if (!primary) return null;
+
+  // Every way out (cancel, ×, Escape, the scrim, a saved change) comes through here. Focus is handed
+  // back in the handler rather than an unmount effect, which dev Strict Mode would fire on open.
+  const close = () => {
+    const el = pick?.opener;
+    setPick(null);
+    if (el?.isConnected) el.focus();
+  };
 
   return (
     <>
       <div className="inline-flex items-center gap-2">
-        <button type="button" onClick={() => setPick(primary)} className={buttonClass(DANGER.includes(primary) ? "secondary" : "primary")}>
+        <button type="button" onClick={(e) => setPick({ to: primary, opener: e.currentTarget })} className={buttonClass(DANGER.includes(primary) ? "secondary" : "primary")}>
           {TRANSITION_LABEL[primary]}
         </button>
         {rest.length > 0 && (
@@ -36,36 +48,57 @@ export function ClaimStatusActions({ claimId, number, status, transitions, amoun
               icon: <StatusDot tone={STATUS_TONE[s] ?? "neutral"} />,
               hint: claimStatusLabel(s),
               danger: DANGER.includes(s),
-              onSelect: () => setPick(s),
+              // The menu item is gone once the dialog is up, so focus returns to the "More" trigger.
+              onSelect: (trigger) => setPick({ to: s, opener: trigger }),
             }))}>
             More<ChevronDown className="h-3.5 w-3.5 text-fg-subtle" />
           </DropMenu>
         )}
       </div>
       {pick && (
-        <StatusDialog claimId={claimId} number={number} from={status} to={pick} amountClaimed={amountClaimed} amountSettled={amountSettled} onClose={() => setPick(null)} />
+        <StatusDialog claimId={claimId} number={number} from={status} to={pick.to} amountClaimed={amountClaimed} amountSettled={amountSettled} onClose={close} />
       )}
     </>
   );
 }
 
+/** Modal: Tab and Shift+Tab stay inside it; Escape or a click on the scrim cancels. */
 function StatusDialog({ claimId, number, from, to, amountClaimed, amountSettled, onClose }: {
   claimId: string; number: string; from: string; to: ClaimStatus; amountClaimed: number; amountSettled: number | null; onClose: () => void;
 }) {
   const titleId = useId();
+  const box = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onCloseRef.current(); return; }
+      const dialog = box.current;
+      if (e.key !== "Tab" || !dialog) return;
+      const els = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (els.length === 0) return;
+      const first = els[0], last = els[els.length - 1];
+      const active = document.activeElement;
+      const outside = !dialog.contains(active);
+      if (e.shiftKey ? outside || active === first : outside || active === last) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      }
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const wantsAmount = WANTS_AMOUNT.includes(to);
   const danger = DANGER.includes(to);
-  const closes = to === "PAID" || to === "CLOSED" || to === "DENIED";
+  const closes = isClosingStatus(to);
 
   return createPortal(
-    <div className="fixed inset-0 z-[1100] flex items-start justify-center bg-fg/25 p-4 pt-[12vh]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-lg border border-line bg-overlay shadow-float">
+    <div className="fixed inset-0 z-[1100] flex items-start justify-center bg-fg/25 p-4 pt-[12vh]"
+      // preventDefault keeps the click on the scrim from moving focus after it has been handed back.
+      onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); onClose(); } }}>
+      <div ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-lg border border-line bg-overlay shadow-float">
         <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0">
             <h2 id={titleId} className="text-[14px] font-semibold text-fg">{TRANSITION_LABEL[to]}</h2>

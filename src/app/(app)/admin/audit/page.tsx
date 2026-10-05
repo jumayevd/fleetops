@@ -6,14 +6,13 @@ import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { dateTime, daysAgo, number } from "@/lib/format";
 import { Badge, Card, Cell, FilterPills, LinkButton, PageHeader, Table } from "@/components/ui";
 import { AuditFilters } from "./filters";
-import { auditHref, type AuditFilterParams } from "./shared";
+import { auditHref, isoDay, type AuditFilterParams } from "./shared";
 import { actionLabel, actionTone, entityHref, entityLabel } from "./links";
 
 export const metadata = { title: "Audit log" };
 
 const PAGE_SIZE = 50;
 const str = (v: string | string[] | undefined) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
-const isoDay = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
 
 export default async function AuditPage({ searchParams }: PageProps<"/admin/audit">) {
   await requireUser("audit.view");
@@ -21,7 +20,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/admin/audi
   const params: AuditFilterParams = {
     entity: str(sp.entity), user: str(sp.user), action: str(sp.action), from: isoDay(str(sp.from)), to: isoDay(str(sp.to)), q: str(sp.q),
   };
-  const page = Math.max(1, Number(sp.page) || 1);
+  const requested = Math.max(1, Math.floor(Number(sp.page)) || 1);
 
   const where: Prisma.AuditLogWhereInput = {};
   if (params.entity) where.entity = params.entity;
@@ -39,8 +38,11 @@ export default async function AuditPage({ searchParams }: PageProps<"/admin/audi
   // Entity counts respect every filter except the entity itself, so the pills stay meaningful.
   const { entity: _entity, ...whereNoEntity } = where; // eslint-disable-line @typescript-eslint/no-unused-vars
 
-  const [rows, total, entities, actions, users, last24] = await Promise.all([
-    db.auditLog.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE, include: { user: { select: { id: true, name: true, role: true } } } }),
+  const pageRows = (p: number) => db.auditLog.findMany({
+    where, orderBy: { createdAt: "desc" }, skip: (p - 1) * PAGE_SIZE, take: PAGE_SIZE, include: { user: { select: { id: true, name: true, role: true } } },
+  });
+  const [requestedRows, total, entities, actions, users, last24] = await Promise.all([
+    pageRows(requested),
     db.auditLog.count({ where }),
     db.auditLog.groupBy({ by: ["entity"], where: whereNoEntity, _count: true, orderBy: { _count: { entity: "desc" } } }),
     db.auditLog.groupBy({ by: ["action"], _count: true, orderBy: { action: "asc" } }),
@@ -48,6 +50,9 @@ export default async function AuditPage({ searchParams }: PageProps<"/admin/audi
     db.auditLog.count({ where: { createdAt: { gte: daysAgo(1) } } }),
   ]);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // A page past the end (old link, hand-edited URL, narrower filter) shows the last page instead of an empty one.
+  const page = Math.min(requested, pages);
+  const rows = page === requested ? requestedRows : await pageRows(page);
   const first = total ? (page - 1) * PAGE_SIZE + 1 : 0;
   const last = Math.min(total, page * PAGE_SIZE);
   const filtered = Object.values(params).some(Boolean);
@@ -79,8 +84,9 @@ export default async function AuditPage({ searchParams }: PageProps<"/admin/audi
 
       <Card flush>
         <Table head={["When", "Who", "Action", "Entity", "Details"]} dense
-          empty={rows.length === 0} emptyTitle={filtered ? "Nothing matches these filters" : "No activity yet"}
-          emptyDescription={filtered ? "Widen the date range or clear a filter." : "Changes made in the app are recorded here automatically."}>
+          empty={rows.length === 0}
+          emptyTitle={page > 1 ? "Nothing on this page" : filtered ? "Nothing matches these filters" : "No activity yet"}
+          emptyDescription={page > 1 ? "Go back to the first page for the latest entries." : filtered ? "Widen the date range or clear a filter." : "Changes made in the app are recorded here automatically."}>
           {rows.map((r) => {
             const href = entityHref(r.entity, r.entityId);
             return (

@@ -60,7 +60,8 @@ export const deltaTone = (n: number | null, upIsGood = true): Tone | undefined =
   n == null || n === 0 ? "neutral" : (n > 0) === upIsGood ? "ok" : "danger";
 
 export const marginTone = (p: number): Tone => (p < 15 ? "danger" : p < 25 ? "warn" : "ok");
-export const onTimeTone = (p: number): Tone => (p < 80 ? "danger" : p < 90 ? "warn" : "ok");
+// Same thresholds as the driver and customer pages (95 % on time is the target).
+export const onTimeTone = (p: number): Tone => (p >= 95 ? "ok" : p >= 85 ? "warn" : "danger");
 export const emptyTone = (p: number): Tone => (p > 20 ? "danger" : p > 12 ? "warn" : "ok");
 export const scoreTone = (s: number): Tone => (s >= 90 ? "ok" : s >= 75 ? "warn" : "danger");
 

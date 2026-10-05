@@ -7,7 +7,8 @@ import type { Tone } from "@/components/ui";
 const ENTITY_HREF: Record<string, { href: (id: string) => string; id?: true }> = {
   load: { href: (id) => `/loads/${id}`, id: true },
   truck: { href: (id) => `/fleet/${id}`, id: true },
-  trailer: { href: () => "/fleet/trailers" },
+  // Older trailer "create" entries were written without an id: those still open the trailer list.
+  trailer: { href: (id) => (id ? `/fleet/trailers/${id}` : "/fleet/trailers") },
   driver: { href: (id) => `/drivers/${id}`, id: true },
   customer: { href: (id) => `/customers/${id}`, id: true },
   invoice: { href: (id) => `/finance/invoices/${id}`, id: true },

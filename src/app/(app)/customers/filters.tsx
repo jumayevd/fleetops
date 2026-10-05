@@ -27,7 +27,7 @@ export function CustomerSearch({ q, kind }: { q: string; kind: string }) {
   };
 
   return (
-    <label className={cn("relative block", pending && "opacity-70")} aria-busy={pending || undefined}>
+    <div className={cn("relative", pending && "opacity-70")} aria-busy={pending || undefined}>
       <Search className="pointer-events-none absolute inset-y-0 left-2 my-auto h-3.5 w-3.5 text-fg-subtle" />
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Name, contact, city, tax ID…" aria-label="Search customers and brokers"
         onKeyDown={(e) => { if (e.key === "Enter") { if (timer.current) clearTimeout(timer.current); go(value); } }}
@@ -38,6 +38,6 @@ export function CustomerSearch({ q, kind }: { q: string; kind: string }) {
           <X className="h-3 w-3" />
         </button>
       )}
-    </label>
+    </div>
   );
 }

@@ -160,17 +160,23 @@ export function pmRows(trucks: Truck[], openPm: OpenPm[], lastPm: Map<string, La
 }
 
 /**
- * Latest completed PM work order per truck. `distinct` keeps the first row per truck in this order, so the
- * result is at most one row per id passed.
+ * Latest completed PM work order per truck. Two bounded queries: each truck's latest completion time, then the jobs
+ * completed at exactly that time (one per truck in practice; the highest number wins a tie).
  */
 export async function lastPmJobs(truckIds: string[]) {
+  const byTruck = new Map<string, LastPmJob>();
+  if (!truckIds.length) return byTruck;
+  const where = { category: "PM", status: "DONE", truckId: { in: truckIds } };
+  const latest = await db.workOrder.groupBy({ by: ["truckId"], where: { ...where, completedAt: { not: null } }, _max: { completedAt: true } });
+  const pairs = latest.flatMap((l) => (l.truckId && l._max.completedAt ? [{ truckId: l.truckId, completedAt: l._max.completedAt }] : []));
+  if (!pairs.length) return byTruck;
   const rows = await db.workOrder.findMany({
-    where: { category: "PM", status: "DONE", truckId: { in: truckIds } },
-    distinct: ["truckId"],
-    orderBy: [{ completedAt: { sort: "desc", nulls: "last" } }, { scheduledAt: "desc" }],
+    where: { ...where, OR: pairs },
+    orderBy: { number: "desc" },
     select: { id: true, number: true, cost: true, vendor: true, completedAt: true, truckId: true },
   });
-  return new Map(rows.map((r) => [r.truckId!, r]));
+  for (const r of rows) if (r.truckId && !byTruck.has(r.truckId)) byTruck.set(r.truckId, r);
+  return byTruck;
 }
 
 export const pmTone = (kmLeft: number | null): Tone =>

@@ -160,7 +160,7 @@ export function Drawer({ title, eyebrow, onClose, children, footer, width = 420 
   return createPortal(
     <div className="fixed inset-0 z-[95]" role="dialog" aria-modal aria-labelledby={titleId}>
       {/* Scrim from tokens only: graphite text colour by day, canvas by night. */}
-      <div className="absolute inset-0 bg-fg/35 backdrop-blur-[1px] dark:bg-canvas/70" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim backdrop-blur-[1px]" onClick={onClose} />
       <aside ref={panelRef} onKeyDown={(e) => trapTab(e, panelRef.current)} style={{ width: `min(${width}px, 100vw)` }}
         className="absolute inset-y-0 right-0 flex flex-col border-l border-line bg-overlay shadow-float">
         <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">

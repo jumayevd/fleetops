@@ -1,6 +1,6 @@
 import type { Alert } from "@/lib/alerts";
 import type { FleetSnapshot } from "@/lib/telemetry";
-import { can, type Permission } from "@/lib/permissions";
+import { canOpen } from "@/lib/permissions";
 import { TIMEZONE } from "@/lib/constants";
 import type { Tone } from "@/components/ui";
 
@@ -16,18 +16,8 @@ export const KIND_LABEL: Record<AlertKind, string> = {
 export const KINDS: AlertKind[] = ["dispatch", "compliance", "fleet", "money", "safety"];
 export const isKind = (v: unknown): v is AlertKind => typeof v === "string" && (KINDS as string[]).includes(v);
 
-// Which permission a destination needs (mirrors each page's requireUser). Alerts and KPI tiles pointing
-// somewhere this role cannot open are hidden or re-targeted rather than shown as dead links
-// (requireUser would bounce them straight back to the dashboard).
-const ROUTE_PERMS: [prefix: string, perm: Permission][] = [
-  ["/finance", "finance.view"], ["/claims", "claims.view"], ["/fleet", "fleet.view"], ["/drivers", "drivers.view"],
-  ["/customers", "customers.view"], ["/admin", "company.manage"], ["/loads", "loads.view"], ["/dispatch", "loads.view"],
-  ["/tracking", "tracking.view"], ["/reports", "reports.view"], ["/maintenance", "fleet.view"],
-];
-export function canOpen(role: string, href: string) {
-  const hit = ROUTE_PERMS.find(([p]) => href === p || href.startsWith(`${p}/`) || href.startsWith(`${p}?`));
-  return hit ? can(role, hit[1]) : true;
-}
+// Route gates live in permissions.ts (shared with the shell's alert bell).
+export { canOpen };
 export const visibleAlerts = (alerts: Alert[], role: string) => alerts.filter((a) => canOpen(role, a.href));
 
 export type AlertGroup = { kind: AlertKind; label: string; items: Alert[]; critical: number; tone: Tone };

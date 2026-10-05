@@ -11,8 +11,12 @@ type Preview = Pick<RoomSummary, "lastAt" | "lastPreview" | "lastBy">;
  * Rooms column + active thread. Room data comes from the server page; previews for the open room are
  * refreshed client-side as messages arrive so the column never lags behind the conversation.
  */
-export function ChatWorkspace({ rooms, active, initial, hasMore, me, notice }: {
+export function ChatWorkspace({ rooms, active, initial, hasMore, me, notice, today, loadNote }: {
   rooms: RoomSummary[]; active: string; initial: ChatMessageDTO[]; hasMore: boolean; me: ChatMe; notice: string | null;
+  /** The server's company-calendar day, so time and day labels hydrate unchanged. */
+  today: string;
+  /** Shown under the load threads when the column is capped. */
+  loadNote: string | null;
 }) {
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
   const merged = useMemo(
@@ -26,10 +30,10 @@ export function ChatWorkspace({ rooms, active, initial, hasMore, me, notice }: {
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden rounded-lg border border-line bg-surface">
-      <RoomsColumn rooms={merged} active={active} className="hidden lg:flex" />
+      <RoomsColumn rooms={merged} active={active} today={today} loadNote={loadNote} className="hidden lg:flex" />
       <div className="flex min-w-0 flex-1 flex-col">
         <RoomSelect rooms={merged} active={active} className="lg:hidden" />
-        <ChatThread key={active} room={active} meta={current} initial={initial} hasMore={hasMore} me={me} notice={notice} onLatest={onLatest} />
+        <ChatThread key={active} room={active} meta={current} initial={initial} hasMore={hasMore} me={me} notice={notice} onLatest={onLatest} today={today} />
       </div>
     </div>
   );

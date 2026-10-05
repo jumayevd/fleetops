@@ -12,7 +12,7 @@ import { Badge, Card, DL, EmptyState, ExpiryBadge, LinkButton, PageHeader, Stat,
 import { LeafletMap } from "@/components/map";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { WorkOrderActions } from "../../work-order-actions";
-import { missingDocs, pingStale, sinceShort } from "../../lib";
+import { docExpiryByUnit, missingDocs, paperworkExpiry, pingStale, sinceShort } from "../../lib";
 import { TrailerStatusControl } from "../status-control";
 
 export async function generateMetadata({ params }: PageProps<"/fleet/trailers/[id]">) {
@@ -37,8 +37,12 @@ export default async function TrailerDetail({ params }: PageProps<"/fleet/traile
     },
   });
   if (!trailer) notFound();
-  const docRows = await db.document.findMany({ where: { trailerId: id, kind: { in: [...REQUIRED_UNIT_DOCS] } }, select: { kind: true } });
+  const docRows = await db.document.findMany({
+    where: { trailerId: id, kind: { in: [...REQUIRED_UNIT_DOCS] } }, orderBy: { createdAt: "desc" }, select: { kind: true, expiresAt: true },
+  });
   const missing = missingDocs(new Set(docRows.map((d) => d.kind)), REQUIRED_UNIT_DOCS);
+  // Same rule as the trailer list: the earlier of the record date and the newest uploaded document's expiry.
+  const paper = paperworkExpiry(trailer, docExpiryByUnit(docRows.map((d) => ({ id, kind: d.kind, expiresAt: d.expiresAt }))).get(id));
   const activeLoad = trailer.loads.find((l) => l.status === "ASSIGNED" || l.status === "IN_TRANSIT") ?? null;
   const openWo = trailer.workOrders.filter((w) => ["OPEN", "IN_PROGRESS", "DRAFT"].includes(w.status));
   const sortedWo = [...openWo.sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime()), ...trailer.workOrders.filter((w) => !openWo.includes(w))];
@@ -170,8 +174,9 @@ export default async function TrailerDetail({ params }: PageProps<"/fleet/traile
               ["Capacity", <span key="c" className="num">{kg(trailer.capacityKg)}</span>],
               ["Plate", trailer.plate ? <span key="p" className="num">{trailer.plate}</span> : "—"],
               ["Year", trailer.year ? <span key="y" className="num">{trailer.year}</span> : "—"],
-              ["Insurance", <ExpiryBadge key="i" days={daysUntil(trailer.insuranceExpiry)} />],
-              ["Inspection", <ExpiryBadge key="n" days={daysUntil(trailer.inspectionExpiry)} />],
+              ["Insurance", <ExpiryBadge key="i" days={daysUntil(paper.INSURANCE)} />],
+              ["Inspection", <ExpiryBadge key="n" days={daysUntil(paper.INSPECTION)} />],
+              ["Registration", <ExpiryBadge key="r" days={daysUntil(paper.REGISTRATION)} />],
               ["Added", date(trailer.createdAt)],
               ["Status", TRAILER_STATUS_LABELS[trailer.status] ?? trailer.status],
             ]} />

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Search, X } from "lucide-react";
 import { CLAIM_FAULTS, CLAIM_FAULT_LABELS, CLAIM_SEVERITIES, CLAIM_STATUSES, CLAIM_TYPES, CLAIM_TYPE_LABELS } from "@/lib/constants";
 import { buttonClass, cn, inputClass } from "@/components/ui";
-import { CLAIM_SEVERITY_LABELS, CLAIM_STATUS_LABELS, claimsHref, hasClaimFilters, isOpenClaimStatus, type ClaimFilters } from "./shared";
+import { CLAIM_SEVERITY_LABELS, CLAIM_STATUS_LABELS, claimPhase, claimsHref, hasClaimFilters, type ClaimFilters, type ClaimPhase } from "./shared";
 
 /**
  * Filter bar. Everything lives in the URL (shareable, back-button friendly): selects apply
@@ -18,25 +18,41 @@ export function ClaimFilterBar({ values }: { values: ClaimFilters }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
+  // Searches this box pushed that the URL has not caught up with yet, oldest first.
+  const [sent, setSent] = useState<string[]>([]);
+  const [urlQ, setUrlQ] = useState(values.q);
+  if (values.q !== urlQ) {
+    // The URL's search changed. Our own push arriving must not overwrite typing that continued after
+    // it; anything else (back / forward, a link that drops the search) is shown in the box.
+    setUrlQ(values.q);
+    const i = sent.indexOf(values.q);
+    if (i >= 0) setSent(sent.slice(i + 1));
+    else { setSent([]); setQ(values.q); }
+  }
+
   const go = (patch: Partial<Record<keyof ClaimFilters, string | undefined>>) => {
     start(() => router.replace(claimsHref(values, patch)));
+  };
+  const search = (v: string) => {
+    const next = v.trim();
+    if (next !== values.q) setSent((xs) => [...xs, next]);
+    go({ q: next || undefined });
   };
   const onSearch = (v: string) => {
     setQ(v);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => go({ q: v.trim() || undefined }), 300);
+    timer.current = setTimeout(() => search(v), 300);
   };
   const select = cn(inputClass, "h-7 w-auto min-w-0 pr-7 text-[12px]");
   const muted = (v: string | undefined) => (!v ? "text-fg-muted" : undefined);
-  const openStatuses = CLAIM_STATUSES.filter(isOpenClaimStatus);
-  const closedStatuses = CLAIM_STATUSES.filter((s) => !isOpenClaimStatus(s));
+  const inPhase = (phase: ClaimPhase) => CLAIM_STATUSES.filter((s) => claimPhase(s) === phase);
 
   return (
     <div className={cn("flex flex-wrap items-center gap-2", pending && "opacity-70")} aria-busy={pending || undefined}>
       <label className="relative block">
         <Search className="pointer-events-none absolute inset-y-0 left-2 my-auto h-3.5 w-3.5 text-fg-subtle" />
         <input value={q} onChange={(e) => onSearch(e.target.value)} placeholder="Number, load, driver, unit, location…" aria-label="Search claims"
-          onKeyDown={(e) => { if (e.key === "Enter") { if (timer.current) clearTimeout(timer.current); go({ q: q.trim() || undefined }); } }}
+          onKeyDown={(e) => { if (e.key === "Enter") { if (timer.current) clearTimeout(timer.current); search(q); } }}
           className={cn(inputClass, "h-7 w-64 pl-7 pr-7 text-[12px]")} />
         {q && (
           <button type="button" aria-label="Clear search" onClick={() => onSearch("")}
@@ -55,8 +71,9 @@ export function ClaimFilterBar({ values }: { values: ClaimFilters }) {
         <option value="">All statuses</option>
         <option value="open">Open (any)</option>
         <option value="closed">Closed (any)</option>
-        <optgroup label="Open">{openStatuses.map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
-        <optgroup label="Closed">{closedStatuses.map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
+        <optgroup label="Open">{inPhase("open").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
+        <optgroup label="Awaiting payment">{inPhase("awaiting").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
+        <optgroup label="Closed">{inPhase("closed").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
       </select>
 
       <select aria-label="Severity" value={values.severity ?? ""} onChange={(e) => go({ severity: e.target.value || undefined })} className={cn(select, muted(values.severity))}>
@@ -70,7 +87,7 @@ export function ClaimFilterBar({ values }: { values: ClaimFilters }) {
       </select>
 
       {hasClaimFilters(values) && (
-        <button type="button" onClick={() => { setQ(""); go({ type: undefined, status: undefined, severity: undefined, fault: undefined, q: undefined }); }}
+        <button type="button" onClick={() => { if (timer.current) clearTimeout(timer.current); setQ(""); go({ type: undefined, status: undefined, severity: undefined, fault: undefined, q: undefined }); }}
           className={buttonClass("ghost", "sm")}>
           <X className="h-3.5 w-3.5" />Clear
         </button>

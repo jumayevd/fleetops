@@ -207,13 +207,23 @@ async function main() {
   type LoadSeed = { data: LoadData & { distanceKm: number; status: string; pickupAt: Date; deliveryAt: Date; departedAt?: Date | null; deliveredAt?: Date | null }; stops: StopSeed[] };
   const loadRows: LoadSeed[] = [];
 
+  // Every dispatched or in-transit load gets its own trailer (one trailer can't be on two trucks); finished loads
+  // reuse them. No random draws here, so the rest of the demo stays the same from one reseed to the next.
+  const activeTrailers = new Set<string>();
+  function trailerFor(equipment: string, active: boolean) {
+    const usable = trailers.filter((t) => ["EMPTY", "YARD", "DROPPED"].includes(t.status) && !(active && activeTrailers.has(t.id)));
+    const trailer = usable.find((t) => t.type === equipment) ?? usable[0] ?? trailers[0];
+    if (active) activeTrailers.add(trailer.id);
+    return trailer;
+  }
+
   function makeLoad(status: string, pickupAt: Date, truckIdx: number | null): LoadSeed {
     const [o, d] = pick(lanes);
     const origin = city(o), dest = city(d);
     const [commodity, equipment] = pick(commodities);
     const truck = truckIdx !== null ? trucks[truckIdx] : null;
     const driver = truck?.driverId ? drivers.find((x) => x.id === truck.driverId)! : null;
-    const trailer = truckIdx !== null ? trailers.find((t) => t.type === equipment && t.status === "EMPTY") ?? trailers[0] : null;
+    const trailer = truckIdx !== null ? trailerFor(equipment, status === "IN_TRANSIT" || status === "ASSIGNED") : null;
     // Stops: pickup, optional intermediate delivery, final delivery
     const points = [origin];
     const via = viaFor[d];
@@ -314,7 +324,8 @@ async function main() {
   // Trailers on active loads are IN_USE and travel with the tractor
   for (const l of loads) {
     if (["ASSIGNED", "IN_TRANSIT"].includes(l.status) && l.trailerId) {
-      await db.trailer.update({ where: { id: l.trailerId }, data: { status: "IN_USE", statusSince: new Date(l.pickupAt.getTime() - HOUR), truckId: l.truckId } });
+      // Hooked an hour before pickup, or an hour ago for a pickup still ahead (never in the future).
+      await db.trailer.update({ where: { id: l.trailerId }, data: { status: "IN_USE", statusSince: new Date(Math.min(now, l.pickupAt.getTime()) - HOUR), truckId: l.truckId } });
     }
   }
 

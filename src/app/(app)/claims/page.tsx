@@ -7,7 +7,7 @@ import { CLAIM_FAULT_LABELS, CLAIM_TYPE_LABELS } from "@/lib/constants";
 import { date, money, number } from "@/lib/format";
 import { Badge, Card, Cell, Chip, FilterPills, LinkButton, PageHeader, Stat, Table, Tabs, cn } from "@/components/ui";
 import { LIST_INCLUDE, claimKpis, claimWhere, parseClaimFilters, sortForTable } from "./query";
-import { CLAIM_SEVERITY_LABELS, FAULT_TONE, ageTone, claimStatusLabel, claimsHref, daysOpen, hasClaimFilters, isOpenClaimStatus } from "./shared";
+import { CLAIM_SEVERITY_LABELS, FAULT_TONE, ageTone, claimPhase, claimStatusLabel, claimsHref, daysOpen, hasClaimFilters, type ClaimPhase } from "./shared";
 import { ClaimFilterBar } from "./filters";
 import { ClaimRowMenu } from "./row-menu";
 import { ClaimAnalytics } from "./analytics";
@@ -30,10 +30,12 @@ export default async function ClaimsPage({ searchParams }: PageProps<"/claims">)
     analytics ? Promise.resolve([]) : db.claim.findMany({ where, include: LIST_INCLUDE, orderBy: { createdAt: "desc" }, take: TAKE }),
   ]);
   const claims = sortForTable(rows);
+  const countIn = (phase: ClaimPhase) => byStatus.filter((s) => claimPhase(s.status) === phase).reduce((a, s) => a + s._count, 0);
   const allCount = byStatus.reduce((a, s) => a + s._count, 0);
-  const openCount = byStatus.filter((s) => isOpenClaimStatus(s.status)).reduce((a, s) => a + s._count, 0);
+  const openCount = countIn("open");
+  const awaitingCount = countIn("awaiting");
   const filtered = hasClaimFilters(f);
-  const pill = f.status === "open" || f.status === "closed" ? f.status : f.status ? "status" : "ALL";
+  const pill = f.status === "open" || f.status === "closed" || f.status === "APPROVED" ? f.status : f.status ? "status" : "ALL";
 
   return (
     <>
@@ -53,7 +55,9 @@ export default async function ClaimsPage({ searchParams }: PageProps<"/claims">)
         <Stat label="Open amount claimed" value={money(kpi.openClaimed)}
           hint={kpi.contestedCount ? `${money(kpi.contestedClaimed)} contested across ${kpi.contestedCount}` : "nothing in negotiation or dispute"} />
         <Stat label="Settled YTD" value={money(kpi.settledYtd)} tone={kpi.recoveryYtdPct != null && kpi.recoveryYtdPct < 50 ? "warn" : "neutral"}
-          hint={kpi.settledYtdCount ? `${kpi.recoveryYtdPct}% of what was claimed · ${kpi.settledYtdCount} settled` : "no settlements this year yet"} />
+          hint={kpi.settledYtdCount || kpi.unrecoveredYtdCount
+            ? `${kpi.recoveryYtdPct}% recovered · ${kpi.settledYtdCount} settled${kpi.unrecoveredYtdCount ? `, ${kpi.unrecoveredYtdCount} denied` : ""}`
+            : "no settlements this year yet"} />
         <Stat label="Avg days to close" value={kpi.avgClose == null ? "—" : `${kpi.avgClose}d`}
           tone={kpi.avgClose == null ? "neutral" : kpi.avgClose > 45 ? "warn" : "ok"}
           hint={kpi.closedCount ? `median ${kpi.medianClose}d · ${kpi.closedCount} closed in 12 months` : "no claims closed in the last 12 months"} />
@@ -73,7 +77,9 @@ export default async function ClaimsPage({ searchParams }: PageProps<"/claims">)
           <FilterPills active={pill} items={[
             { key: "ALL", href: claimsHref(f, { status: undefined }), label: "All", count: allCount },
             { key: "open", href: claimsHref(f, { status: "open" }), label: "Open", count: openCount },
-            { key: "closed", href: claimsHref(f, { status: "closed" }), label: "Closed", count: allCount - openCount },
+            ...(awaitingCount > 0 || pill === "APPROVED"
+              ? [{ key: "APPROVED", href: claimsHref(f, { status: "APPROVED" }), label: "Awaiting payment", count: awaitingCount }] : []),
+            { key: "closed", href: claimsHref(f, { status: "closed" }), label: "Closed", count: countIn("closed") },
             ...(pill === "status" && f.status ? [{ key: "status", href: claimsHref(f, {}), label: claimStatusLabel(f.status), count: total }] : []),
           ]} />
         </div>
@@ -97,7 +103,8 @@ export default async function ClaimsPage({ searchParams }: PageProps<"/claims">)
             emptyDescription={filtered ? "Try another type, status or severity, or clear the search." : canEdit ? "File one with New claim, or from a load's row menu (File a claim) so the driver, unit and customer come prefilled." : "Claims appear here once dispatch or the fleet team files one."}
           >
             {claims.map((c) => {
-              const open = isOpenClaimStatus(c.status);
+              const phase = claimPhase(c.status);
+              const open = phase === "open";
               const days = daysOpen(c);
               const tone = ageTone(days, open);
               const noDocs = open && c.status !== "REPORTED" && c._count.documents === 0;
@@ -114,7 +121,9 @@ export default async function ClaimsPage({ searchParams }: PageProps<"/claims">)
                       ? tone === "neutral"
                         ? <span className="num text-fg-muted">{days}d</span>
                         : <Badge value="" tone={tone} label={`${days}d`} className="num" />
-                      : <span className="num text-fg-subtle" title={`Closed ${date(c.closedAt)}`}>{days}d <span className="text-fg-faint">· closed</span></span>}
+                      : phase === "awaiting"
+                        ? <span className="num text-fg-muted" title={`Approved, payment not received yet · open since ${date(c.createdAt)}`}>{days}d <span className="text-fg-subtle">· awaiting payment</span></span>
+                        : <span className="num text-fg-subtle" title={`Closed ${date(c.closedAt)}`}>{days}d <span className="text-fg-faint">· closed</span></span>}
                   </td>
                   <td className="whitespace-nowrap">{c.driver ? <Link href={`/drivers/${c.driver.id}`} className="hover:underline">{c.driver.name}</Link> : <span className="text-fg-faint">—</span>}</td>
                   <td>{c.load ? <Link href={`/loads/${c.load.id}`} className="num hover:underline">{c.load.reference}</Link> : <span className="text-fg-faint">—</span>}</td>
@@ -126,7 +135,8 @@ export default async function ClaimsPage({ searchParams }: PageProps<"/claims">)
                   <td><Badge value={c.fault} tone={FAULT_TONE[c.fault] ?? "neutral"} label={CLAIM_FAULT_LABELS[c.fault] ?? c.fault} /></td>
                   <td className="num whitespace-nowrap text-right">
                     <span className="font-medium">{money(c.amountClaimed)}</span>
-                    <span className={cn("text-fg-subtle", c.amountSettled != null && c.amountSettled > 0 && "text-ok")}> · {c.amountSettled == null ? "—" : money(c.amountSettled)}</span>
+                    <span className={cn("text-fg-subtle", c.amountSettled != null && c.amountSettled > 0 && phase !== "awaiting" && "text-ok")}
+                      title={phase === "awaiting" && c.amountSettled != null ? "Agreed, not received yet" : undefined}> · {c.amountSettled == null ? "—" : money(c.amountSettled)}</span>
                   </td>
                   <td>
                     {noDocs ? <Chip tone="warn">No docs</Chip>
@@ -134,7 +144,7 @@ export default async function ClaimsPage({ searchParams }: PageProps<"/claims">)
                         ? <span className="num inline-flex items-center gap-1 text-fg-muted"><FileText className="h-3.5 w-3.5 text-fg-subtle" />{c._count.documents}</span>
                         : <span className="text-fg-faint">—</span>}
                   </td>
-                  <td className="whitespace-nowrap">{c.assignedTo ? c.assignedTo.name : open ? <span className="text-warn">Unassigned</span> : <span className="text-fg-faint">—</span>}</td>
+                  <td className="whitespace-nowrap">{c.assignedTo ? c.assignedTo.name : phase !== "closed" ? <span className="text-warn">Unassigned</span> : <span className="text-fg-faint">—</span>}</td>
                   <td className="w-8 text-right"><ClaimRowMenu id={c.id} number={c.number} canEdit={canEdit} /></td>
                 </tr>
               );

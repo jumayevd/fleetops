@@ -1,4 +1,5 @@
 import type { Tone } from "@/components/ui";
+import { daysUntil } from "@/lib/format";
 
 /* ------------------------------------------------------------------ */
 /* Labels                                                              */
@@ -146,6 +147,48 @@ export function earliest(...dates: (Date | null | undefined)[]): Date | null {
   let min: Date | null = null;
   for (const d of dates) if (d && (!min || d < min)) min = d;
   return min;
+}
+
+/** Paperwork counts as expiring this many days ahead (same window as ExpiryBadge and the compliance alerts). */
+export const EXPIRY_SOON_DAYS = 30;
+
+/** unitId → document kind → expiry on the newest uploaded document of that kind. Pass the rows newest first. */
+export function docExpiryByUnit(rows: { id: string | null; kind: string; expiresAt: Date | null }[]) {
+  const m = new Map<string, Map<string, Date | null>>();
+  for (const r of rows) {
+    if (!r.id) continue;
+    let kinds = m.get(r.id);
+    if (!kinds) m.set(r.id, (kinds = new Map()));
+    if (!kinds.has(r.kind)) kinds.set(r.kind, r.expiresAt);
+  }
+  return m;
+}
+
+export type PaperworkKind = "REGISTRATION" | "INSURANCE" | "INSPECTION";
+
+/** Effective expiry of each required paper: the earlier of the unit record's date and the newest document's expiry. */
+export function paperworkExpiry(
+  unit: { insuranceExpiry: Date | null; inspectionExpiry: Date | null; registrationExpiry?: Date | null },
+  docs: Map<string, Date | null> | undefined,
+): Record<PaperworkKind, Date | null> {
+  return {
+    REGISTRATION: earliest(unit.registrationExpiry, docs?.get("REGISTRATION")),
+    INSURANCE: earliest(unit.insuranceExpiry, docs?.get("INSURANCE")),
+    INSPECTION: earliest(unit.inspectionExpiry, docs?.get("INSPECTION")),
+  };
+}
+
+/** How many of the dates have passed, and how many fall within the next EXPIRY_SOON_DAYS days. */
+export function expiryCounts(dates: (Date | null)[]) {
+  let expired = 0;
+  let soon = 0;
+  for (const d of dates) {
+    const days = daysUntil(d);
+    if (days == null) continue;
+    if (days < 0) expired++;
+    else if (days <= EXPIRY_SOON_DAYS) soon++;
+  }
+  return { expired, soon };
 }
 
 /* ------------------------------------------------------------------ */

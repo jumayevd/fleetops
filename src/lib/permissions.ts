@@ -34,6 +34,21 @@ export function can(role: string | undefined | null, permission: Permission): bo
   return (PERMISSIONS[permission] as readonly string[]).includes(role);
 }
 
+// Which permission a destination needs (mirrors each page's requireUser). Links, alerts and KPI tiles pointing
+// somewhere a role cannot open are hidden or re-targeted rather than shown as dead links (requireUser would
+// bounce the user straight back). Keep in step with the pages' gates.
+const ROUTE_PERMISSIONS: [prefix: string, perm: Permission][] = [
+  ["/finance", "finance.view"], ["/claims", "claims.view"], ["/fleet", "fleet.view"], ["/drivers", "drivers.view"],
+  ["/customers", "customers.view"], ["/admin", "company.manage"], ["/loads", "loads.view"], ["/dispatch", "loads.view"],
+  ["/tracking", "tracking.view"], ["/reports", "reports.view"], ["/maintenance", "fleet.view"],
+];
+
+/** Whether `role` can open `href` (unlisted routes are open to every signed-in user). */
+export function canOpen(role: string | undefined | null, href: string) {
+  const hit = ROUTE_PERMISSIONS.find(([p]) => href === p || href.startsWith(`${p}/`) || href.startsWith(`${p}?`) || href.startsWith(`${p}#`));
+  return hit ? can(role, hit[1]) : true;
+}
+
 export function homeFor(role: string) {
   return role === "DRIVER" ? "/driver" : "/dashboard";
 }

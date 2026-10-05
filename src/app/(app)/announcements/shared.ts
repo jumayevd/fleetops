@@ -17,7 +17,7 @@ export type AnnouncementDTO = {
 
 const SOON_MS = 48 * 3_600_000;
 
-/** Past its expiry (never expires when null). */
-export const isExpired = (expiresAt: Date | null) => Boolean(expiresAt && expiresAt.getTime() < Date.now());
+/** Past its expiry (never expires when null). Matches the page's query: expired means `expiresAt <= now`. */
+export const isExpired = (expiresAt: Date | null, now = Date.now()) => Boolean(expiresAt && expiresAt.getTime() <= now);
 /** Still current but expires within 48 hours. */
-export const expiresSoon = (expiresAt: Date | null) => Boolean(expiresAt && !isExpired(expiresAt) && expiresAt.getTime() - Date.now() < SOON_MS);
+export const expiresSoon = (expiresAt: Date | null, now = Date.now()) => Boolean(expiresAt && !isExpired(expiresAt, now) && expiresAt.getTime() - now < SOON_MS);

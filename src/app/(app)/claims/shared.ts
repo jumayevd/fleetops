@@ -47,6 +47,18 @@ export const CLAIM_CLOSING_STATUSES: readonly ClaimStatus[] = ["PAID", "CLOSED",
 export const isOpenClaimStatus = (s: string) => (CLAIM_OPEN_STATUSES as readonly string[]).includes(s);
 export const isClosingStatus = (s: string) => (CLAIM_CLOSING_STATUSES as readonly string[]).includes(s);
 
+/**
+ * Where a claim stands. `open` is the open book (CLAIM_OPEN_STATUSES — still being worked, what the
+ * KPIs, nav badge and alerts count). `awaiting` is approved but not paid yet: off the open book, but
+ * not closed — money is still due and nothing has been received. `closed` is paid, closed or denied
+ * (the statuses that stamp `closedAt`).
+ */
+export type ClaimPhase = "open" | "awaiting" | "closed";
+export function claimPhase(status: string): ClaimPhase {
+  if (isClosingStatus(status)) return "closed";
+  return status === "APPROVED" ? "awaiting" : "open";
+}
+
 /** Verb-first button labels for the status controls, plus the one-line consequence shown under each. */
 export const TRANSITION_LABEL: Record<ClaimStatus, string> = {
   REPORTED: "Reopen as reported",
@@ -86,7 +98,7 @@ export function daysOpen(c: { createdAt: Date | string; closedAt: Date | string 
   return Math.max(0, Math.round((end - new Date(c.createdAt).getTime()) / 86_400_000));
 }
 
-/** Age tone for an open claim: quiet under 14 days, caution after, problem after 45 (matches the dashboard alert thresholds). */
+/** Age tone for an open-book claim: quiet under 14 days, caution after, problem after 45 (matches the dashboard alert thresholds). */
 export function ageTone(days: number, open: boolean): Tone {
   if (!open) return "neutral";
   if (days > 45) return "danger";

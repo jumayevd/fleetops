@@ -152,7 +152,7 @@ export async function maintenanceSummary(from: Date, to: Date) {
   return {
     spend, records: done.length, km, costPerKm: km ? spend / km : 0,
     openCount: open.length, open,
-    byVendor: group((w) => w.vendor ?? "Unknown vendor").slice(0, 8),
+    byVendor: group((w) => w.vendor ?? "No vendor recorded").slice(0, 8),
     byCategory: group((w) => w.category),
     perUnit, median,
     flagged: perUnit.filter((u) => u.cost > median * 1.8 && u.cost > 500),

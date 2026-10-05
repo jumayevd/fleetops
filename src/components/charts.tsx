@@ -218,6 +218,10 @@ export function RevenueChart({ data, height = 260 }: { data: { month: string; re
 }
 
 /** Single-series bar chart. `layout="vertical"` for ranked categories (bars grow to the right). */
+/** Integer-only series (counts, whole amounts) get integer ticks: no "0.5 claims" on a small axis. */
+const allIntegers = (data: Record<string, string | number>[], keys: string[]) =>
+  data.every((d) => keys.every((k) => typeof d[k] !== "number" || Number.isInteger(d[k])));
+
 export function SimpleBar({ data, dataKey, nameKey, money: isMoney = false, color, tone, height = 260, layout = "horizontal", labelWidth = 150, format }: {
   data: Record<string, string | number>[];
   dataKey: string;
@@ -238,12 +242,13 @@ export function SimpleBar({ data, dataKey, nameKey, money: isMoney = false, colo
   const tickFmt = resolveFormat(format, isMoney ? fmtMoneyCompact : fmtCompact);
   const fullFmt = resolveFormat(format, isMoney ? (v: number) => money(v) : (v: number) => number(v));
   if (data.length === 0) return <ChartEmpty height={height} />;
+  const decimals = !allIntegers(data, [dataKey]);
   return (
     <ResponsiveContainer width="100%" height={height}>
       {layout === "vertical" ? (
         <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 0 }} barCategoryGap="30%">
           <CartesianGrid stroke={t.grid} horizontal={false} />
-          <XAxis type="number" tickFormatter={tickFmt} tick={t.tick} axisLine={false} tickLine={false} />
+          <XAxis type="number" tickFormatter={tickFmt} tick={t.tick} axisLine={false} tickLine={false} allowDecimals={decimals} />
           <YAxis type="category" dataKey={nameKey} tick={t.tick} axisLine={false} tickLine={false} width={labelWidth} />
           <Tooltip {...t.tooltip} cursor={t.cursorFill} formatter={(v) => fullFmt(Number(v))} />
           <Bar dataKey={dataKey} fill={fill} maxBarSize={24} radius={[0, 4, 4, 0]} activeBar={{ fillOpacity: 0.8 }} />
@@ -252,7 +257,7 @@ export function SimpleBar({ data, dataKey, nameKey, money: isMoney = false, colo
         <BarChart data={data} margin={{ left: 0, right: 8, top: 8, bottom: 0 }} barCategoryGap="30%">
           <CartesianGrid stroke={t.grid} vertical={false} />
           <XAxis dataKey={nameKey} tick={t.tick} axisLine={false} tickLine={false} />
-          <YAxis tickFormatter={tickFmt} tick={t.tick} axisLine={false} tickLine={false} width={52} />
+          <YAxis tickFormatter={tickFmt} tick={t.tick} axisLine={false} tickLine={false} width={52} allowDecimals={decimals} />
           <Tooltip {...t.tooltip} cursor={t.cursorFill} formatter={(v) => fullFmt(Number(v))} />
           <Bar dataKey={dataKey} fill={fill} maxBarSize={24} radius={[4, 4, 0, 0]} activeBar={{ fillOpacity: 0.8 }} />
         </BarChart>
@@ -277,7 +282,7 @@ export function TrendLine({ data, lines, height = 240, suffix = "", xKey = "mont
       <LineChart data={data} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
         <CartesianGrid stroke={t.grid} vertical={false} />
         <XAxis dataKey={xKey} tick={t.tick} axisLine={false} tickLine={false} />
-        <YAxis tick={t.tick} axisLine={false} tickLine={false} width={44} unit={suffix} />
+        <YAxis tick={t.tick} axisLine={false} tickLine={false} width={44} unit={suffix} allowDecimals={!allIntegers(data, lines.map((l) => l.key))} />
         <Tooltip {...t.tooltip} cursor={t.cursorLine} formatter={(v) => resolveFormat(format, (x: number) => `${fmtDecimal(x)}${suffix}`)(Number(v))} />
         {lines.length > 1 && <Legend {...legendProps(t)} />}
         {lines.map((l, i) => {

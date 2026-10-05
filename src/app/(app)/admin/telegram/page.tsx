@@ -10,6 +10,7 @@ import { disconnectGroup, newGroupCode, registerWebhook, sendDigestNow } from "@
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, PageHeader, Table, buttonClass, cn, type Tone } from "@/components/ui";
 import { ROLE_TONE } from "../shared";
+import { ConfirmSubmit } from "../confirm-submit";
 
 export const metadata = { title: "Telegram alerts" };
 
@@ -57,7 +58,8 @@ export default async function TelegramAdmin() {
     configured ? getBot().catch(() => null) : null,
     configured ? getWebhookInfo().catch(() => null) : null,
     db.appSetting.findMany({ where: { key: { in: [SETTING_GROUP_CHAT, SETTING_GROUP_CODE] } } }),
-    db.user.findMany({ where: { telegramChatId: { not: null } }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true, telegramAlerts: true } }),
+    // Active accounts only, like the total and like notify.ts: a disabled account gets no alerts.
+    db.user.findMany({ where: { active: true, telegramChatId: { not: null } }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true, telegramAlerts: true } }),
     db.user.count({ where: { active: true } }),
   ]);
   const group = settings.find((s) => s.key === SETTING_GROUP_CHAT)?.value;
@@ -124,7 +126,9 @@ export default async function TelegramAdmin() {
                   {group ? (
                     <div className="flex flex-wrap items-center gap-3">
                       <Badge value="ACTIVE" tone="ok" label="Group connected" dot />
-                      <form action={disconnectGroup}><button className={cn(buttonClass("ghost", "sm"), "text-danger hover:bg-danger-soft hover:text-danger")}>Disconnect</button></form>
+                      <form action={disconnectGroup}>
+                        <ConfirmSubmit confirm="Disconnect the group chat? It stops getting alerts until someone sends a new connect code there." className={cn(buttonClass("ghost", "sm"), "text-danger hover:bg-danger-soft hover:text-danger")}>Disconnect</ConfirmSubmit>
+                      </form>
                     </div>
                   ) : groupCode ? (
                     <div className="flex flex-wrap items-center gap-3">

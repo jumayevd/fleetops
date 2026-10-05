@@ -1,6 +1,6 @@
 import type { Driver } from "@prisma/client";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Card, Field, Input, LinkButton, Select, Textarea } from "@/components/ui";
+import { Badge, Card, Field, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { DRIVER_STATUSES, DRIVER_TYPES, DRIVER_TYPE_LABELS } from "@/lib/constants";
 import { toDateInput } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
@@ -44,7 +44,7 @@ export function DriverForm({ action, driver, teams, cancelHref }: {
           </Card>
 
           <Card title="Notes">
-            <Textarea name="notes" rows={4} defaultValue={driver?.notes ?? ""} placeholder="Preferences, languages, restrictions, anything dispatch should know." />
+            <Textarea name="notes" aria-label="Notes" rows={4} defaultValue={driver?.notes ?? ""} placeholder="Preferences, languages, restrictions, anything dispatch should know." />
           </Card>
         </div>
 
@@ -54,9 +54,20 @@ export function DriverForm({ action, driver, teams, cancelHref }: {
               <Field label="Driver type" hint="Sets the weekly production goal and the tag on the boards.">
                 <Select name="type" defaultValue={driver?.type ?? "COMPANY"} options={DRIVER_TYPES.map((t) => ({ value: t, label: DRIVER_TYPE_LABELS[t] }))} />
               </Field>
-              <Field label="Employment status" hint={editing ? "On leave and inactive drivers leave the daily board." : undefined}>
-                <Select name="status" defaultValue={driver?.status ?? "ACTIVE"} options={DRIVER_STATUSES.map((s) => ({ value: s, label: EMPLOYMENT_LABELS[s] }))} />
-              </Field>
+              {driver ? (
+                // Read-only here: the status menu on the driver page checks for an active load and updates the board.
+                // The hidden input keeps the current value, because the save action treats a missing status as Active.
+                <div>
+                  <p className="mb-1 text-[12px] font-medium text-fg-muted">Employment status</p>
+                  <input type="hidden" name="status" value={driver.status} />
+                  <Badge value={driver.status} label={EMPLOYMENT_LABELS[driver.status] ?? driver.status} dot />
+                  <p className="mt-1 text-[11px] text-fg-subtle">Change it from the status menu on the driver page, which checks for an active load and updates the board.</p>
+                </div>
+              ) : (
+                <Field label="Employment status">
+                  <Select name="status" defaultValue="ACTIVE" options={DRIVER_STATUSES.map((s) => ({ value: s, label: EMPLOYMENT_LABELS[s] }))} />
+                </Field>
+              )}
               <Field label="Dispatcher team">
                 <Select name="teamId" defaultValue={driver?.teamId ?? ""} placeholder="No team" options={teams.map((t) => ({ value: t.id, label: t.name }))} />
               </Field>
@@ -66,9 +77,12 @@ export function DriverForm({ action, driver, teams, cancelHref }: {
             </div>
           </Card>
 
-          {!editing && (
+          {(!editing || !driver?.userId) && (
             <Card title="Driver app login">
-              <p className="mb-3 text-[12px] text-fg-muted">Optional. Set a password and the driver can sign in to the mobile portal with the email above to see trips, update stops and upload the POD.</p>
+              <p className="mb-3 text-[12px] text-fg-muted">
+                {editing ? "This driver has no app login yet. " : "Optional. "}
+                Set a password and the driver can sign in to the mobile portal with the email above to see trips, update stops and upload the POD.
+              </p>
               <Field label="Initial password" hint="At least 8 characters. The driver can change it later.">
                 <Input name="password" type="password" minLength={8} autoComplete="new-password" />
               </Field>

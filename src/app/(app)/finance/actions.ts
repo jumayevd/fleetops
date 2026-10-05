@@ -23,8 +23,6 @@ const DONE: Record<string, string> = { DRAFT: "moved back to draft", SENT: "mark
  * - Paid: the load's billing stage becomes Paid.
  * - Void: the invoice keeps its number for the record but lets go of the load (a load holds one invoice), and the
  *   load goes back to Delivered (or TONU) so it returns to the billing queue and can be invoiced again.
- *
- * The finance pages use this instead of setInvoiceStatus in app/actions/finance.ts, which only flips the status.
  */
 export async function updateInvoiceStatus(invoiceId: string, status: string): Promise<ActionState> {
   const me = await requireUser("finance.edit");

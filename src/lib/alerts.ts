@@ -86,10 +86,13 @@ export async function getAlerts(): Promise<Alert[]> {
 
   // Dispatch
   for (const l of transit) {
+    // Still on the road after the delivery time counts as late even when the estimate has already passed.
     const eta = estimatedArrival(l);
-    if (eta && eta > l.deliveryAt) {
-      const hrs = Math.round((eta.getTime() - l.deliveryAt.getTime()) / 3_600_000);
-      alerts.push({ level: hrs > 6 ? "critical" : "warning", kind: "dispatch", title: `${l.reference} running late`, detail: `ETA ~${hrs}h after delivery window`, href: `/loads/${l.id}` });
+    const arrival = Math.max(eta?.getTime() ?? 0, now.getTime());
+    if (arrival > l.deliveryAt.getTime()) {
+      const hrs = Math.max(1, Math.round((arrival - l.deliveryAt.getTime()) / 3_600_000));
+      const detail = eta && eta.getTime() >= now.getTime() ? `ETA ~${hrs}h after delivery window` : `${hrs}h past the delivery window, not delivered yet`;
+      alerts.push({ level: hrs > 6 ? "critical" : "warning", kind: "dispatch", title: `${l.reference} running late`, detail, href: `/loads/${l.id}` });
     }
   }
   for (const l of unassigned) alerts.push({ level: "warning", kind: "dispatch", title: `${l.reference} not assigned`, detail: `pickup ${l.pickupAt.toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}`, href: `/loads/${l.id}` });

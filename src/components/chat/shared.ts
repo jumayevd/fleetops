@@ -1,4 +1,4 @@
-import { differenceInMinutes, format, isSameDay, isToday, isYesterday } from "date-fns";
+import { TIMEZONE } from "@/lib/constants";
 
 /* Client-safe types and helpers shared by the chat page, the thread component, the action and the API. */
 
@@ -94,35 +94,66 @@ export const isUnread = (room: RoomSummary, seen: Record<string, string>) =>
 /* ------------------------------------------------------------------ */
 
 export type MessageGroup = { key: string; userId: string | null; userName: string; at: string; items: ChatMessageDTO[] };
-export type DaySection = { key: string; label: string; groups: MessageGroup[] };
+/** `key` is the React key (first message's timestamp); `day` the company-calendar day, "yyyy-MM-dd". */
+export type DaySection = { key: string; day: string; label: string; groups: MessageGroup[] };
 
-export function dayLabel(d: Date, now = new Date()) {
-  if (isToday(d)) return "Today";
-  if (isYesterday(d)) return "Yesterday";
-  const days = Math.round((now.getTime() - d.getTime()) / 86_400_000);
-  return days < 7 ? format(d, "EEEE d MMM") : format(d, "dd MMM yyyy");
+/*
+ * Times and days are shown in company time (TIMEZONE), like every server-rendered date in the app. Formatting with a
+ * fixed zone from numeric parts gives the same string during SSR and in any browser, so these labels hydrate without
+ * mismatches whatever the server's or the viewer's zone. Relative labels take `today` (a day key) instead of reading
+ * the clock: the chat page passes the server's day for the hydration render (see `useToday` in hooks.ts).
+ */
+const PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: TIMEZONE, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+});
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_MS = 86_400_000;
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** Wall-clock parts of an instant in company time. */
+function zoned(at: string | Date) {
+  const p: Record<string, string> = {};
+  for (const x of PARTS.formatToParts(typeof at === "string" ? new Date(at) : at)) p[x.type] = x.value;
+  return { y: Number(p.year), mo: Number(p.month), d: Number(p.day), h: Number(p.hour) % 24, mi: Number(p.minute) };
 }
-export const timeLabel = (iso: string) => format(new Date(iso), "HH:mm");
-export const fullTimeLabel = (iso: string) => format(new Date(iso), "dd MMM yyyy, HH:mm");
-/** For the rooms column: time today, otherwise a short date. */
-export function shortWhen(iso: string, now = new Date()) {
-  const d = new Date(iso);
-  return isSameDay(d, now) ? format(d, "HH:mm") : format(d, "dd MMM");
+const keyOf = (p: { y: number; mo: number; d: number }) => `${p.y}-${pad(p.mo)}-${pad(p.d)}`;
+
+/** Company-calendar day of an instant, "yyyy-MM-dd". */
+export const dayKeyOf = (at: string | Date) => keyOf(zoned(at));
+
+/** Day separator: "Today", "Yesterday", "Friday 2 Oct" within the past week, otherwise "02 Oct 2026". */
+export function dayLabel(day: string, today: string) {
+  const at = Date.parse(`${day}T00:00:00Z`);
+  const diff = Math.round((Date.parse(`${today}T00:00:00Z`) - at) / DAY_MS);
+  if (diff <= 0) return "Today"; // a clock running behind the server never shows a future day
+  if (diff === 1) return "Yesterday";
+  const [y, mo, d] = day.split("-").map(Number);
+  return diff < 7 ? `${WEEKDAYS[new Date(at).getUTCDay()]} ${d} ${MONTHS[mo - 1]}` : `${pad(d)} ${MONTHS[mo - 1]} ${y}`;
+}
+/** "17:22" in company time. */
+export const timeLabel = (iso: string) => { const p = zoned(iso); return `${pad(p.h)}:${pad(p.mi)}`; };
+/** "05 Oct 2026, 17:22" in company time. */
+export const fullTimeLabel = (iso: string) => { const p = zoned(iso); return `${pad(p.d)} ${MONTHS[p.mo - 1]} ${p.y}, ${pad(p.h)}:${pad(p.mi)}`; };
+/** For the rooms column: the time when it is `today` (a day key), otherwise a short date. */
+export function shortWhen(iso: string, today: string) {
+  const p = zoned(iso);
+  return keyOf(p) === today ? `${pad(p.h)}:${pad(p.mi)}` : `${pad(p.d)} ${MONTHS[p.mo - 1]}`;
 }
 
-/** Split into day sections, each with author groups (same author, within 5 minutes). */
-export function sectionize(messages: ChatMessageDTO[], now = new Date()): DaySection[] {
+/** Split into day sections (company calendar), each with author groups (same author, within 5 minutes). */
+export function sectionize(messages: ChatMessageDTO[], today: string): DaySection[] {
   const out: DaySection[] = [];
   for (const m of messages) {
-    const d = new Date(m.createdAt);
+    const key = dayKeyOf(m.createdAt);
     let day = out[out.length - 1];
-    if (!day || !isSameDay(new Date(day.key), d)) {
-      day = { key: d.toISOString(), label: dayLabel(d, now), groups: [] };
+    if (!day || day.day !== key) {
+      day = { key: m.createdAt, day: key, label: dayLabel(key, today), groups: [] };
       out.push(day);
     }
     const g = day.groups[day.groups.length - 1];
     const last = g?.items[g.items.length - 1];
-    if (g && last && g.userId === m.userId && !last.failed && !m.failed && Math.abs(differenceInMinutes(d, new Date(last.createdAt))) < GROUP_MINUTES) {
+    if (g && last && g.userId === m.userId && !last.failed && !m.failed && Math.abs(Date.parse(m.createdAt) - Date.parse(last.createdAt)) < GROUP_MINUTES * 60_000) {
       g.items.push(m);
     } else {
       day.groups.push({ key: m.id, userId: m.userId, userName: m.userName, at: m.createdAt, items: [m] });

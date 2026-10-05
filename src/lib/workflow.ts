@@ -4,7 +4,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { FormError } from "./action";
 import {
-  BOARD_STATUS_LABELS, LOAD_STATUS_LABELS, LOAD_TRANSITIONS, MANUAL_BOARD_STATUSES, REQUIRED_LOAD_DOCS,
+  BOARD_STATUS_LABELS, LOAD_STATUS_LABELS, LOAD_TRANSITIONS, MANUAL_BOARD_STATUSES, requiredDocsFor,
   type BillingStage, type BoardStatus, type LoadStatus,
 } from "./constants";
 import { notifyLoadStatus } from "./notify";
@@ -15,25 +15,29 @@ const DAY = 86_400_000;
 /* Numbering                                                           */
 /* ------------------------------------------------------------------ */
 
-async function nextNumber(prefix: string, start: number, fetchLast: () => Promise<string | null>) {
-  const last = await fetchLast();
-  const n = last ? Number(last.replace(/\D/g, "")) + 1 : start;
-  return `${prefix}-${n}`;
+/**
+ * Next number in a series, compared numerically: sorting the text would put INV-10000 before INV-9999 and hand
+ * out a duplicate. `table` and `column` are fixed identifiers from the callers below, never user input.
+ */
+async function nextNumber(prefix: string, start: number, table: "Invoice" | "Load" | "Claim", column: "number" | "reference") {
+  const [row] = await db.$queryRawUnsafe<{ max: number | null }[]>(
+    `SELECT MAX(CAST(SUBSTRING("${column}" FROM '[0-9]+$') AS INTEGER)) AS max FROM "${table}"`,
+  );
+  const last = row?.max == null ? null : Number(row.max);
+  return `${prefix}-${last == null ? start : Math.max(last + 1, start)}`;
 }
-export const nextInvoiceNumber = () =>
-  nextNumber("INV", 5001, async () => (await db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } }))?.number ?? null);
-export const nextLoadReference = () =>
-  nextNumber("LD", 10001, async () => (await db.load.findFirst({ orderBy: { reference: "desc" }, select: { reference: true } }))?.reference ?? null);
-export const nextClaimNumber = () =>
-  nextNumber("CLM", 1001, async () => (await db.claim.findFirst({ orderBy: { number: "desc" }, select: { number: true } }))?.number ?? null);
+export const nextInvoiceNumber = () => nextNumber("INV", 5001, "Invoice", "number");
+export const nextLoadReference = () => nextNumber("LD", 10001, "Load", "reference");
+export const nextClaimNumber = () => nextNumber("CLM", 1001, "Claim", "number");
 
 /* ------------------------------------------------------------------ */
 /* Billing stage                                                       */
 /* ------------------------------------------------------------------ */
 
-export function missingLoadDocs(docs: { kind: string }[]) {
+/** Billing paperwork still missing for a load in `status` (a TONU only needs its rate confirmation). */
+export function missingLoadDocs(docs: { kind: string }[], status = "DELIVERED") {
   const kinds = new Set(docs.map((d) => d.kind));
-  return REQUIRED_LOAD_DOCS.filter((k) => !kinds.has(k));
+  return requiredDocsFor(status).filter((k) => !kinds.has(k));
 }
 
 export async function computeBillingStage(loadId: string): Promise<BillingStage> {
@@ -44,16 +48,16 @@ export async function computeBillingStage(loadId: string): Promise<BillingStage>
   if (load.invoice?.status === "PAID") return "PAID";
   if (load.invoice || load.status === "INVOICED") return "INVOICED";
   if (load.status !== "DELIVERED" && load.status !== "TONU") return "NONE";
-  return missingLoadDocs(load.documents).length ? "MISSING_DOCS" : "READY_TO_INVOICE";
+  return missingLoadDocs(load.documents, load.status).length ? "MISSING_DOCS" : "READY_TO_INVOICE";
 }
 
 /** Re-derive the billing stage (after status changes, document uploads, payments). Logs a BILLING event when it moves. */
 export async function recomputeBillingStage(loadId: string, userId: string | null = null) {
   const stage = await computeBillingStage(loadId);
-  const load = await db.load.findUniqueOrThrow({ where: { id: loadId }, select: { billingStage: true, documents: { select: { kind: true } } } });
+  const load = await db.load.findUniqueOrThrow({ where: { id: loadId }, select: { billingStage: true, status: true, documents: { select: { kind: true } } } });
   if (load.billingStage !== stage) {
     await db.load.update({ where: { id: loadId }, data: { billingStage: stage } });
-    const missing = stage === "MISSING_DOCS" ? ` · missing ${missingLoadDocs(load.documents).join(", ")}` : "";
+    const missing = stage === "MISSING_DOCS" ? ` · missing ${missingLoadDocs(load.documents, load.status).join(", ")}` : "";
     await db.loadEvent.create({ data: { loadId, type: "BILLING", message: `Billing: ${humanStage(load.billingStage)} → ${humanStage(stage)}${missing}`, userId } });
   }
   return stage;
@@ -101,7 +105,8 @@ export function deriveBoardStatus(load: LoadForBoard): BoardStatus {
 export async function syncDriverBoardStatus(driverId: string, userId: string | null = null, opts: { force?: boolean } = {}) {
   const driver = await db.driver.findUnique({
     where: { id: driverId },
-    include: { loads: { where: { status: { in: ["ASSIGNED", "IN_TRANSIT"] } }, orderBy: { status: "desc" }, include: { stops: true }, take: 1 } },
+    // In transit first ("IN_TRANSIT" sorts after "ASSIGNED"), then the next pickup among prebooked loads.
+    include: { loads: { where: { status: { in: ["ASSIGNED", "IN_TRANSIT"] } }, orderBy: [{ status: "desc" }, { pickupAt: "asc" }], include: { stops: true }, take: 1 } },
   });
   if (!driver) return;
   if (driver.boardStatusManual && !opts.force) return;
@@ -133,16 +138,48 @@ export async function clearDriverBoardOverride(driverId: string, userId: string 
 /* Availability                                                        */
 /* ------------------------------------------------------------------ */
 
-/** Validate a truck/driver/trailer isn't already committed to another active load. */
-export async function assertAvailable(loadId: string | null, ids: { truckId?: string | null; driverId?: string | null; trailerId?: string | null }) {
-  const active = { in: ["ASSIGNED", "IN_TRANSIT"] };
-  const notThis = loadId ? { id: { not: loadId } } : {};
+/** Gap kept free around every booked load so a unit can reposition between back-to-back loads. */
+const TURNAROUND_MS = 6 * 3_600_000;
+
+type Window = { start: Date; end: Date };
+type UnitKey = "truckId" | "driverId" | "trailerId";
+
+/**
+ * The active load (dispatched or in transit) that keeps a unit busy during `window`. Without a window any active
+ * load counts. With one, only loads whose own window (padded by TURNAROUND_MS) overlaps it do, so a driver
+ * prebooked for Thursday can still run a load today. A load still in transit past its delivery time stays busy
+ * until now.
+ */
+async function busyLoad(key: UnitKey, unitId: string, loadId: string | null, window?: Window) {
+  const loads = await db.load.findMany({
+    where: { [key]: unitId, status: { in: ["ASSIGNED", "IN_TRANSIT"] }, ...(loadId ? { id: { not: loadId } } : {}) },
+    orderBy: { pickupAt: "asc" },
+    take: 50,
+    select: { reference: true, status: true, pickupAt: true, deliveryAt: true },
+  });
+  if (!window) return loads[0] ?? null;
+  const now = Date.now();
+  return loads.find((l) => {
+    const start = l.pickupAt.getTime() - TURNAROUND_MS;
+    const end = Math.max(l.deliveryAt.getTime(), l.status === "IN_TRANSIT" ? now : 0) + TURNAROUND_MS;
+    return start < window.end.getTime() && window.start.getTime() < end;
+  }) ?? null;
+}
+
+const busyText = (unit: string, l: { reference: string; status: string; pickupAt: Date }) =>
+  `${unit} is already on ${l.reference}${l.status === "ASSIGNED" ? ` (pickup ${l.pickupAt.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })})` : ""}`;
+
+/**
+ * Validate a truck/driver/trailer can take a load: in service, and not committed to another active load. Pass the
+ * load's pickup → delivery `window` to allow units booked on non-overlapping loads (prebooks).
+ */
+export async function assertAvailable(loadId: string | null, ids: { truckId?: string | null; driverId?: string | null; trailerId?: string | null }, window?: Window) {
   if (ids.truckId) {
     const truck = await db.truck.findUnique({ where: { id: ids.truckId } });
     if (!truck) throw new FormError("Truck not found");
     if (truck.status !== "ACTIVE") throw new FormError(`${truck.unitNumber} is not active (${truck.status.toLowerCase().replace(/_/g, " ")})`);
-    const busy = await db.load.findFirst({ where: { truckId: ids.truckId, status: active, ...notThis } });
-    if (busy) throw new FormError(`${truck.unitNumber} is already on ${busy.reference}`);
+    const busy = await busyLoad("truckId", ids.truckId, loadId, window);
+    if (busy) throw new FormError(busyText(truck.unitNumber, busy));
   }
   if (ids.driverId) {
     const driver = await db.driver.findUnique({ where: { id: ids.driverId } });
@@ -151,15 +188,15 @@ export async function assertAvailable(loadId: string | null, ids: { truckId?: st
     if (driver.hold) throw new FormError(`${driver.name} is on hold${driver.holdReason ? `: ${driver.holdReason}` : ""}`);
     if (driver.boardStatus === "VACATION") throw new FormError(`${driver.name} is on vacation`);
     if (driver.licenseExpiry < new Date()) throw new FormError(`${driver.name}'s license has expired`);
-    const busy = await db.load.findFirst({ where: { driverId: ids.driverId, status: active, ...notThis } });
-    if (busy) throw new FormError(`${driver.name} is already on ${busy.reference}`);
+    const busy = await busyLoad("driverId", ids.driverId, loadId, window);
+    if (busy) throw new FormError(busyText(driver.name, busy));
   }
   if (ids.trailerId) {
     const trailer = await db.trailer.findUnique({ where: { id: ids.trailerId } });
     if (!trailer) throw new FormError("Trailer not found");
     if (["SHOP", "OUT_OF_SERVICE"].includes(trailer.status)) throw new FormError(`${trailer.unitNumber} is ${trailer.status.toLowerCase().replace(/_/g, " ")}`);
-    const busy = await db.load.findFirst({ where: { trailerId: ids.trailerId, status: active, ...notThis } });
-    if (busy) throw new FormError(`${trailer.unitNumber} is already on ${busy.reference}`);
+    const busy = await busyLoad("trailerId", ids.trailerId, loadId, window);
+    if (busy) throw new FormError(busyText(trailer.unitNumber, busy));
   }
 }
 
@@ -182,6 +219,7 @@ export async function arriveAtStop(loadId: string, stopId: string, userId: strin
 export async function completeStop(loadId: string, stopId: string, userId: string | null, pos?: { lat?: number; lng?: number }) {
   const stop = await db.stop.findUniqueOrThrow({ where: { id: stopId } });
   if (stop.loadId !== loadId) throw new FormError("Stop does not belong to this load");
+  if (stop.status === "DONE") throw new FormError("This stop is already complete");
   const now = new Date();
   await db.stop.update({ where: { id: stopId }, data: { status: "DONE", arrivedAt: stop.arrivedAt ?? now, departedAt: now } });
   await db.loadEvent.create({ data: { loadId, type: "STATUS", message: `${stop.type === "PICKUP" ? "Loaded" : "Unloaded"} at ${stop.name}`, userId, lat: pos?.lat, lng: pos?.lng } });

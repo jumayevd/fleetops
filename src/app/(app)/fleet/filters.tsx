@@ -21,11 +21,21 @@ export function ListFilters({ basePath, params, selects = [], placeholder = "Sea
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [q, setQ] = useState(params.q ?? "");
+  const urlQ = params.q ?? "";
+  const [q, setQ] = useState(urlQ);
+  // The URL can change under the box (Clear filters, a KPI tile, back / forward): show what it now says. When the change
+  // is the search this box sent, keep the text instead, since the user may have typed on while it loaded.
+  const [synced, setSynced] = useState({ url: urlQ, sent: urlQ });
+  if (urlQ !== synced.url) {
+    const external = urlQ !== synced.sent;
+    setSynced({ url: urlQ, sent: external ? urlQ : synced.sent });
+    if (external) setQ(urlQ);
+  }
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const go = (patch: Record<string, string | undefined>) => {
+    if ("q" in patch) setSynced((s) => ({ ...s, sent: patch.q ?? "" }));
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries({ ...params, ...patch })) if (v) p.set(k, v);
     const s = p.toString();

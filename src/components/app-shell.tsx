@@ -149,7 +149,7 @@ function TopBar({ user, path, alerts, badges, pinned, openSearch }: {
     <>
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
+          <div className="absolute inset-0 bg-scrim" onClick={() => setMobileOpen(false)} />
           <aside className="absolute inset-y-0 left-0 w-64 border-r border-line bg-surface">
             <SideNav user={user} path={path} badges={badges} expanded pinned={pinned} onNavigate={() => setMobileOpen(false)} />
           </aside>

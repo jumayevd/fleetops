@@ -51,7 +51,7 @@ const STATUS_HINT: Record<string, string> = {
   OPEN: "Open: scheduled work, the unit stays in service until you start it.",
   IN_PROGRESS: "In progress puts the unit in the shop (truck → maintenance, trailer → shop).",
   DONE: "Done releases the unit. Out of the shop is when the work finished; for a PM the service interval restarts from the odometer below.",
-  CANCELLED: "Cancelled: kept for history, nothing changes on the unit. A job already in the shop is cancelled from its page, which releases the unit.",
+  CANCELLED: "Cancelled: kept for history; the unit is not touched. A job already in the shop is cancelled with its Cancel button, which releases the unit.",
 };
 const IN_SHOP_HINT = "In the shop now. Complete it here, or use Cancel on the work order to stop without finishing; both release the unit.";
 
@@ -128,6 +128,8 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
 
   return (
     <ActionForm action={action} className="grid gap-4 xl:grid-cols-3">
+      {/* The status this page was drawn for: the server refuses the save if the job moved on in the meantime. */}
+      {savedStatus && <input type="hidden" name="savedStatus" value={savedStatus} />}
       <div className="space-y-4 xl:col-span-2">
         <Card title="Unit" actions={!inShop && <div className="inline-flex rounded-md border border-line bg-surface p-0.5">{toggle("truck")}{toggle("trailer")}</div>}>
           {inShop ? (

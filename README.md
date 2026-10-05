@@ -73,6 +73,14 @@ PLANNED (booked) ──assign──▶ ASSIGNED (dispatched) ──pickup──�
 Billing stage follows the paperwork: delivered loads are **Missing docs** until RC and POD are on file, then
 **Ready to invoice**, then **Invoiced** / **Paid**. The rules live in `src/lib/workflow.ts`.
 
+**Prebooking.** A truck, driver or trailer can hold several dispatched loads as long as their pickup → delivery
+windows don't overlap, with a 6-hour turnaround kept free around each one (`assertAvailable`). A unit already on
+the road is busy until its load is delivered.
+
+**Company time.** Every date and time is shown and entered in the company timezone (`TIMEZONE` in
+`src/lib/constants.ts`, Asia/Tashkent). The server clock is pinned to it in `src/instrumentation.ts`, because Vercel
+runs in UTC.
+
 ## Design system
 
 "Graphite": graphite surfaces, one amber signal accent, semantic status colours, tabular numerals, compact density,

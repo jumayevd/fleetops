@@ -6,6 +6,7 @@ import { date, money, number } from "@/lib/format";
 import { Card, Cell, Table } from "@/components/ui";
 import { daysBetween, periodRange, PERIODS, type PeriodKey } from "../_lib/data";
 import { newWorkOrderHref, workOrderHref } from "../_lib/links";
+import { NO_VENDOR } from "../_lib/shared";
 import { FilterBar } from "./filter-bar";
 import { UnitLink } from "./unit-link";
 
@@ -38,7 +39,7 @@ export async function LogTab({ period, trucks, trailers, filters }: { period: Pe
     ...trucks.map((t) => ({ value: t.id, label: `${t.unitNumber} · ${t.make} ${t.model}` })),
     ...trailers.map((t) => ({ value: t.id, label: `${t.unitNumber} · trailer` })),
   ];
-  const vendorOptions = [...vendorRows.map((v) => ({ value: v.vendor!, label: v.vendor! })), { value: "__none", label: "No vendor recorded" }];
+  const vendorOptions = [...vendorRows.map((v) => ({ value: v.vendor!, label: v.vendor! })), { value: "__none", label: NO_VENDOR }];
 
   return (
     <Card flush
@@ -65,7 +66,7 @@ export async function LogTab({ period, trucks, trailers, filters }: { period: Pe
               <td className="max-w-72">
                 <Cell primary={<Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>} secondary={<span className="num">#{w.number}</span>} />
               </td>
-              <td className="max-w-44 truncate text-fg-muted">{w.vendor ?? <span className="text-fg-faint">—</span>}</td>
+              <td className="max-w-44 truncate text-fg-muted">{w.vendor ?? <span className="text-fg-faint">{NO_VENDOR}</span>}</td>
               <td className="whitespace-nowrap text-fg-muted">{date(w.inAt)}</td>
               <td className="whitespace-nowrap text-fg-muted">{date(w.outAt ?? w.completedAt)}</td>
               <td className="num">{days == null ? <span className="text-fg-faint">—</span> : days}</td>

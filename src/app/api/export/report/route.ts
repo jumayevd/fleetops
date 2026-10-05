@@ -42,8 +42,9 @@ export async function GET(req: NextRequest) {
       break;
   }
 
-  const meta = `# ${type} · completed loads delivered ${format(r.range.from, "yyyy-MM-dd")} to ${format(r.range.to, "yyyy-MM-dd")} (${period})`;
-  const csv = [meta, head.map(cell).join(","), ...rows.map((row) => row.map(cell).join(","))].join("\r\n");
+  // The header is the first line so spreadsheets and pivots read it as the header row; the file name carries the
+  // report type, period and date.
+  const csv = [head.map(cell).join(","), ...rows.map((row) => row.map(cell).join(","))].join("\r\n");
   const name = `report-${type}-${period}-${format(r.range.to, "yyyy-MM-dd")}.csv`;
   return new NextResponse(`\uFEFF${csv}\r\n`, {
     headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${name}"`, "cache-control": "no-store" },

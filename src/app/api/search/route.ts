@@ -41,7 +41,7 @@ export async function GET(req: Request) {
   if (loads.length) groups.push({ label: "Loads", hits: loads.map((l) => ({ id: l.id, title: l.reference, mono: true, subtitle: `${l.originCity} → ${l.destCity} · ${l.customer.name}`, badge: LOAD_STATUS_LABELS[l.status as LoadStatus] ?? l.status, href: `/loads/${l.id}` })) });
   if (drivers.length) groups.push({ label: "Drivers", hits: drivers.map((d) => ({ id: d.id, title: d.name, subtitle: [d.truck?.unitNumber, d.phone].filter(Boolean).join(" · "), badge: d.status, href: `/drivers/${d.id}` })) });
   if (trucks.length) groups.push({ label: "Trucks", hits: trucks.map((t) => ({ id: t.id, title: t.unitNumber, mono: true, subtitle: `${t.make} ${t.model} · ${t.plate}`, badge: t.status, href: `/fleet/${t.id}` })) });
-  if (trailers.length) groups.push({ label: "Trailers", hits: trailers.map((t) => ({ id: t.id, title: t.unitNumber, mono: true, subtitle: t.type, badge: t.status, href: `/fleet/trailers` })) });
+  if (trailers.length) groups.push({ label: "Trailers", hits: trailers.map((t) => ({ id: t.id, title: t.unitNumber, mono: true, subtitle: t.type, badge: t.status, href: `/fleet/trailers/${t.id}` })) });
   if (customers.length) groups.push({ label: "Customers", hits: customers.map((c) => ({ id: c.id, title: c.name, subtitle: [c.contactName, c.city].filter(Boolean).join(" · "), href: `/customers/${c.id}` })) });
   if (invoices.length) groups.push({ label: "Invoices", hits: invoices.map((i) => ({ id: i.id, title: i.number, mono: true, subtitle: i.customer.name, badge: i.status, href: `/finance/invoices/${i.id}` })) });
 

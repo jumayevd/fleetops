@@ -1,8 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { WORK_ORDER_CATEGORIES, WORK_ORDER_STATUSES } from "@/lib/constants";
 import { toDateInput, toLocalInput } from "@/lib/format";
-import { saveWorkOrder } from "@/app/actions/fleet";
 import { PageHeader } from "@/components/ui";
+import { saveWorkOrderChecked } from "../../_lib/actions";
 import { str, workOrderFormOptions } from "../../_lib/data";
 import { IN_HOUSE_VENDOR } from "../../_lib/shared";
 import { WorkOrderForm } from "../../_components/work-order-form";
@@ -36,7 +36,7 @@ export default async function NewWorkOrder({ searchParams }: PageProps<"/mainten
           : "Pick the unit, describe the work and set a date. Costs can be filled in later."}
       />
       <WorkOrderForm
-        action={saveWorkOrder.bind(null, null)}
+        action={saveWorkOrderChecked.bind(null, null)}
         trucks={trucks}
         trailers={trailers}
         vendors={vendors}

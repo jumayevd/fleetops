@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, MapPin } from "lucide-react";
 import { buttonClass, cn } from "@/components/ui";
 import { driverStopAction } from "@/app/actions/driver";
@@ -13,6 +14,7 @@ import { freshFix } from "./geo-store";
 export function StopActions({ loadId, stopId, status, type, allowComplete }: {
   loadId: string; stopId: string; status: string; type: string; allowComplete: boolean;
 }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const action = status === "PENDING" ? "arrive" : status === "ARRIVED" && allowComplete ? "complete" : null;
@@ -22,9 +24,13 @@ export function StopActions({ loadId, stopId, status, type, allowComplete }: {
     setError(null);
     start(async () => {
       try {
-        await driverStopAction(loadId, stopId, action, freshFix());
-      } catch (e) {
-        setError(e instanceof Error && e.message ? e.message : "Could not update the stop — check your connection and try again.");
+        const r = await driverStopAction(loadId, stopId, action, freshFix());
+        if (r?.error) {
+          setError(r.error);
+          router.refresh(); // the trip or its stops changed since this page loaded: show the current state
+        }
+      } catch {
+        setError("Could not update the stop — check your connection and try again.");
       }
     });
   };

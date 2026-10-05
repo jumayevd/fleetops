@@ -62,6 +62,12 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
     return `/admin/users${s ? `?${s}` : ""}`;
   };
   const countFor = (r: Role) => all.filter((u) => u.role === r && (showDisabled || u.active)).length;
+  // Empty table: say whether the toggle is hiding disabled accounts or the role simply has nobody yet.
+  const hiddenDisabled = showDisabled ? 0 : all.filter((u) => !u.active && (!role || u.role === role)).length;
+  const roleName = role ? ROLE_LABELS[role].toLowerCase() : null;
+  const empty = hiddenDisabled
+    ? { title: roleName ? `No active ${roleName} accounts` : "No active accounts", description: `${hiddenDisabled} disabled ${hiddenDisabled === 1 ? "account is" : "accounts are"} hidden. Use Show disabled to include them.` }
+    : { title: roleName ? `No ${roleName} accounts yet` : "No accounts yet", description: role === "DRIVER" ? "Driver logins are created from Drivers → Add driver, so each one is tied to a driver profile." : "Create one with Add a team member." };
   const roleOptions = ROLES.filter((r) => r !== "OWNER" || me.role === "OWNER").map((r) => ({ value: r, label: ROLE_LABELS[r] }));
 
   const perms = (Object.keys(PERMISSIONS) as Permission[]).map((p) => ({ key: p, area: AREA_LABELS[p.split(".")[0]] ?? "Other" }));
@@ -99,7 +105,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
 
           <Card flush>
             <Table head={["Name", "Role", "Team", "Status", "Telegram", "Last sign-in", ""]}
-              empty={users.length === 0} emptyTitle="No accounts match" emptyDescription={showDisabled ? "Try another role filter." : "Disabled accounts are hidden — use Show disabled to include them."}>
+              empty={users.length === 0} emptyTitle={empty.title} emptyDescription={empty.description}>
               {users.map((u) => {
                 const canEdit = u.role !== "OWNER" || me.role === "OWNER";
                 return (
@@ -153,14 +159,14 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
           </Card>
         </div>
 
-        <Card title="Invite a team member" className="h-fit">
+        <Card title="Add a team member" className="h-fit">
           <ActionForm action={createUser} resetOnSuccess className="space-y-3">
             <Field label="Full name" required><Input name="name" required placeholder="As it should appear on the board" /></Field>
             <Field label="Email" required hint="Used to sign in."><Input name="email" type="email" required placeholder="name@company.uz" /></Field>
             <Field label="Phone"><Input name="phone" type="tel" placeholder="+998 90 000 00 00" className="num" /></Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Role" required><Select name="role" required defaultValue="DISPATCHER" options={roleOptions} /></Field>
-              <Field label="Team" hint="Dispatchers only."><Select name="teamId" placeholder="No team" options={teams.map((t) => ({ value: t.id, label: t.name }))} /></Field>
+              <Field label="Team" hint="Used to group dispatchers on the board."><Select name="teamId" placeholder="No team" options={teams.map((t) => ({ value: t.id, label: t.name }))} /></Field>
             </div>
             <Field label="Temporary password" required hint="At least 8 characters. Ask them to change it after the first sign-in.">
               <Input name="password" type="password" minLength={8} required autoComplete="new-password" />
@@ -187,9 +193,10 @@ function AreaRows({ area, perms }: { area: string; perms: Permission[] }) {
           <td className="px-4 py-1.5 text-fg">{PERM_LABELS[p] ?? p}</td>
           {ROLES.map((r) => {
             const ok = (PERMISSIONS[p] as readonly string[]).includes(r);
+            const label = `${ROLE_LABELS[r]}: ${ok ? "allowed" : "not allowed"}`;
             return (
               <td key={r} className="px-2 py-1.5 text-center">
-                <span aria-label={ok ? `${ROLE_LABELS[r]}: allowed` : `${ROLE_LABELS[r]}: not allowed`}
+                <span role="img" aria-label={label} title={label}
                   className={cn("inline-block h-2 w-2 rounded-full", ok ? "bg-ok" : "border border-line")} />
               </td>
             );

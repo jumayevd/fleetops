@@ -61,10 +61,23 @@ export async function saveLoad(loadId: string | null, _: ActionState, fd: FormDa
     const summary = routeSummaryFromStops(stops.map((s) => ({ ...s })));
     if (summary.deliveryAt <= summary.pickupAt) throw new FormError("Delivery must be after pickup");
 
+    const existing = loadId ? await db.load.findUniqueOrThrow({ where: { id: loadId } }) : null;
+    if (existing?.status === "INVOICED") throw new FormError("This load is invoiced. Change the invoice instead.");
+    // Units are fixed once a load is under way; Recover moves it to another unit.
+    const locked = existing ? !["PLANNED", "ASSIGNED"].includes(existing.status) : false;
     const truckId = f.str("truckId");
     const driverId = f.str("driverId");
-    const trailerId = f.str("trailerId");
-    await assertAvailable(loadId, { truckId, driverId, trailerId });
+    const trailerId = locked ? existing!.trailerId : f.str("trailerId");
+    if (locked && (truckId !== existing!.truckId || driverId !== existing!.driverId)) throw new FormError("Use “Recover” to move an in-progress load to another unit");
+    if (!locked) {
+      // Only units that change are checked: an unchanged driver who went on hold must not block a rate or note edit.
+      const changed = (next: string | null, prev: string | null | undefined) => (next && next !== prev ? next : null);
+      await assertAvailable(loadId, {
+        truckId: changed(truckId, existing?.truckId),
+        driverId: changed(driverId, existing?.driverId),
+        trailerId: changed(trailerId, existing?.trailerId),
+      }, { start: summary.pickupAt, end: summary.deliveryAt });
+    }
 
     const distanceKm = f.num("distanceKm") ?? routeKm(stops);
     const driver = driverId ? await db.driver.findUnique({ where: { id: driverId } }) : null;
@@ -95,20 +108,28 @@ export async function saveLoad(loadId: string | null, _: ActionState, fd: FormDa
       truckId, driverId, trailerId,
     };
 
-    if (loadId) {
-      const existing = await db.load.findUniqueOrThrow({ where: { id: loadId } });
-      const locked = !["PLANNED", "ASSIGNED"].includes(existing.status);
-      if (locked && (truckId !== existing.truckId || driverId !== existing.driverId)) throw new FormError("Use “Recover” to move an in-progress load to another unit");
-      const status = existing.status === "PLANNED" && truckId && driverId ? "ASSIGNED" : existing.status;
+    if (loadId && existing) {
+      // Booked + truck and driver → dispatched; dispatched with either cleared → back to booked.
+      const status = existing.status === "PLANNED" && truckId && driverId ? "ASSIGNED"
+        : existing.status === "ASSIGNED" && !(truckId && driverId) ? "PLANNED"
+        : existing.status;
       await db.load.update({ where: { id: loadId }, data: { ...data, status } });
       if (!locked) {
         await db.stop.deleteMany({ where: { loadId } });
         await db.stop.createMany({ data: stops.map((s) => ({ ...s, loadId })) });
       }
+      const now = new Date();
+      // A dispatched load holds its trailer: release it when it is swapped out or the load goes back to booked.
+      if (existing.status === "ASSIGNED" && existing.trailerId && (existing.trailerId !== trailerId || status === "PLANNED")) {
+        await db.trailer.update({ where: { id: existing.trailerId }, data: { status: "EMPTY", statusSince: now } });
+      }
+      if (trailerId && status === "ASSIGNED") await db.trailer.update({ where: { id: trailerId }, data: { status: "IN_USE", statusSince: now, truckId } });
       await db.loadEvent.create({ data: { loadId, type: "EDIT", message: "Load details updated", userId: me.id } });
+      if (status === "PLANNED" && existing.status === "ASSIGNED") {
+        await db.loadEvent.create({ data: { loadId, type: "STATUS", message: "Unassigned — back to planning", userId: me.id } });
+      }
       if (existing.driverId && existing.driverId !== driverId) await syncDriverBoardStatus(existing.driverId, me.id, { force: true });
       if (driverId) await syncDriverBoardStatus(driverId, me.id, { force: true });
-      if (trailerId && status === "ASSIGNED") await db.trailer.update({ where: { id: trailerId }, data: { status: "IN_USE", statusSince: new Date(), truckId } });
       await audit(me.id, "update", "load", loadId, existing.reference);
     } else {
       const reference = await nextLoadReference();
@@ -142,7 +163,7 @@ export async function assignLoad(loadId: string, _: ActionState, fd: FormData): 
     const trailerId = f.str("trailerId");
     const load = await db.load.findUniqueOrThrow({ where: { id: loadId } });
     if (!["PLANNED", "ASSIGNED"].includes(load.status)) throw new FormError("Only booked or dispatched loads can be (re)assigned — use Recover for loads in transit");
-    await assertAvailable(loadId, { truckId, driverId, trailerId });
+    await assertAvailable(loadId, { truckId, driverId, trailerId }, { start: load.pickupAt, end: load.deliveryAt });
     const [truck, driver] = await Promise.all([
       db.truck.findUniqueOrThrow({ where: { id: truckId } }),
       db.driver.findUniqueOrThrow({ where: { id: driverId } }),
@@ -175,11 +196,16 @@ export async function recoverLoad(loadId: string, _: ActionState, fd: FormData):
     const reason = f.str("reason");
     const load = await db.load.findUniqueOrThrow({ where: { id: loadId }, include: { truck: true, driver: true } });
     if (!["ASSIGNED", "IN_TRANSIT"].includes(load.status)) throw new FormError("Only dispatched or in-transit loads can be recovered");
-    await assertAvailable(loadId, { truckId, driverId, trailerId: trailerId ?? undefined });
+    // The new unit has to be free from now (or the pickup, if later) until delivery.
+    const now = new Date();
+    const start = load.status === "IN_TRANSIT" || load.pickupAt < now ? now : load.pickupAt;
+    await assertAvailable(loadId, { truckId, driverId, trailerId: trailerId ?? undefined }, { start, end: load.deliveryAt > start ? load.deliveryAt : start });
     const [truck, driver] = await Promise.all([db.truck.findUniqueOrThrow({ where: { id: truckId } }), db.driver.findUniqueOrThrow({ where: { id: driverId } })]);
     await db.load.update({ where: { id: loadId }, data: { truckId, driverId, trailerId: trailerId ?? load.trailerId, driverPay: Math.round(load.distanceKm * driver.payPerKm) } });
+    // Swapping trailers (transload) frees the old one.
+    if (trailerId && load.trailerId && load.trailerId !== trailerId) await db.trailer.update({ where: { id: load.trailerId }, data: { status: "EMPTY", statusSince: now } });
     const finalTrailer = trailerId ?? load.trailerId;
-    if (finalTrailer) await db.trailer.update({ where: { id: finalTrailer }, data: { status: "IN_USE", statusSince: new Date(), truckId } });
+    if (finalTrailer) await db.trailer.update({ where: { id: finalTrailer }, data: { status: "IN_USE", statusSince: now, truckId } });
     if (load.driverId) await syncDriverBoardStatus(load.driverId, me.id, { force: true });
     await syncDriverBoardStatus(driverId, me.id, { force: true });
     const from = `${load.truck?.unitNumber ?? "—"} · ${load.driver?.name ?? "—"}`;
@@ -205,19 +231,22 @@ export async function setLoadStatus(loadId: string, _: ActionState, fd: FormData
   });
 }
 
-/** Dispatcher marks a stop arrived / completed on behalf of the driver. */
-export async function updateStop(loadId: string, stopId: string, action: "arrive" | "complete") {
+/** Dispatcher marks a stop arrived / completed on behalf of the driver. Rule violations come back as { error }. */
+export async function updateStop(loadId: string, stopId: string, action: "arrive" | "complete"): Promise<ActionState> {
   const me = await requireUser("loads.edit");
-  if (action === "arrive") await arriveAtStop(loadId, stopId, me.id);
-  else {
-    const last = await completeStop(loadId, stopId, me.id);
-    if (last) {
-      const load = await db.load.findUniqueOrThrow({ where: { id: loadId } });
-      if (load.status === "IN_TRANSIT") await transitionLoad(loadId, "DELIVERED", me.id);
+  const res = await attempt(async () => {
+    if (action === "arrive") await arriveAtStop(loadId, stopId, me.id);
+    else {
+      const last = await completeStop(loadId, stopId, me.id);
+      if (last) {
+        const load = await db.load.findUniqueOrThrow({ where: { id: loadId } });
+        if (load.status === "IN_TRANSIT") await transitionLoad(loadId, "DELIVERED", me.id);
+      }
     }
-  }
+  });
   revalidatePath(`/loads/${loadId}`);
   revalidatePath("/dispatch");
+  return res;
 }
 
 export async function addLoadEvent(loadId: string, _: ActionState, fd: FormData): Promise<ActionState> {
@@ -239,12 +268,16 @@ export async function addLoadEvent(loadId: string, _: ActionState, fd: FormData)
   });
 }
 
-export async function deleteLoad(loadId: string) {
+export async function deleteLoad(loadId: string): Promise<ActionState> {
   const me = await requireUser("users.manage");
-  const load = await db.load.findUniqueOrThrow({ where: { id: loadId } });
-  if (!["PLANNED", "CANCELLED"].includes(load.status)) throw new Error("Only booked or cancelled loads can be deleted");
-  await db.load.delete({ where: { id: loadId } });
-  await audit(me.id, "delete", "load", loadId, load.reference);
+  const res = await attempt(async () => {
+    const load = await db.load.findUnique({ where: { id: loadId } });
+    if (!load) throw new FormError("This load no longer exists.");
+    if (!["PLANNED", "CANCELLED"].includes(load.status)) throw new FormError("Only booked or cancelled loads can be deleted.");
+    await db.load.delete({ where: { id: loadId } });
+    await audit(me.id, "delete", "load", loadId, load.reference);
+  });
+  if (res?.error) return res;
   revalidatePath("/loads");
   redirect("/loads");
 }

@@ -2,14 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { Check, Play, X } from "lucide-react";
-import { setWorkOrderStatus } from "@/app/actions/fleet";
 import { Button, cn } from "@/components/ui";
+import { moveWorkOrder } from "../_lib/actions";
 
 /**
  * Status buttons for a work order row or header.
  * Draft / open → Start (in progress). In progress → Complete (done). Anything not finished → Cancel.
  * The server action applies the side effects (unit into / out of the shop, PM interval reset); cancelling a job
- * in progress releases the unit too.
+ * in progress releases the unit too. It re-checks the work order first, so a stale page cannot start a job on a unit
+ * that has since gone out on a load, or move a job someone else already finished.
  */
 export function WorkOrderStatusButtons({ id, status, number, size = "sm", compact, blockedBy, className }: {
   id: string;
@@ -31,9 +32,10 @@ export function WorkOrderStatusButtons({ id, status, number, size = "sm", compac
     start(async () => {
       setError(null);
       try {
-        await setWorkOrderStatus(id, to);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not update the work order");
+        const res = await moveWorkOrder(id, to);
+        if (res?.error) setError(res.error);
+      } catch {
+        setError("Could not update the work order. Refresh the page and try again.");
       }
     });
 

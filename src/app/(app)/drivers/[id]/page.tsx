@@ -62,7 +62,7 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
       select: { rate: true, driverPay: true, distanceKm: true, emptyKm: true, deliveredAt: true, deliveryAt: true },
     }),
     db.load.findFirst({
-      where: { driverId: id, status: { in: [...ACTIVE_LOAD_STATUSES] } }, orderBy: { status: "desc" },
+      where: { driverId: id, status: { in: [...ACTIVE_LOAD_STATUSES] } }, orderBy: [{ status: "desc" }, { pickupAt: "asc" }],
       select: { id: true, reference: true, status: true, originCity: true, destCity: true, pickupAt: true, deliveryAt: true, departedAt: true, distanceKm: true, customer: { select: { name: true } } },
     }),
     db.document.findMany({ where: { driverId: id, kind: { in: [...REQUIRED_DRIVER_DOCS] } }, orderBy: { createdAt: "desc" }, select: { id: true, kind: true, name: true, expiresAt: true } }),
@@ -85,8 +85,10 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
   if (missingDocs.length) attention.push({ tone: "warn", text: `Paperwork incomplete: ${missingDocs.map((k) => DOC_KIND_LABELS[k].toLowerCase()).join(", ")} not on file`, href: `/drivers/${id}?tab=documents` });
   if (idleDays >= IDLE_DAYS) attention.push({ tone: "info", text: `Ready for ${idleDays}d with no load assigned`, href: `/dispatch?driver=${id}` });
   if (driver.status === "ACTIVE" && !driver.truck) attention.push({ tone: "info", text: "No truck assigned", href: "/fleet" });
-  // No screen can add a login to an existing driver yet (the edit form and /admin/users cannot link one), so this row is informational.
-  if (driver.status === "ACTIVE" && !driver.user) attention.push({ tone: "neutral", text: "No app login — the driver cannot update stops or upload PODs from the road" });
+  // The edit form creates the login (email + password) for a driver who has none.
+  if (driver.status === "ACTIVE" && !driver.user) {
+    attention.push({ tone: "neutral", text: "No app login — the driver cannot update stops or upload PODs from the road", href: can(user.role, "drivers.edit") ? `/drivers/${id}/edit` : undefined });
+  }
   if (driver.status === "ACTIVE" && driver.user && !driver.user.active) {
     attention.push({ tone: "warn", text: "App login is deactivated", href: can(user.role, "users.manage") ? `/admin/users/${driver.user.id}` : undefined });
   }
@@ -529,7 +531,7 @@ async function HistoryTab({ driverId, current }: { driverId: string; current: { 
                       <span className="inline-flex items-center gap-1.5 text-fg"><StatusDot tone={tone} />{label(s.status)}</span>
                       <span className="num text-fg-muted">{fmtDuration(s.ms)} <span className="text-fg-subtle">· {Math.round(pct)}%</span></span>
                     </div>
-                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-sunken"><div className={cn("h-full rounded-full", TONE_DOT[tone])}style={{ width: `${Math.max(1, Math.round(pct))}%` }} /></div>
+                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-sunken"><div className={cn("h-full rounded-full", TONE_DOT[tone])} style={{ width: `${Math.max(1, Math.round(pct))}%` }} /></div>
                   </li>
                 );
               })}

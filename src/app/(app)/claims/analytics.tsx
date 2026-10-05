@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { CLAIM_FAULT_LABELS, CLAIM_TYPE_LABELS } from "@/lib/constants";
 import { money, number } from "@/lib/format";
 import { Card, Table } from "@/components/ui";
-import { Bars, Donut, SimpleBar, TrendLine, type ChartTone } from "@/components/charts";
+import { Bars, Donut, TrendLine, type ChartTone } from "@/components/charts";
 import { claimAnalytics } from "./query";
 import { FAULT_TONE, claimStatusLabel, claimsHref, type ClaimFilters } from "./shared";
 
@@ -48,9 +48,15 @@ export async function ClaimAnalytics({ where, filters }: { where: Prisma.ClaimWh
       </Card>
 
       <Card title="Status funnel" actions={inFlight > 0 && <span className="num text-[11px] text-fg-subtle">{inFlight} contested</span>}>
-        <SimpleBar
-          data={a.funnel.map((f) => ({ status: claimStatusLabel(f.status), count: f.count }))}
-          dataKey="count" nameKey="status" layout="vertical" labelWidth={104} height={300} tone="progress" format="number" />
+        {/* Counts are small whole numbers: Bars prints them as-is (a numeric axis would repeat ticks like 0 0 1 1). */}
+        <Bars
+          data={a.total === 0 ? [] : a.funnel.map((f) => ({
+            label: claimStatusLabel(f.status), value: f.count,
+            hint: `${f.count} ${f.count === 1 ? "claim" : "claims"} ${claimStatusLabel(f.status).toLowerCase()}`,
+            href: f.count > 0 ? tableHref({ status: f.status }) : undefined,
+          }))}
+          tone="progress" format="number" labelWidth={104} valueWidth={40} />
+        {a.total > 0 && <p className="mt-3 text-[11px] text-fg-subtle">Where each claim sits now, in lifecycle order. Click a status to open those claims.</p>}
       </Card>
 
       <Card title="Claims per month" className="xl:col-span-2"

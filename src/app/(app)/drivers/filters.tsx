@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Search, ShieldAlert, X, Eye } from "lucide-react";
 import { buttonClass, cn, inputClass } from "@/components/ui";
 
-export type DriverFilterParams = { team?: string; type?: string; status?: string; risk?: string; inactive?: string; hold?: string; q?: string };
+export type DriverFilterParams = { team?: string; type?: string; status?: string; atRisk?: string; inactive?: string; hold?: string; q?: string };
 type Opt = { value: string; label: string };
 
 /**
@@ -32,8 +32,8 @@ export function DriverFilters({ params, teams, types, statuses }: {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => go({ q: v.trim() || undefined }), 300);
   };
-  const toggle = (key: "risk" | "inactive") => go({ [key]: params[key] ? undefined : "1" });
-  const active = Boolean(params.team || params.type || params.status || params.risk || params.inactive || params.hold || params.q);
+  const toggle = (key: "atRisk" | "inactive") => go({ [key]: params[key] ? undefined : "1" });
+  const active = Boolean(params.team || params.type || params.status || params.atRisk || params.inactive || params.hold || params.q);
   const select = cn(inputClass, "h-7 w-auto min-w-28 pr-7 text-[12px]");
   const pill = (on: boolean) => cn(
     "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
@@ -42,7 +42,7 @@ export function DriverFilters({ params, teams, types, statuses }: {
 
   return (
     <div className={cn("flex flex-wrap items-center gap-2", pending && "opacity-70")} aria-busy={pending || undefined}>
-      <label className="relative block">
+      <div className="relative">
         <Search className="pointer-events-none absolute inset-y-0 left-2 my-auto h-3.5 w-3.5 text-fg-subtle" />
         <input value={q} onChange={(e) => onSearch(e.target.value)} placeholder="Name, phone, licence, truck…" aria-label="Search drivers"
           onKeyDown={(e) => { if (e.key === "Enter") { if (timer.current) clearTimeout(timer.current); go({ q: q.trim() || undefined }); } }}
@@ -53,7 +53,7 @@ export function DriverFilters({ params, teams, types, statuses }: {
             <X className="h-3 w-3" />
           </button>
         )}
-      </label>
+      </div>
 
       <select aria-label="Team" value={params.team ?? ""} onChange={(e) => go({ team: e.target.value || undefined })} className={cn(select, !params.team && "text-fg-muted")}>
         <option value="">All teams</option>
@@ -69,7 +69,7 @@ export function DriverFilters({ params, teams, types, statuses }: {
         {statuses.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
       </select>
 
-      <button type="button" aria-pressed={Boolean(params.risk)} onClick={() => toggle("risk")} className={pill(Boolean(params.risk))}
+      <button type="button" aria-pressed={Boolean(params.atRisk)} onClick={() => toggle("atRisk")} className={pill(Boolean(params.atRisk))}
         title="Score under 75, or licence / medical expired or expiring within 30 days">
         <ShieldAlert className="h-3.5 w-3.5" />At risk only
       </button>

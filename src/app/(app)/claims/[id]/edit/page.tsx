@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { endOfDay } from "date-fns";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CLAIM_TYPE_LABELS } from "@/lib/constants";
@@ -37,7 +38,8 @@ export default async function EditClaimPage({ params }: PageProps<"/claims/[id]/
         title={<span className="flex flex-wrap items-center gap-2">Edit <span className="num">{claim.number}</span><Badge value={claim.status} label={claimStatusLabel(claim.status)} dot /></span>}
         subtitle={`${CLAIM_TYPE_LABELS[claim.type] ?? claim.type} · changes are written to the audit log and the team is told when the status moves.`}
       />
-      <ClaimForm action={saveClaim.bind(null, id)} options={options} defaults={defaults} mode="edit" statusOptions={statusOptions} cancelHref={`/claims/${id}`} />
+      <ClaimForm action={saveClaim.bind(null, id)} options={options} defaults={defaults} mode="edit" statusOptions={statusOptions} cancelHref={`/claims/${id}`}
+        maxIncident={toLocalInput(endOfDay(new Date()))} />
     </>
   );
 }

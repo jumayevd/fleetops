@@ -14,6 +14,22 @@ import { syncDriverBoardStatus } from "@/lib/workflow";
 /* Drivers                                                             */
 /* ------------------------------------------------------------------ */
 
+/** Board status that goes with an employment status off duty: on leave → Vacation, inactive → Home. */
+const offDutyBoard = (status: string) => (status === "ON_LEAVE" ? "VACATION" : "HOME");
+
+/** Park an off-duty driver on the board (a manual status, so loads don't override it) and log it in the history. */
+async function parkOffDuty(driverId: string, status: string, userId: string) {
+  const board = offDutyBoard(status);
+  await db.driver.update({ where: { id: driverId }, data: { boardStatus: board, boardStatusSince: new Date(), boardStatusManual: true } });
+  await db.driverStatusEvent.create({ data: { driverId, status: board, source: "MANUAL", userId, note: status === "ON_LEAVE" ? "On leave" : "Inactive" } });
+}
+
+/** A driver's employment can only change off duty once they are off their loads. */
+async function assertOffLoads(driverId: string, name: string) {
+  const busy = await db.load.findFirst({ where: { driverId, status: { in: ["ASSIGNED", "IN_TRANSIT"] } }, orderBy: { pickupAt: "asc" }, select: { reference: true } });
+  if (busy) throw new FormError(`${name} is on ${busy.reference}. Recover the load to another driver first.`);
+}
+
 export async function saveDriver(driverId: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requireUser("drivers.edit");
   let id = driverId;
@@ -42,25 +58,35 @@ export async function saveDriver(driverId: string | null, _: ActionState, fd: Fo
       holdReason: f.bool("hold") ? f.str("holdReason") : null,
       notes: f.str("notes"),
     };
+    // A password creates the driver's app login, on a new profile or on one that has none yet.
+    const password = f.str("password");
+    if (password && password.length < 8) throw new FormError("Password must be at least 8 characters");
+    const createLogin = async () => {
+      if (!data.email) throw new FormError("Email is required to create an app login");
+      const u = await db.user.create({
+        data: { name: data.name, email: data.email, phone: data.phone, role: "DRIVER", passwordHash: await bcrypt.hash(password!, 10) },
+      });
+      await audit(me.id, "create", "user", u.id, `${u.email} as DRIVER`);
+      return u.id;
+    };
+
     if (driverId) {
-      await db.driver.update({ where: { id: driverId }, data });
-      if (status !== "ACTIVE") {
-        await db.driver.update({ where: { id: driverId }, data: { boardStatus: status === "ON_LEAVE" ? "VACATION" : "HOME", boardStatusSince: new Date(), boardStatusManual: true } });
+      const prev = await db.driver.findUniqueOrThrow({ where: { id: driverId }, select: { status: true, userId: true } });
+      const statusChanged = prev.status !== status;
+      if (statusChanged && status !== "ACTIVE") await assertOffLoads(driverId, data.name);
+      const userId = password && !prev.userId ? await createLogin() : undefined;
+      await db.driver.update({ where: { id: driverId }, data: { ...data, ...(userId ? { userId } : {}) } });
+      // The board only moves when employment actually changes: re-saving a driver on leave keeps a manual Rest.
+      if (statusChanged) {
+        if (status === "ACTIVE") await syncDriverBoardStatus(driverId, me.id, { force: true });
+        else await parkOffDuty(driverId, status, me.id);
       }
       await audit(me.id, "update", "driver", driverId, data.name);
     } else {
-      const password = f.str("password");
-      let userId: string | undefined;
-      if (password) {
-        if (!data.email) throw new FormError("Email is required to create an app login");
-        if (password.length < 8) throw new FormError("Password must be at least 8 characters");
-        const u = await db.user.create({
-          data: { name: data.name, email: data.email, phone: data.phone, role: "DRIVER", passwordHash: await bcrypt.hash(password, 10) },
-        });
-        userId = u.id;
-      }
+      const userId = password ? await createLogin() : undefined;
       const d = await db.driver.create({ data: { ...data, userId } });
       id = d.id;
+      if (status !== "ACTIVE") await parkOffDuty(d.id, status, me.id);
       await audit(me.id, "create", "driver", d.id, data.name);
     }
   });
@@ -88,18 +114,24 @@ export async function setDriverHold(driverId: string, hold: boolean, reason?: st
   revalidatePath("/dispatch");
 }
 
-export async function setDriverEmployment(driverId: string, status: string) {
+/** Employment status from the driver header. Refusals come back as { error } (a thrown message is hidden in production). */
+export async function setDriverEmployment(driverId: string, status: string): Promise<ActionState> {
   const me = await requireUser("drivers.edit");
-  if (!DRIVER_STATUSES.includes(status as never)) throw new Error("Invalid status");
-  const busy = await db.load.findFirst({ where: { driverId, status: { in: ["ASSIGNED", "IN_TRANSIT"] } } });
-  if (busy && status !== "ACTIVE") throw new Error(`Driver is on ${busy.reference} — recover the load first`);
-  const d = await db.driver.update({ where: { id: driverId }, data: { status } });
-  if (status === "ACTIVE") await syncDriverBoardStatus(driverId, me.id, { force: true });
-  else await db.driver.update({ where: { id: driverId }, data: { boardStatus: status === "ON_LEAVE" ? "VACATION" : "HOME", boardStatusSince: new Date(), boardStatusManual: true } });
-  await audit(me.id, "status", "driver", driverId, `${d.name} → ${status}`);
+  const res = await attempt(async () => {
+    if (!DRIVER_STATUSES.includes(status as never)) throw new FormError("Pick a valid status");
+    const prev = await db.driver.findUnique({ where: { id: driverId }, select: { name: true, status: true } });
+    if (!prev) throw new FormError("This driver no longer exists.");
+    if (prev.status === status) return { ok: "No change" };
+    if (status !== "ACTIVE") await assertOffLoads(driverId, prev.name);
+    await db.driver.update({ where: { id: driverId }, data: { status } });
+    if (status === "ACTIVE") await syncDriverBoardStatus(driverId, me.id, { force: true });
+    else await parkOffDuty(driverId, status, me.id);
+    await audit(me.id, "status", "driver", driverId, `${prev.name} → ${status}`);
+  });
   revalidatePath("/drivers");
   revalidatePath(`/drivers/${driverId}`);
   revalidatePath("/dispatch");
+  return res;
 }
 
 /* ------------------------------------------------------------------ */
@@ -167,6 +199,9 @@ export async function saveCustomer(customerId: string | null, _: ActionState, fd
 /* Users                                                               */
 /* ------------------------------------------------------------------ */
 
+/** Dispatch teams are made of dispatchers (and fleet managers); other roles don't carry a team. */
+const teamFor = (role: string, teamId: string | null) => (role === "DISPATCHER" || role === "FLEET_MANAGER" ? teamId : null);
+
 export async function createUser(_: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requireUser("users.manage");
   return attempt(async () => {
@@ -182,7 +217,7 @@ export async function createUser(_: ActionState, fd: FormData): Promise<ActionSt
         email: f.req("email", "Email").toLowerCase(),
         phone: f.str("phone"),
         role,
-        teamId: f.str("teamId"),
+        teamId: teamFor(role, f.str("teamId")),
         passwordHash: await bcrypt.hash(password, 10),
       },
     });
@@ -206,7 +241,7 @@ export async function updateUser(userId: string, _: ActionState, fd: FormData): 
     if (password && password.length < 8) throw new FormError("Password must be at least 8 characters");
     await db.user.update({
       where: { id: userId },
-      data: { role, active, name: f.req("name", "Name"), phone: f.str("phone"), teamId: f.str("teamId"), ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) },
+      data: { role, active, name: f.req("name", "Name"), phone: f.str("phone"), teamId: teamFor(role, f.str("teamId")), ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) },
     });
     await audit(me.id, "update", "user", userId,
       `${target.email}: role ${target.role}→${role}, active ${target.active}→${active}${password ? ", password reset" : ""}`);

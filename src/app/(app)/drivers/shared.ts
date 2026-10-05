@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { Tone } from "@/components/ui";
 import { daysUntil } from "@/lib/format";
 
@@ -46,6 +47,13 @@ export function riskReasons(d: RiskInput): Risk[] {
   return out;
 }
 export const atRisk = (d: RiskInput) => riskReasons(d).length > 0;
+
+/** riskReasons() as database filters, for counts and the roster query. daysUntil(x) <= 30 ⇔ x <= now + 30 days. */
+const expiryCutoff = (now: number) => new Date(now + EXPIRY_SOON_DAYS * 86_400_000);
+export const expiringWhere = (now = Date.now()): Prisma.DriverWhereInput =>
+  ({ OR: [{ licenseExpiry: { lte: expiryCutoff(now) } }, { medicalExpiry: { lte: expiryCutoff(now) } }] });
+export const atRiskWhere = (now = Date.now()): Prisma.DriverWhereInput =>
+  ({ OR: [{ score: { lt: AT_RISK_SCORE } }, { licenseExpiry: { lte: expiryCutoff(now) } }, { medicalExpiry: { lte: expiryCutoff(now) } }] });
 
 /* ------------------------------------------------------------------ */
 /* Time                                                                */

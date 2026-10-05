@@ -4,15 +4,18 @@ import { km, money, money2, number } from "@/lib/format";
 import { Badge, Card, Cell, Progress, Stat, Table } from "@/components/ui";
 import { leaseRows, leaseTone } from "../_lib/data";
 import { truckHref } from "../_lib/links";
+import { plural } from "../_lib/shared";
 
 export function LeaseTab({ trucks }: { trucks: Truck[] }) {
   const { rows, totals } = leaseRows(trucks);
   const nearCap = rows.filter((r) => r.over === 0 && r.remaining < 5000).length;
+  const lessors = new Set(rows.map((r) => r.truck.lessor).filter(Boolean)).size;
 
   return (
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Leased trucks" value={rows.length} hint={rows.length ? `${new Set(rows.map((r) => r.truck.lessor ?? "—")).size} lessors` : "none on lease"} />
+        <Stat label="Leased trucks" value={rows.length}
+          hint={!rows.length ? "none on lease" : lessors ? plural(lessors, "lessor") : "no lessor recorded"} />
         <Stat label="Over cap" value={totals.overCount} tone={totals.overCount ? "danger" : "ok"} hint={totals.overCount ? `${km(totals.over)} over in total` : "all within the hard cap"} />
         <Stat label="Within 5,000 km of cap" value={nearCap} tone={nearCap ? "warn" : "neutral"} hint="route shorter lanes or rotate units" />
         <Stat label="Penalty exposure" value={money(totals.exposure)} tone={totals.exposure ? "danger" : "neutral"} hint="over km × overage rate, today" />

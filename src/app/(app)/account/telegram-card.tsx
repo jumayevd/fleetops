@@ -4,6 +4,7 @@ import { getBot, telegramConfigured } from "@/lib/telegram";
 import { disconnectTelegram, sendMeTest, setTelegramAlerts, startTelegramLink } from "@/app/actions/telegram";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, buttonClass, cn } from "@/components/ui";
+import { ConfirmSubmit } from "../admin/confirm-submit";
 
 const WHAT: Record<string, string> = {
   OWNER: "issues, deliveries, payments, maintenance and the daily brief",
@@ -46,7 +47,9 @@ export async function TelegramCard({ userId }: { userId: string }) {
           </form>
           <div className="flex flex-wrap items-center gap-2">
             <ActionForm action={sendMeTest}><SubmitButton variant="secondary" size="sm" pendingText="Sending…">Send test message</SubmitButton></ActionForm>
-            <form action={disconnectTelegram}><button className={cn(buttonClass("ghost", "sm"), "text-danger hover:bg-danger-soft hover:text-danger")}>Disconnect</button></form>
+            <form action={disconnectTelegram}>
+              <ConfirmSubmit confirm="Disconnect Telegram? You will need a new link code to reconnect." className={cn(buttonClass("ghost", "sm"), "text-danger hover:bg-danger-soft hover:text-danger")}>Disconnect</ConfirmSubmit>
+            </form>
           </div>
         </div>
       ) : u.telegramLinkCode && bot ? (

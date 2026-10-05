@@ -367,7 +367,7 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
       {drawerRow && <DriverDrawer row={drawerRow} now={now} onClose={() => setDrawerId(null)} />}
 
       {flash && (
-        <div role="status" className={cn("fixed bottom-4 right-4 z-[80] rounded-md border px-3 py-2 text-[12px] shadow-float",
+        <div role="status" className={cn("fixed bottom-4 left-1/2 z-[80] -translate-x-1/2 rounded-md border px-3 py-2 text-[12px] shadow-float",
           flash.tone === "ok" ? "border-ok/30 bg-ok-soft text-ok" : "border-danger/30 bg-danger-soft text-danger")}>{flash.text}</div>
       )}
     </div>

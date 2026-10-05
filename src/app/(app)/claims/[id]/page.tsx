@@ -10,8 +10,9 @@ import { ago, date, dateTime, money } from "@/lib/format";
 import { Badge, Card, Chip, DL, LinkButton, PageHeader, Progress, cn } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents/panel";
 import {
-  CLAIM_SEVERITY_LABELS, CLAIM_TYPE_DOC_HINT, FAULT_TONE, ageTone, allowedClaimTransitions, claimStatusLabel, daysOpen, isOpenClaimStatus, recoveryPct,
+  CLAIM_SEVERITY_LABELS, CLAIM_TYPE_DOC_HINT, FAULT_TONE, ageTone, allowedClaimTransitions, claimPhase, claimStatusLabel, daysOpen, recoveryPct,
 } from "../shared";
+import { staffOptions } from "../options";
 import { ClaimStatusActions } from "./status-actions";
 import { AssigneeControl } from "./assignee";
 import { DeleteClaimButton } from "./delete-button";
@@ -46,20 +47,22 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
   });
   if (!claim) notFound();
 
-  const [audit, assignees] = await Promise.all([
+  const [audit, people] = await Promise.all([
     db.auditLog.findMany({ where: { entity: "claim", entityId: id }, orderBy: { createdAt: "asc" }, include: { user: { select: { name: true } } } }),
-    db.user.findMany({
-      where: { OR: [{ active: true, role: { not: "DRIVER" } }, ...(claim.assignedToId ? [{ id: claim.assignedToId }] : [])] },
-      orderBy: { name: "asc" }, select: { id: true, name: true, role: true },
-    }),
+    staffOptions(claim.assignedToId),
   ]);
 
-  const open = isOpenClaimStatus(claim.status);
+  // Approved claims are off the open book but not closed: the money is agreed and still to come in.
+  const phase = claimPhase(claim.status);
+  const open = phase === "open";
+  const awaiting = phase === "awaiting";
   const days = daysOpen(claim);
   const tone = ageTone(days, open);
   const transitions = allowedClaimTransitions(claim.status);
   const recovery = recoveryPct(claim.amountClaimed, claim.amountSettled);
   const outstanding = Math.max(0, claim.amountClaimed - (claim.amountSettled ?? 0));
+  /** Awaiting payment: nothing received yet, so the agreed amount (the whole claim if none was entered) is still due. */
+  const due = claim.amountSettled ?? claim.amountClaimed;
   const typeLabel = CLAIM_TYPE_LABELS[claim.type] ?? claim.type;
   const noDocs = claim._count.documents === 0;
 
@@ -75,8 +78,6 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
   const notes: NoteItem[] = claim.notes.map((n) => ({
     id: n.id, body: n.body, author: n.user?.name ?? "System", role: n.user ? ROLE_LABELS[n.user.role as Role] ?? n.user.role : null, at: dateTime(n.createdAt), ago: ago(n.createdAt),
   }));
-  const people = assignees.map((u) => ({ id: u.id, label: u.name, hint: ROLE_LABELS[u.role as Role] ?? u.role }));
-
   return (
     <>
       <PageHeader
@@ -88,8 +89,9 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
             <Badge value={claim.severity} label={`${CLAIM_SEVERITY_LABELS[claim.severity] ?? claim.severity} severity`} />
             <Badge value={claim.status} label={claimStatusLabel(claim.status)} dot />
             <Badge value={claim.fault} tone={FAULT_TONE[claim.fault] ?? "neutral"} label={`Fault: ${(CLAIM_FAULT_LABELS[claim.fault] ?? claim.fault).toLowerCase()}`} />
-            <Chip tone={tone} className="normal-case tracking-normal" title={open ? `Open since ${date(claim.createdAt)}` : `Closed ${date(claim.closedAt)}`}>
-              <span className="num">{days}d</span>&nbsp;{open ? "open" : "to close"}
+            <Chip tone={tone} className="normal-case tracking-normal"
+              title={open ? `Open since ${date(claim.createdAt)}` : awaiting ? `Approved, payment not received yet · open since ${date(claim.createdAt)}` : `Closed ${date(claim.closedAt)}`}>
+              <span className="num">{days}d</span>&nbsp;{open ? "open" : awaiting ? "open · awaiting payment" : "to close"}
             </Chip>
           </span>
         }
@@ -154,18 +156,31 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
             ]} />
           </Card>
 
-          <Card title="Amounts" actions={recovery != null && <span className={cn("num text-[11px]", recovery >= 80 ? "text-ok" : recovery >= 50 ? "text-fg-muted" : "text-warn")}>{recovery}% recovered</span>}>
+          <Card title="Amounts" actions={recovery != null && <span className={cn("num text-[11px]", recovery >= 80 ? "text-ok" : recovery >= 50 ? "text-fg-muted" : "text-warn")}>{recovery}% {awaiting ? "agreed" : "recovered"}</span>}>
             <div className="grid grid-cols-3 gap-3">
               <Figure label="Claimed" value={money(claim.amountClaimed)} />
-              <Figure label="Settled" value={claim.amountSettled == null ? "—" : money(claim.amountSettled)} muted={claim.amountSettled == null}
-                hint={claim.amountSettled == null ? (open ? "set when approved or paid" : "nothing recovered") : undefined} />
-              <Figure label={open ? "Outstanding" : "Written off"} value={money(outstanding)} muted={outstanding === 0}
-                hint={outstanding === 0 ? "fully recovered" : open ? "still being pursued" : "not recovered"} />
+              {awaiting ? (
+                <>
+                  <Figure label="Agreed" value={claim.amountSettled == null ? "—" : money(claim.amountSettled)} muted={claim.amountSettled == null}
+                    hint={claim.amountSettled == null ? "no amount entered" : "not received yet"} />
+                  <Figure label="Outstanding" value={money(due)} muted={due === 0}
+                    hint={claim.amountSettled == null ? "the full claim, not received yet" : "agreed, not received yet"} />
+                </>
+              ) : (
+                <>
+                  <Figure label="Settled" value={claim.amountSettled == null ? "—" : money(claim.amountSettled)} muted={claim.amountSettled == null}
+                    hint={claim.amountSettled == null ? (open ? "set when approved or paid" : "nothing recovered") : undefined} />
+                  <Figure label={open ? "Outstanding" : "Written off"} value={money(outstanding)} muted={outstanding === 0}
+                    hint={outstanding === 0 ? "fully recovered" : open ? "still being pursued" : "not recovered"} />
+                </>
+              )}
             </div>
             {claim.amountClaimed > 0 && (
               <div className="mt-3">
                 <Progress value={(claim.amountSettled ?? 0) / claim.amountClaimed} tone={recovery == null ? "neutral" : recovery >= 80 ? "ok" : recovery >= 50 ? "progress" : "warn"} />
-                <p className="mt-1 text-[11px] text-fg-subtle">Settled as a share of what was claimed.</p>
+                <p className="mt-1 text-[11px] text-fg-subtle">
+                  {awaiting ? "Agreed as a share of what was claimed. Record the payment when the money arrives." : "Settled as a share of what was claimed."}
+                </p>
               </div>
             )}
           </Card>

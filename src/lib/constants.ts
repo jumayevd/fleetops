@@ -46,6 +46,8 @@ export const BILLING_STAGE_LABELS: Record<BillingStage, string> = {
 
 /** Documents a load needs before it can be billed. */
 export const REQUIRED_LOAD_DOCS = ["RC", "POD"] as const;
+/** Billing paperwork by load status: a TONU (truck ordered, not used) was never delivered, so only the RC applies. */
+export const requiredDocsFor = (status: string): readonly string[] => (status === "TONU" ? ["RC"] : REQUIRED_LOAD_DOCS);
 
 export const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"] as const;
 export const EQUIPMENT = ["DRY_VAN", "REEFER", "FLATBED", "TANKER", "CONTAINER"] as const;

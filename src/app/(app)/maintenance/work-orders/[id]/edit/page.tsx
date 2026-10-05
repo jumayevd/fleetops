@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toDateInput, toLocalInput } from "@/lib/format";
-import { saveWorkOrder } from "@/app/actions/fleet";
 import { Badge, PageHeader } from "@/components/ui";
+import { saveWorkOrderChecked } from "../../../_lib/actions";
 import { workOrderFormOptions } from "../../../_lib/data";
 import { workOrderHref } from "../../../_lib/links";
 import { WorkOrderForm } from "../../../_components/work-order-form";
@@ -37,7 +37,7 @@ export default async function EditWorkOrder({ params }: PageProps<"/maintenance/
         subtitle={<span className="inline-flex flex-wrap items-center gap-2"><Badge value={wo.status} dot />{unit && <span className="num">{unit}</span>}<span>{effects}</span></span>}
       />
       <WorkOrderForm
-        action={saveWorkOrder.bind(null, id)}
+        action={saveWorkOrderChecked.bind(null, id)}
         trucks={options.trucks}
         trailers={options.trailers}
         vendors={options.vendors}

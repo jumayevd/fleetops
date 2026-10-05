@@ -37,7 +37,7 @@ export function CustomerForm({ action, customer, cancelHref }: {
           </Card>
 
           <Card title="Notes">
-            <Textarea name="notes" rows={4} defaultValue={customer?.notes ?? ""} placeholder="Billing quirks, preferred lanes, accessorial rules, who to call after hours." />
+            <Textarea name="notes" aria-label="Notes" rows={4} defaultValue={customer?.notes ?? ""} placeholder="Billing quirks, preferred lanes, accessorial rules, who to call after hours." />
           </Card>
         </div>
 

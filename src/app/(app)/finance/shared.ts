@@ -1,5 +1,4 @@
 import type { Tone } from "@/components/ui";
-import { REQUIRED_LOAD_DOCS } from "@/lib/constants";
 
 /* Pure helpers shared by the finance pages and their client controls (safe on client and server). */
 
@@ -65,7 +64,8 @@ export const INVOICE_TRANSITIONS: Record<string, readonly string[]> = {
  * delivery to wait for: the rate confirmation is enough. (lib/workflow.ts still asks every load for RC and
  * POD when it stores the billing stage; the billing queue reads documents through this until that changes.)
  */
-export const requiredDocsFor = (status: string): readonly string[] => (status === "TONU" ? ["RC"] : REQUIRED_LOAD_DOCS);
+// One rule for the queue, the load pages and the stored billing stage (src/lib/workflow.ts).
+export { requiredDocsFor } from "@/lib/constants";
 
 /** A TONU load, before or after it is invoiced: TONU loads are never stamped delivered. */
 export const wasTonu = (l: { status: string; deliveredAt: Date | null }) =>

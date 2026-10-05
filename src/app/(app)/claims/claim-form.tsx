@@ -19,10 +19,16 @@ const s = (v: string | number | null | undefined) => (v == null ? "" : String(v)
  * Create / edit a claim. Picking a load fills in the driver, unit, customer, incident place and
  * time (when the load is delivered); every prefilled value stays editable.
  */
-export function ClaimForm({ action, options, defaults = {}, mode = "create", statusOptions, prefilledFrom, submitLabel, cancelHref = "/claims" }: {
+export function ClaimForm({ action, options, defaults = {}, mode = "create", statusOptions, prefilledFrom, submitLabel, cancelHref = "/claims", maxIncident }: {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   options: ClaimFormOptions;
   defaults?: ClaimDefaults;
+  /**
+   * Latest allowed incident time, pre-formatted on the server (end of today in the company time zone,
+   * the zone the server reads the field in). Computing it here would differ between the server render
+   * and hydration.
+   */
+  maxIncident?: string;
   mode?: "create" | "edit";
   /** Edit only: the current status followed by the lifecycle steps allowed from it. */
   statusOptions?: ClaimStatus[];
@@ -61,7 +67,6 @@ export function ClaimForm({ action, options, defaults = {}, mode = "create", sta
   const claimedN = Math.max(0, Number(claimed) || 0);
   const settledN = settled === "" ? null : Math.max(0, Number(settled) || 0);
   const recovery = recoveryPct(claimedN, settledN);
-  const maxIncident = toLocalInput(new Date());
   const docHint = type ? CLAIM_TYPE_DOC_HINT[type] : null;
   const currentStatus = defaults.status;
 
@@ -104,7 +109,10 @@ export function ClaimForm({ action, options, defaults = {}, mode = "create", sta
             )}
           >
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Load" className="sm:col-span-2" hint="Picking a load fills in the driver, unit and customer below. Change anything that differs.">
+              <Field label="Load" className="sm:col-span-2"
+                hint={mode === "edit"
+                  ? "Picking a different load fills in only the empty fields below. Clear a field to unlink it — it stays empty when you save."
+                  : "Picking a load fills in the driver, unit and customer below. Change or clear anything that differs."}>
                 <Combobox name="loadId" mono options={options.loads} value={loadId} placeholder="Search by reference, city, customer, driver or unit…"
                   onChange={(id, opt) => onLoad(id, opt as LoadOption | null)} emptyText="No load matches — leave it empty if the incident is not tied to a load" />
               </Field>

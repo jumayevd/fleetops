@@ -80,7 +80,7 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
   const lateMs = load.deliveredAt ? load.deliveredAt.getTime() - load.deliveryAt.getTime() : eta ? eta.getTime() - load.deliveryAt.getTime() : 0;
   const late = lateMs > 0;
   const nextStop = load.stops.find((s) => s.status !== "DONE") ?? null;
-  const missing = missingLoadDocs(load.documents);
+  const missing = missingLoadDocs(load.documents, load.status);
   const docLabel = (k: string) => (DOC_KIND_LABELS[k] ?? k).toLowerCase();
 
   const cost = load.driverPay + load.fuelCost + load.otherCost;

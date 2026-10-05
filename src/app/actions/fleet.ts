@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { attempt, fields, FormError, type ActionState } from "@/lib/action";
-import { TRAILER_STATUSES, WORK_ORDER_CATEGORIES, WORK_ORDER_PRIORITIES, WORK_ORDER_STATUSES } from "@/lib/constants";
+import { WORK_ORDER_CATEGORIES, WORK_ORDER_PRIORITIES, WORK_ORDER_STATUSES } from "@/lib/constants";
 import { notifyMaintenance } from "@/lib/notify";
 
 /* ------------------------------------------------------------------ */
@@ -67,16 +67,7 @@ export async function saveTruck(truckId: string | null, _: ActionState, fd: Form
   redirect(`/fleet/${id}`);
 }
 
-export async function setTruckStatus(truckId: string, status: string) {
-  const me = await requireUser("fleet.edit");
-  if (!["ACTIVE", "MAINTENANCE", "OUT_OF_SERVICE", "INACTIVE"].includes(status)) throw new Error("Invalid status");
-  const busy = await db.load.findFirst({ where: { truckId, status: { in: ["ASSIGNED", "IN_TRANSIT"] } } });
-  if (busy && status !== "ACTIVE") throw new Error(`Truck is on ${busy.reference} — recover the load first`);
-  const t = await db.truck.update({ where: { id: truckId }, data: { status } });
-  await audit(me.id, "status", "truck", truckId, `${t.unitNumber} → ${status}`);
-  revalidatePath("/fleet");
-  revalidatePath(`/fleet/${truckId}`);
-}
+// Truck status changes and trailer create / edit / status live in src/app/(app)/fleet/actions.ts.
 
 export async function addTruckNote(truckId: string, _: ActionState, fd: FormData): Promise<ActionState> {
   const me = await requireUser("fleet.edit");
@@ -92,58 +83,43 @@ export async function addTruckNote(truckId: string, _: ActionState, fd: FormData
 }
 
 /* ------------------------------------------------------------------ */
-/* Trailers                                                            */
-/* ------------------------------------------------------------------ */
-
-export async function saveTrailer(trailerId: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
-  const me = await requireUser("fleet.edit");
-  return attempt(async () => {
-    const f = fields(fd);
-    const status = f.str("status") ?? "EMPTY";
-    if (!TRAILER_STATUSES.includes(status as never)) throw new FormError("Invalid status");
-    const existing = trailerId ? await db.trailer.findUniqueOrThrow({ where: { id: trailerId } }) : null;
-    const data = {
-      unitNumber: f.req("unitNumber", "Unit number"),
-      type: f.req("type", "Type"),
-      capacityKg: f.num("capacityKg") ?? 20000,
-      plate: f.str("plate"),
-      year: f.num("year"),
-      status,
-      statusSince: existing && existing.status === status ? existing.statusSince : new Date(),
-      truckId: f.str("truckId"),
-      gpsProvider: f.str("gpsProvider"),
-      insuranceExpiry: f.date("insuranceExpiry"),
-      inspectionExpiry: f.date("inspectionExpiry"),
-      locationName: f.str("locationName"),
-      notes: f.str("notes"),
-    };
-    if (trailerId) await db.trailer.update({ where: { id: trailerId }, data });
-    else await db.trailer.create({ data });
-    await audit(me.id, trailerId ? "update" : "create", "trailer", trailerId, data.unitNumber);
-    revalidatePath("/fleet/trailers");
-    return { ok: `Trailer ${data.unitNumber} saved` };
-  });
-}
-
-/** Inline status change from the trailer list. */
-export async function setTrailerStatus(trailerId: string, status: string, locationName?: string | null) {
-  const me = await requireUser("fleet.edit");
-  if (!TRAILER_STATUSES.includes(status as never)) throw new Error("Invalid status");
-  const busy = await db.load.findFirst({ where: { trailerId, status: { in: ["ASSIGNED", "IN_TRANSIT"] } } });
-  if (busy && status !== "IN_USE") throw new Error(`Trailer is on ${busy.reference}`);
-  const t = await db.trailer.update({
-    where: { id: trailerId },
-    data: { status, statusSince: new Date(), ...(locationName ? { locationName } : {}), ...(status !== "IN_USE" ? { truckId: null } : {}) },
-  });
-  await audit(me.id, "status", "trailer", trailerId, `${t.unitNumber} → ${status}`);
-  revalidatePath("/fleet/trailers");
-}
-
-/* ------------------------------------------------------------------ */
 /* Work orders                                                         */
 /* ------------------------------------------------------------------ */
 
-async function applyWorkOrderSideEffects(id: string, status: string, userId: string) {
+type Unit = { truckId: string | null; trailerId: string | null };
+
+/** Work only starts on a free unit: a truck or trailer on a dispatched or in-transit load is recovered first. */
+async function assertUnitOffLoad(unit: Unit) {
+  const where = unit.truckId ? { truckId: unit.truckId } : unit.trailerId ? { trailerId: unit.trailerId } : null;
+  if (!where) return;
+  const load = await db.load.findFirst({
+    where: { ...where, status: { in: ["ASSIGNED", "IN_TRANSIT"] } },
+    orderBy: { pickupAt: "asc" },
+    select: { reference: true, truck: { select: { unitNumber: true } }, trailer: { select: { unitNumber: true } } },
+  });
+  if (!load) return;
+  const unitNumber = (unit.truckId ? load.truck?.unitNumber : load.trailer?.unitNumber) ?? "The unit";
+  throw new FormError(`${unitNumber} is on ${load.reference}. Recover the load to another unit before starting this job.`);
+}
+
+/** Put a unit back in service once no other job holds it in the shop. */
+async function releaseUnit(unit: Unit, workOrderId: string, now: Date) {
+  if (unit.truckId) {
+    const open = await db.workOrder.count({ where: { truckId: unit.truckId, status: "IN_PROGRESS", id: { not: workOrderId } } });
+    if (!open) await db.truck.updateMany({ where: { id: unit.truckId, status: "MAINTENANCE" }, data: { status: "ACTIVE" } });
+  }
+  if (unit.trailerId) {
+    const open = await db.workOrder.count({ where: { trailerId: unit.trailerId, status: "IN_PROGRESS", id: { not: workOrderId } } });
+    if (!open) await db.trailer.updateMany({ where: { id: unit.trailerId, status: "SHOP" }, data: { status: "YARD", statusSince: now } });
+  }
+}
+
+/**
+ * Unit and record side effects of a work order reaching `status` (from `prevStatus`): starting puts the unit in the
+ * shop; completing or cancelling a started job releases it (as does sending it back to open / draft); completing a
+ * PM or inspection moves the truck's service and inspection dates, dated by when the unit left the shop.
+ */
+async function applyWorkOrderSideEffects(id: string, status: string, userId: string, prevStatus: string | null) {
   const wo = await db.workOrder.findUniqueOrThrow({ where: { id }, include: { truck: true, trailer: true } });
   const now = new Date();
   if (status === "IN_PROGRESS") {
@@ -152,33 +128,30 @@ async function applyWorkOrderSideEffects(id: string, status: string, userId: str
     if (wo.trailerId) await db.trailer.update({ where: { id: wo.trailerId }, data: { status: "SHOP", statusSince: now, truckId: null } });
     after(() => notifyMaintenance(id, status));
   }
-  if (status === "CANCELLED" && wo.inAt && !wo.outAt) {
-    await db.workOrder.update({ where: { id }, data: { outAt: now } });
-    if (wo.truckId) {
-      const open = await db.workOrder.count({ where: { truckId: wo.truckId, status: "IN_PROGRESS", id: { not: id } } });
-      if (!open && wo.truck?.status === "MAINTENANCE") await db.truck.update({ where: { id: wo.truckId }, data: { status: "ACTIVE" } });
-    }
-    if (wo.trailerId) {
-      const open = await db.workOrder.count({ where: { trailerId: wo.trailerId, status: "IN_PROGRESS", id: { not: id } } });
-      if (!open && wo.trailer?.status === "SHOP") await db.trailer.update({ where: { id: wo.trailerId }, data: { status: "YARD", statusSince: now } });
-    }
+  if ((status === "OPEN" || status === "DRAFT") && prevStatus === "IN_PROGRESS") await releaseUnit(wo, id, now);
+  if (status === "CANCELLED" && (prevStatus === "IN_PROGRESS" || (wo.inAt && !wo.outAt))) {
+    if (wo.inAt && !wo.outAt) await db.workOrder.update({ where: { id }, data: { outAt: now } });
+    await releaseUnit(wo, id, now);
   }
   if (status === "DONE") {
-    await db.workOrder.update({ where: { id }, data: { outAt: wo.outAt ?? now, completedAt: now } });
-    if (wo.truckId) {
-      const open = await db.workOrder.count({ where: { truckId: wo.truckId, status: "IN_PROGRESS", id: { not: id } } });
-      const data: Record<string, unknown> = {};
-      if (!open && wo.truck?.status === "MAINTENANCE") data.status = "ACTIVE";
+    // A repair logged after the fact keeps its own dates, so it counts in the period the work was done.
+    const out = wo.outAt ?? now;
+    await db.workOrder.update({ where: { id }, data: { outAt: out, completedAt: wo.completedAt ?? out } });
+    await releaseUnit(wo, id, now);
+    if (wo.truck) {
+      const data: { lastPmKm?: number; lastPmAt?: Date; nextServiceKm?: number; inspectionExpiry?: Date } = {};
       if (wo.category === "PM") {
-        const odo = wo.odometerKm ?? wo.truck?.odometerKm ?? 0;
-        data.lastPmKm = odo; data.lastPmAt = now; data.nextServiceKm = odo + (wo.truck?.pmIntervalKm ?? 30000);
+        const odo = wo.odometerKm ?? wo.truck.odometerKm;
+        // An older PM logged late must not wind the service schedule back.
+        if (odo >= (wo.truck.lastPmKm ?? 0)) {
+          data.lastPmKm = odo; data.lastPmAt = out; data.nextServiceKm = odo + (wo.truck.pmIntervalKm ?? 30000);
+        }
       }
-      if (wo.category === "INSPECTION") data.inspectionExpiry = new Date(now.getTime() + 365 * 86_400_000);
-      if (Object.keys(data).length) await db.truck.update({ where: { id: wo.truckId }, data });
-    }
-    if (wo.trailerId) {
-      const open = await db.workOrder.count({ where: { trailerId: wo.trailerId, status: "IN_PROGRESS", id: { not: id } } });
-      if (!open && wo.trailer?.status === "SHOP") await db.trailer.update({ where: { id: wo.trailerId }, data: { status: "YARD", statusSince: now } });
+      if (wo.category === "INSPECTION") {
+        const expiry = new Date(out.getTime() + 365 * 86_400_000);
+        if (!wo.truck.inspectionExpiry || expiry > wo.truck.inspectionExpiry) data.inspectionExpiry = expiry;
+      }
+      if (Object.keys(data).length) await db.truck.update({ where: { id: wo.truck.id }, data });
     }
     after(() => notifyMaintenance(id, status));
   }
@@ -213,7 +186,10 @@ export async function saveWorkOrder(workOrderId: string | null, _: ActionState, 
       laborCost, partsCost, cost: f.num("cost") ?? laborCost + partsCost,
       notes: f.str("notes"),
     };
-    const prevStatus = workOrderId ? (await db.workOrder.findUniqueOrThrow({ where: { id: workOrderId } })).status : null;
+    const prev = workOrderId ? await db.workOrder.findUniqueOrThrow({ where: { id: workOrderId } }) : null;
+    const prevStatus = prev?.status ?? null;
+    const unitChanged = Boolean(prev && (prev.truckId !== data.truckId || prev.trailerId !== data.trailerId));
+    if (status === "IN_PROGRESS" && (prevStatus !== "IN_PROGRESS" || unitChanged)) await assertUnitOffLoad(data);
     if (workOrderId) {
       await db.workOrder.update({ where: { id: workOrderId }, data });
       await audit(me.id, "update", "work_order", workOrderId, data.title);
@@ -222,7 +198,9 @@ export async function saveWorkOrder(workOrderId: string | null, _: ActionState, 
       id = wo.id;
       await audit(me.id, "create", "work_order", wo.id, `#${wo.number} ${data.title}`);
     }
-    if (prevStatus !== status && ["IN_PROGRESS", "DONE"].includes(status)) await applyWorkOrderSideEffects(id!, status, me.id);
+    // A job in the shop that moves to another unit releases the old one (the new one goes in below).
+    if (prev && prevStatus === "IN_PROGRESS" && unitChanged) await releaseUnit(prev, prev.id, new Date());
+    if (prevStatus !== status || (status === "IN_PROGRESS" && unitChanged)) await applyWorkOrderSideEffects(id!, status, me.id, unitChanged ? null : prevStatus);
   });
   if (res?.error) return res;
   revalidatePath("/maintenance");
@@ -230,11 +208,15 @@ export async function saveWorkOrder(workOrderId: string | null, _: ActionState, 
   redirect(`/maintenance/work-orders/${id}`);
 }
 
+/** Move a work order to `status`. Refusals throw FormError; the page wrappers turn them into ActionState. */
 export async function setWorkOrderStatus(id: string, status: string) {
   const me = await requireUser("fleet.edit");
-  if (!WORK_ORDER_STATUSES.includes(status as never)) throw new Error("Invalid status");
+  if (!WORK_ORDER_STATUSES.includes(status as never)) throw new FormError("Pick a valid status");
+  const prev = await db.workOrder.findUnique({ where: { id }, select: { status: true, truckId: true, trailerId: true } });
+  if (!prev) throw new FormError("This work order no longer exists.");
+  if (status === "IN_PROGRESS" && prev.status !== "IN_PROGRESS") await assertUnitOffLoad(prev);
   await db.workOrder.update({ where: { id }, data: { status } });
-  await applyWorkOrderSideEffects(id, status, me.id);
+  if (prev.status !== status) await applyWorkOrderSideEffects(id, status, me.id, prev.status);
   const wo = await db.workOrder.findUniqueOrThrow({ where: { id } });
   revalidatePath("/maintenance");
   revalidatePath("/maintenance/work-orders");
@@ -250,6 +232,7 @@ export async function saveMaintenance(_: ActionState, fd: FormData): Promise<Act
     const truckId = f.req("truckId", "Truck");
     const status = f.str("status") ?? "OPEN";
     const category = f.str("type") ?? f.str("category") ?? "OTHER";
+    if (status === "IN_PROGRESS") await assertUnitOffLoad({ truckId, trailerId: null });
     const wo = await db.workOrder.create({
       data: {
         truckId, title: f.req("description", "Description"), category: WORK_ORDER_CATEGORIES.includes(category as never) ? category : "OTHER",
@@ -257,7 +240,7 @@ export async function saveMaintenance(_: ActionState, fd: FormData): Promise<Act
         cost: f.num("cost") ?? 0, vendor: f.str("vendor"), odometerKm: f.num("odometerKm"), createdById: me.id,
       },
     });
-    if (["IN_PROGRESS", "DONE"].includes(wo.status)) await applyWorkOrderSideEffects(wo.id, wo.status, me.id);
+    if (["IN_PROGRESS", "DONE"].includes(wo.status)) await applyWorkOrderSideEffects(wo.id, wo.status, me.id, null);
     revalidatePath("/maintenance");
     revalidatePath(`/fleet/${truckId}`);
     return { ok: `Work order #${wo.number} created` };
@@ -280,7 +263,7 @@ export async function addFuelLog(truckId: string, _: ActionState, fd: FormData):
     if (me.role !== "DRIVER" && !["OWNER", "ADMIN", "FLEET_MANAGER"].includes(me.role)) throw new FormError("Not allowed");
     const liters = f.num("liters");
     const cost = f.num("cost");
-    if (!liters || !cost) throw new FormError("Liters and cost are required");
+    if (!liters || !cost || liters <= 0 || cost <= 0) throw new FormError("Enter the litres and the cost (both above zero)");
     const odometerKm = f.num("odometerKm");
     await db.fuelLog.create({ data: { truckId, driverId: truck.driverId, liters, cost, odometerKm, station: f.str("station") } });
     if (odometerKm && odometerKm > truck.odometerKm) await db.truck.update({ where: { id: truckId }, data: { odometerKm, fuelPct: 95 } });

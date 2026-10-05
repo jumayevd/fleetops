@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { endOfDay } from "date-fns";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toLocalInput } from "@/lib/format";
@@ -42,9 +43,11 @@ export default async function NewClaimPage({ searchParams }: PageProps<"/claims/
         title="New claim"
         subtitle={load
           ? <>Filed against <Link href={`/loads/${load.id}`} className="num font-medium text-fg hover:underline">{load.reference}</Link> · {load.originCity} → {load.destCity} · {load.broker?.name ?? load.customer.name}. The driver, unit and customer are prefilled from the load.</>
-          : "Record the incident, link the load, driver and unit, and attach the evidence on the claim page once it is filed."}
+          : loadId
+            ? <><span className="text-warn">The load in the link was not found</span> — it may have been deleted. Pick it under Linked records, or leave the load empty if the incident is not tied to one.</>
+            : "Record the incident, link the load, driver and unit, and attach the evidence on the claim page once it is filed."}
       />
-      <ClaimForm action={saveClaim.bind(null, null)} options={options} defaults={defaults} prefilledFrom={load?.reference ?? null} />
+      <ClaimForm action={saveClaim.bind(null, null)} options={options} defaults={defaults} prefilledFrom={load?.reference ?? null} maxIncident={toLocalInput(endOfDay(now))} />
     </>
   );
 }

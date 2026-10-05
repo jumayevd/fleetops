@@ -19,7 +19,7 @@ import { StatusToggle } from "./status-toggle";
 import { StopActions } from "./stop-actions";
 import {
   EVENT_LABEL, EVENT_TONE, STOP_TONE, STOP_TYPE_LABEL, STOP_TYPE_TONE, UPDATE_TYPES,
-  chatRoomHref, fmtDuration, greetingFor, navigateUrl, startOfMonth, startOfWeek, windowLabel,
+  chatRoomHref, fmtDuration, greetingFor, isDispatchHeld, navigateUrl, sinceLabel, startOfMonth, startOfWeek, windowLabel,
 } from "./shared";
 
 export const metadata = { title: "My trips" };
@@ -101,6 +101,8 @@ export default async function DriverPortal() {
 
   const firstName = driver.name.split(/\s+/)[0];
   const boardLabel = BOARD_STATUS_LABELS[driver.boardStatus as BoardStatus] ?? driver.boardStatus;
+  const statusSince = sinceLabel(driver.boardStatusSince, now);
+  const heldByDispatch = isDispatchHeld(driver.boardStatus);
   const bigInput = "h-11 text-[15px]";
 
   return (
@@ -121,7 +123,7 @@ export default async function DriverPortal() {
         </div>
         <div className="shrink-0 text-right">
           <Badge value={driver.boardStatus} label={boardLabel} dot className="px-2 py-1 text-[12px]" />
-          <p className="num mt-1 text-[11px] text-fg-subtle">since {ago(driver.boardStatusSince)}</p>
+          <p className="num mt-1 text-[11px] text-fg-subtle">{statusSince}</p>
         </div>
       </header>
 
@@ -130,7 +132,7 @@ export default async function DriverPortal() {
           meta={`${announcement.author?.name ?? "Office"} · ${date(announcement.createdAt)}`} />
       )}
 
-      <StatusToggle status={driver.boardStatus} since={ago(driver.boardStatusSince)} onTrip={Boolean(inTransit)} />
+      <StatusToggle status={driver.boardStatus} since={statusSince} onTrip={Boolean(inTransit)} />
 
       {truck ? (
         <GpsShare unitNumber={truck.unitNumber} />
@@ -215,18 +217,19 @@ export default async function DriverPortal() {
                 <span className="num text-fg-muted">{Math.round(progress * 100)}% · {number(remainingKm)} km to go</span>
               </div>
               <Progress value={progress} />
-              <div className="mt-2.5 grid grid-cols-3 gap-2">
+              {/* Two columns on a phone (times never clipped), three from sm up. */}
+              <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
                 <div className="min-w-0">
                   <p className="text-[11px] text-fg-subtle">ETA</p>
-                  <p className="num truncate text-[13px] font-medium text-fg">{eta ? dateTime(eta) : "—"}</p>
+                  <p className="num text-[13px] font-medium text-fg">{eta ? dateTime(eta) : "—"}</p>
                 </div>
                 <div className="min-w-0">
                   <p className="text-[11px] text-fg-subtle">Deliver by</p>
-                  <p className="num truncate text-[13px] font-medium text-fg">{dateTime(active.deliveryAt)}</p>
+                  <p className="num text-[13px] font-medium text-fg">{dateTime(active.deliveryAt)}</p>
                 </div>
-                <div className="min-w-0">
+                <div className="col-span-2 min-w-0 sm:col-span-1">
                   <p className="text-[11px] text-fg-subtle">Schedule</p>
-                  <p className={cn("truncate text-[13px] font-medium", lateMs > 0 ? "text-danger" : "text-ok")}>{lateMs > 0 ? `${fmtDuration(lateMs)} late` : "On time"}</p>
+                  <p className={cn("text-[13px] font-medium", lateMs > 0 ? "text-danger" : "text-ok")}>{lateMs > 0 ? `${fmtDuration(lateMs)} late` : "On time"}</p>
                 </div>
               </div>
             </div>
@@ -338,7 +341,9 @@ export default async function DriverPortal() {
           <div className="border-t border-line px-4 py-3">
             <h3 className="text-[13px] font-semibold text-fg">Trip documents</h3>
             <p className="mb-3 mt-0.5 text-[12px] leading-4 text-fg-muted">Photograph the signed POD, CMR or BOL — dispatch and billing see it straight away.</p>
-            <DocumentsPanel user={user} target={{ type: "load", id: active.id }} path="/driver" camera plain defaultKind={inTransit ? "POD" : "BOL"} />
+            {/* The POD is the driver's share of the billing checklist (the rate confirmation is the office's); it only applies once the trip is under way. */}
+            <DocumentsPanel user={user} target={{ type: "load", id: active.id }} path="/driver" camera plain defaultKind={inTransit ? "POD" : "BOL"}
+              required={inTransit ? ["POD"] : undefined} />
           </div>
 
           {/* Send update + recent events */}
@@ -381,7 +386,9 @@ export default async function DriverPortal() {
       ) : (
         <Card>
           <EmptyState icon={<Package />} title="No trip assigned"
-            description="Dispatch will put your next trip here. Keep your status on Ready so they know you are available."
+            description={heldByDispatch
+              ? "Dispatch will put your next trip here once they set you back to Ready."
+              : "Dispatch will put your next trip here. Keep your status on Ready so they know you are available."}
             action={<LinkButton href="/chat" variant="secondary" className="h-11 px-4 text-[14px]"><MessageSquare />Chat with dispatch</LinkButton>} />
         </Card>
       )}
@@ -418,10 +425,12 @@ export default async function DriverPortal() {
           <h2 className="text-[13px] font-semibold text-fg">This week</h2>
           <p className="num text-[11px] text-fg-subtle">from {date(weekStart)} · month totals below</p>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        {/* Two tiles a row on a phone (22px values need ~140px each), earnings full width; three across from sm up. */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat label="Loads" value={week._count} hint={`${month._count} this month`} />
           <Stat label="Distance" value={km(week._sum.distanceKm)} hint={`${km(month._sum.distanceKm)} this month`} />
-          <Stat label="Earnings" value={money(week._sum.driverPay)} tone="ok" hint={`${money(month._sum.driverPay)} this month · $${driver.payPerKm.toFixed(2)}/km`} />
+          <Stat label="Earnings" value={money(week._sum.driverPay)} tone="ok" className="col-span-2 sm:col-span-1"
+            hint={`${money(month._sum.driverPay)} this month · $${driver.payPerKm.toFixed(2)}/km`} />
         </div>
       </section>
 
@@ -430,7 +439,7 @@ export default async function DriverPortal() {
         <Card title="Log fuel" actions={<span className="num text-[11px] text-fg-subtle">{truck.unitNumber} · {number(truck.odometerKm)} km</span>}>
           <ActionForm action={addFuelLog.bind(null, truck.id)} resetOnSuccess className="grid grid-cols-2 gap-3">
             <Field label="Liters" required><Input name="liters" type="number" step="0.1" min="1" required inputMode="decimal" placeholder="0.0" className={bigInput} /></Field>
-            <Field label="Cost (USD)" required><Input name="cost" type="number" step="0.01" min="0" required inputMode="decimal" placeholder="0.00" className={bigInput} /></Field>
+            <Field label="Cost (USD)" required><Input name="cost" type="number" step="0.01" min="0.01" required inputMode="decimal" placeholder="0.00" className={bigInput} /></Field>
             <Field label="Odometer (km)"><Input name="odometerKm" type="number" inputMode="numeric" placeholder={String(truck.odometerKm)} className={bigInput} /></Field>
             <Field label="Station"><Input name="station" placeholder="e.g. UzGasOil, Jizzakh" className={bigInput} /></Field>
             <SubmitButton variant="secondary" className="col-span-2 h-11 text-[14px]" pendingText="Saving…"><Fuel />Save fuel entry</SubmitButton>
