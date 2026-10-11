@@ -18,7 +18,7 @@ export const PERIODS = {
 } as const;
 export type PeriodKey = keyof typeof PERIODS;
 export const PERIOD_KEYS = Object.keys(PERIODS) as PeriodKey[];
-export const DEFAULT_PERIOD: PeriodKey = "90d";
+const DEFAULT_PERIOD: PeriodKey = "90d";
 
 export function parsePeriod(v: unknown): PeriodKey {
   return typeof v === "string" && v in PERIODS ? (v as PeriodKey) : DEFAULT_PERIOD;
@@ -49,7 +49,6 @@ export const exportHref = (type: ExportType, p: PeriodKey) => `/api/export/repor
 export const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
 export const ratio = (n: number, d: number): number | null => (d > 0 ? n / d : null);
 export const fmtPerKm = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? "—" : `$${v.toFixed(2)}`);
-export const fmtPct = (v: number | null | undefined) => (v == null ? "—" : `${v}%`);
 
 /** Percent change from the previous period; null when there is nothing to compare with. */
 export const deltaPct = (cur: number, prev: number): number | null => (prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null);

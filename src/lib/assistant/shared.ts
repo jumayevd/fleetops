@@ -7,7 +7,6 @@ import { can, type Permission } from "@/lib/permissions";
 
 export const ASSISTANT_API = "/api/assistant";
 /** sessionStorage key for the panel's open state (survives navigation and reloads, not a new tab). */
-export const ASSISTANT_OPEN_KEY = "fleetops.assistant.open";
 /** Stable chat id so the conversation survives closing and reopening the panel. */
 export const ASSISTANT_CHAT_ID = "fleet-assistant";
 
@@ -21,14 +20,14 @@ export const MAX_TEXT_CHARS = 4000;
 export type AssistantErrorBody = { error: string; code?: string };
 
 /** "a", "a and b", "a, b and c". */
-export const joinList = (items: string[]) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+const joinList = (items: string[]) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
 /* ------------------------------------------------------------------ */
 /* Welcome: role-aware intro and suggested prompts (GET /api/assistant) */
 /* ------------------------------------------------------------------ */
 
 /** Each prompt is offered only to roles that hold the permission its answer needs. First matches win. */
-export const SUGGESTED_PROMPTS: readonly { text: string; perm: Permission }[] = [
+const SUGGESTED_PROMPTS: readonly { text: string; perm: Permission }[] = [
   { text: "Which trucks are idle right now?", perm: "fleet.view" },
   { text: "What's running late?", perm: "loads.view" },
   { text: "What can we invoice today?", perm: "finance.view" },
@@ -67,7 +66,7 @@ export function parseAssistantInfo(v: unknown): AssistantInfo {
 /* ------------------------------------------------------------------ */
 
 /** Quiet activity lines shown in the chat while / after a tool runs, and when it fails. */
-export const TOOL_LABELS: Record<string, { doing: string; done: string; fail: string }> = {
+const TOOL_LABELS: Record<string, { doing: string; done: string; fail: string }> = {
   fleetStatus: { doing: "Checking fleet status", done: "Checked fleet status", fail: "Couldn't check fleet status" },
   listTrucks: { doing: "Looking up trucks", done: "Looked up trucks", fail: "Couldn't look up trucks" },
   listDrivers: { doing: "Looking up drivers", done: "Looked up drivers", fail: "Couldn't look up drivers" },
@@ -101,7 +100,7 @@ export function toolLabel(name: string, state: ToolActivityState) {
 /* ------------------------------------------------------------------ */
 
 /** True unless the part is a tool call that never got its result (or error / denial). */
-export function isSettledPart(part: UIMessage["parts"][number]) {
+function isSettledPart(part: UIMessage["parts"][number]) {
   if (!isToolUIPart(part)) return true;
   return (part.state === "output-available" && part.preliminary !== true) || part.state === "output-error" || part.state === "output-denied";
 }

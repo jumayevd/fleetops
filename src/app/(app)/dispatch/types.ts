@@ -1,7 +1,6 @@
 // Client-safe types and small helpers shared by the dispatch board, its API route and the row menu.
 // No server imports here — this file is bundled into the browser.
 
-import type { Tone } from "@/components/ui";
 
 export type BoardView = "teams" | "flat" | "prebook";
 
@@ -72,7 +71,6 @@ export const isRowColor = (v: unknown): v is RowColor => typeof v === "string" &
 export const ROW_COLOR_BG: Record<RowColor, string> = {
   amber: "var(--accent-soft)", green: "var(--ok-soft)", red: "var(--danger-soft)", blue: "var(--info-soft)", violet: "var(--progress-soft)",
 };
-export const ROW_COLOR_TONE: Record<RowColor, Tone> = { amber: "accent", green: "ok", red: "danger", blue: "info", violet: "progress" };
 export const ROW_COLOR_LABEL: Record<RowColor, string> = { amber: "Amber", green: "Green", red: "Red", blue: "Blue", violet: "Violet" };
 
 /* ------------------------------------------------------------------ */

@@ -26,7 +26,7 @@ async function nextNumber(prefix: string, start: number, table: "Invoice" | "Loa
   const last = row?.max == null ? null : Number(row.max);
   return `${prefix}-${last == null ? start : Math.max(last + 1, start)}`;
 }
-export const nextInvoiceNumber = () => nextNumber("INV", 5001, "Invoice", "number");
+const nextInvoiceNumber = () => nextNumber("INV", 5001, "Invoice", "number");
 export const nextLoadReference = () => nextNumber("LD", 10001, "Load", "reference");
 export const nextClaimNumber = () => nextNumber("CLM", 1001, "Claim", "number");
 
@@ -40,7 +40,7 @@ export function missingLoadDocs(docs: { kind: string }[], status = "DELIVERED") 
   return requiredDocsFor(status).filter((k) => !kinds.has(k));
 }
 
-export async function computeBillingStage(loadId: string): Promise<BillingStage> {
+async function computeBillingStage(loadId: string): Promise<BillingStage> {
   const load = await db.load.findUniqueOrThrow({
     where: { id: loadId },
     include: { invoice: { select: { status: true } }, documents: { select: { kind: true } } },
@@ -90,7 +90,7 @@ export async function createInvoiceForLoad(loadId: string, userId: string | null
 type LoadForBoard = { status: string; stops?: { type: string; status: string; seq: number }[] } | null | undefined;
 
 /** Board status derived from the driver's active load and its stop progress. */
-export function deriveBoardStatus(load: LoadForBoard): BoardStatus {
+function deriveBoardStatus(load: LoadForBoard): BoardStatus {
   if (!load) return "READY";
   if (load.status === "ASSIGNED") return "DISPATCHED";
   if (load.status === "IN_TRANSIT") {

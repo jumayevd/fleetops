@@ -6,8 +6,6 @@ import { cn as clsx, buttonClass, type ButtonVariant } from "./ui";
 import type { ActionState } from "@/lib/action";
 
 const PendingContext = createContext(false);
-/** True while the enclosing ActionForm is submitting (for disabling secondary controls). */
-export const useFormPending = () => useContext(PendingContext);
 
 export function SubmitButton({ children, variant = "primary", size, className, pendingText, disabled }: {
   children: ReactNode; variant?: ButtonVariant; size?: "sm" | "md"; className?: string; pendingText?: string; disabled?: boolean;

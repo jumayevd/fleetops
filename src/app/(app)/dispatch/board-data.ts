@@ -5,7 +5,7 @@ import { estimatedArrival, loadProgress, syncSimulatedPositions } from "@/lib/te
 import { DAY_MS, dayRange, isYmd, todayYmd } from "./dates";
 import { isRowColor, type BoardLoad, type BoardPayload, type BoardRow, type StatusEvent } from "./types";
 
-export { dayRange, shiftYmd, todayYmd } from "./dates";
+export { todayYmd } from "./dates";
 
 /* ------------------------------------------------------------------ */
 /* Dates (company timezone)                                            */
@@ -17,7 +17,7 @@ export function parseBoardDate(v: unknown) {
 }
 
 /** Key for BoardCell.date (`@db.Date`): UTC midnight of the calendar date, matching how cells are seeded. */
-export const cellDate = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`);
+const cellDate = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`);
 
 /* ------------------------------------------------------------------ */
 /* Rows                                                                */
@@ -175,7 +175,7 @@ export async function driverStatusHistory(driverId: string, take = 60): Promise<
 }
 
 /** Most loads the prebook view renders at once; the headline count is always the full number. */
-export const PREBOOK_LIMIT = 300;
+const PREBOOK_LIMIT = 300;
 
 /** Loads for the prebook view: booked or dispatched with a pickup more than 24 h out. `at` is the timestamp the rule was evaluated at. */
 export async function prebookLoads() {

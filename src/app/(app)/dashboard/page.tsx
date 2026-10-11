@@ -7,7 +7,7 @@ import { getAlerts } from "@/lib/alerts";
 import { monthlyFinancials, receivables, revenueMtdComparison, weeklyProduction } from "@/lib/stats";
 import { money, money2 } from "@/lib/format";
 import { Card, EmptyState, LinkButton, PageHeader, cn } from "@/components/ui";
-import { RevenueChart, SimpleBar } from "@/components/charts";
+import { RevenueChart, SimpleBar } from "@/components/charts-lazy";
 import { LiveFleetMini } from "@/components/live-fleet";
 import { NeedsAttention } from "./needs-you";
 import { TabbedCard } from "./today-tabs";

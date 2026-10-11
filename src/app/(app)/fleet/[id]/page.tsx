@@ -12,7 +12,7 @@ import { estimatedArrival, loadProgress, loadRoute, syncSimulatedPositions } fro
 import { saveMaintenance, addFuelLog, addTruckNote } from "@/app/actions/fleet";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, Chip, DL, EmptyState, ExpiryBadge, Field, Input, LinkButton, PageHeader, Progress, Select, Stat, StatusDot, Table, Tabs, Textarea, cn, type Tone } from "@/components/ui";
-import { Spark } from "@/components/charts";
+import { Spark } from "@/components/charts-lite";
 import { LeafletMap } from "@/components/map";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { TruckStatusMenu } from "./status-menu";

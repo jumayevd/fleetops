@@ -1,6 +1,6 @@
 import type { Tone } from "@/components/ui";
 import { cn } from "@/components/ui";
-import { ROLE_LABELS, type Role } from "@/lib/constants";
+import type { Role } from "@/lib/constants";
 
 /**
  * Client-safe helpers shared by the administration pages (users, company, audit, account).
@@ -11,7 +11,6 @@ import { ROLE_LABELS, type Role } from "@/lib/constants";
 export const ROLE_TONE: Record<Role, Tone> = {
   OWNER: "accent", ADMIN: "info", DISPATCHER: "neutral", FLEET_MANAGER: "neutral", ACCOUNTANT: "neutral", DRIVER: "neutral",
 };
-export const roleLabel = (r: string) => ROLE_LABELS[r as Role] ?? r;
 
 /** Preset team colours (stored as data on Team.color, like the seed). Not UI palette classes. */
 export const TEAM_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#64748B"] as const;

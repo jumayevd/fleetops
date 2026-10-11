@@ -63,7 +63,7 @@ export async function deleteFile(key: string) {
 }
 
 /** Minimal single-page PDF with a title line — used for seeded demo documents. */
-export function placeholderPdf(key: string) {
+function placeholderPdf(key: string) {
   const title = key.split("/").pop()?.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ") ?? "Document";
   const text = (s: string) => s.replace(/[()\\]/g, (c) => `\\${c}`);
   const content = `BT /F1 20 Tf 60 740 Td (${text(title)}) Tj 0 -30 Td /F1 11 Tf (FleetOps demo document - placeholder generated for the sample company.) Tj 0 -18 Td (Storage key: ${text(key)}) Tj ET`;

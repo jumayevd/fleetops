@@ -18,7 +18,7 @@ const partsFmt = new Intl.DateTimeFormat("en-US", {
 });
 
 /** Wall-clock parts of an instant in the company timezone (numeric, so output never depends on the ICU locale data). */
-export function tzParts(at: Date | string | number) {
+function tzParts(at: Date | string | number) {
   const parts = partsFmt.formatToParts(at instanceof Date ? at : new Date(at));
   const g = (t: string) => Number(parts.find((p) => p.type === t)?.value);
   return { y: g("year"), mo: g("month"), d: g("day"), h: g("hour") % 24, mi: g("minute"), s: g("second") };
@@ -50,7 +50,7 @@ export const todayYmd = () => ymdOf(new Date());
 export const shiftYmd = (ymd: string, days: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 
 /** 0 = Sunday … 6 = Saturday. */
-export const weekdayOf = (ymd: string) => new Date(`${ymd}T00:00:00Z`).getUTCDay();
+const weekdayOf = (ymd: string) => new Date(`${ymd}T00:00:00Z`).getUTCDay();
 export const isWeekendYmd = (ymd: string) => weekdayOf(ymd) === 0 || weekdayOf(ymd) === 6;
 
 /** Monday of the week containing `ymd`. */

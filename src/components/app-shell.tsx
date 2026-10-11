@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, use, useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -9,8 +10,12 @@ import {
   Bell, Search, Menu, X, LogOut, UserCircle, PanelLeftClose, PanelLeftOpen, ChevronRight, Palette, type LucideIcon,
 } from "lucide-react";
 import { cn, Avatar, Kbd, StatusDot } from "./ui";
-import { AppearanceControls } from "./appearance";
-import { CommandPalette } from "./command-palette";
+// Opened on demand, so they download on first use instead of with every page.
+const CommandPalette = dynamic(() => import("./command-palette").then((m) => m.CommandPalette), { ssr: false });
+const AppearanceControls = dynamic(() => import("./appearance").then((m) => m.AppearanceControls), {
+  ssr: false,
+  loading: () => <div className="h-72" aria-busy="true" />,
+});
 import { NavProgress } from "./nav-progress";
 import { NAV, NAV_COOKIE, SEGMENT_LABELS, allNavItems, findNavItem } from "@/lib/nav";
 import { can } from "@/lib/permissions";

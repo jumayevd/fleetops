@@ -59,8 +59,6 @@ export const EQUIPMENT_LABELS: Record<string, string> = {
   CONTAINER: "Container",
 };
 
-export const STOP_TYPES = ["PICKUP", "DELIVERY"] as const;
-export const STOP_STATUSES = ["PENDING", "ARRIVED", "DONE"] as const;
 
 export const CUSTOMER_KINDS = ["SHIPPER", "BROKER", "BOTH"] as const;
 export const CUSTOMER_KIND_LABELS: Record<string, string> = { SHIPPER: "Shipper", BROKER: "Broker", BOTH: "Shipper & broker" };
@@ -86,10 +84,6 @@ export const WORK_ORDER_CATEGORY_LABELS: Record<string, string> = {
 export const WORK_ORDER_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 export const WORK_ORDER_STATUSES = ["DRAFT", "OPEN", "IN_PROGRESS", "DONE", "CANCELLED"] as const;
 
-/** @deprecated use WORK_ORDER_* */
-export const MAINTENANCE_TYPES = WORK_ORDER_CATEGORIES;
-/** @deprecated use WORK_ORDER_STATUSES */
-export const MAINTENANCE_STATUSES = WORK_ORDER_STATUSES;
 
 /* ------------------------------------------------------------------ */
 /* Drivers                                                             */
@@ -143,8 +137,6 @@ export function humanize(value: string | null | undefined) {
     .join(" ");
 }
 
-export const CURRENCY = "USD";
-export const VAT_RATE = 0.12;
 export const TIMEZONE = "Asia/Tashkent";
 
 // Known depots / cities used for quick route entry and demo data.

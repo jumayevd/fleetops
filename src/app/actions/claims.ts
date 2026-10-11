@@ -127,7 +127,7 @@ export async function saveClaim(claimId: string | null, _: ActionState, fd: Form
  * and denied stamp `closedAt`, reopening (disputed) clears it. Returns an ActionState rather than
  * throwing so the message survives production error masking.
  */
-export async function setClaimStatus(claimId: string, status: string, extra: { amountSettled?: number | null; note?: string | null } = {}): Promise<ActionState> {
+async function setClaimStatus(claimId: string, status: string, extra: { amountSettled?: number | null; note?: string | null } = {}): Promise<ActionState> {
   const me = await requireUser("claims.edit");
   return attempt(async () => {
     if (!(CLAIM_STATUSES as readonly string[]).includes(status)) throw new FormError("Invalid status");

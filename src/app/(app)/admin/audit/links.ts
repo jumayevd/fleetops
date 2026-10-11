@@ -32,7 +32,7 @@ export function entityHref(entity: string, entityId: string | null | undefined):
   return e.href(entityId ?? "");
 }
 
-export const ENTITY_LABELS: Record<string, string> = {
+const ENTITY_LABELS: Record<string, string> = {
   load: "Load", truck: "Truck", trailer: "Trailer", driver: "Driver", customer: "Customer", invoice: "Invoice", user: "User",
   team: "Team", company: "Company", workOrder: "Work order", work_order: "Work order", claim: "Claim", document: "Document",
   announcement: "Announcement", system: "System", payment: "Payment", board: "Board", chat: "Chat", setting: "Setting",

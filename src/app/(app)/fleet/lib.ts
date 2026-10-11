@@ -35,7 +35,7 @@ export const LIST_LIMIT = 500;
 /* Preventive maintenance                                              */
 /* ------------------------------------------------------------------ */
 
-export const PM_DUE_SOON_KM = 2000;
+const PM_DUE_SOON_KM = 2000;
 
 export type PmInput = { odometerKm: number; pmIntervalKm: number; lastPmKm: number | null; nextServiceKm: number | null };
 export type PmState = "unknown" | "overdue" | "due" | "ok";
@@ -143,7 +143,7 @@ export function daysSince(d: Date | string) {
  * Earliest of the given dates, ignoring missing ones. Paperwork expiry is the earlier of the date on the unit record and
  * the expiry on the newest uploaded document of that kind, so a stale record date can't hide an expired certificate.
  */
-export function earliest(...dates: (Date | null | undefined)[]): Date | null {
+function earliest(...dates: (Date | null | undefined)[]): Date | null {
   let min: Date | null = null;
   for (const d of dates) if (d && (!min || d < min)) min = d;
   return min;

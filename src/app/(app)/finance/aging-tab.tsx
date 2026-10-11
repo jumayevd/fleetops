@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { money, number } from "@/lib/format";
 import { Card, Chip, Progress, Table, cn } from "@/components/ui";
-import { SimpleBar } from "@/components/charts";
+import { SimpleBar } from "@/components/charts-lazy";
 import type { CustomerAging } from "./data";
 import { AGING_BUCKETS, creditTone, lateTone, type AgingKey } from "./shared";
 

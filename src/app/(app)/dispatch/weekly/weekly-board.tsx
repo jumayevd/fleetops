@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Chip, Progress, cn, type Tone } from "@/components/ui";
-import { Spark } from "@/components/charts";
+import { Spark } from "@/components/charts-lite";
 import { DRIVER_TYPE_LABELS, DRIVER_TYPE_SHORT } from "@/lib/constants";
 import { money, money2, number } from "@/lib/format";
 import type { WeeklyDriverRow, WeeklyTeamRow } from "@/lib/stats";

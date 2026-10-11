@@ -12,7 +12,6 @@ export const KIND_SHORT: Record<string, string> = { SHIPPER: "Shipper", BROKER: 
 /** Kinds that count as a shipper / as a broker ("BOTH" is both). Used for filters and database queries alike. */
 export const SHIPPER_KINDS = ["SHIPPER", "BOTH"];
 export const BROKER_KINDS = ["BROKER", "BOTH"];
-export const isShipper = (kind: string) => SHIPPER_KINDS.includes(kind);
 export const isBroker = (kind: string) => BROKER_KINDS.includes(kind);
 
 export const ACTIVE_LOAD_STATUSES = ["PLANNED", "ASSIGNED", "IN_TRANSIT"] as const;

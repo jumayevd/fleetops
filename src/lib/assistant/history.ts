@@ -2,9 +2,9 @@ import { isToolUIPart, type UIMessage } from "ai";
 import { MAX_TEXT_CHARS, dropUnsettledToolCalls } from "./shared";
 
 /** Only the recent messages go to the model; the client keeps the full transcript. */
-export const HISTORY_LIMIT = 30;
+const HISTORY_LIMIT = 30;
 /** Tool results from this many recent assistant turns go to the model in full; older ones become a stub. */
-export const FULL_RESULT_TURNS = 2;
+const FULL_RESULT_TURNS = 2;
 
 /** What an older tool result is replaced with (a list result can be 6–20 KB and would be resent every turn). */
 const OMITTED_RESULT = {

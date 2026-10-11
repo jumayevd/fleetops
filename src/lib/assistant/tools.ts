@@ -34,8 +34,8 @@ const ACTIVE_LOAD = ["ASSIGNED", "IN_TRANSIT"] as const;
 const dt = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 const d = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, day: "2-digit", month: "short", year: "numeric" });
 /** "03 Oct 2026, 14:05" in the company timezone. */
-export const fmtDateTime = (v: Date | null | undefined) => (v ? dt.format(v) : null);
-export const fmtDate = (v: Date | null | undefined) => (v ? d.format(v) : null);
+const fmtDateTime = (v: Date | null | undefined) => (v ? dt.format(v) : null);
+const fmtDate = (v: Date | null | undefined) => (v ? d.format(v) : null);
 const round = (n: number, dp = 0) => Math.round(n * 10 ** dp) / 10 ** dp;
 const daysSince = (v: Date, now = Date.now()) => Math.floor((now - v.getTime()) / DAY);
 const daysUntil = (v: Date | null | undefined, now = Date.now()) => (v ? Math.ceil((v.getTime() - now) / DAY) : null);
@@ -96,7 +96,7 @@ function lateness(l: Timed, now: number) {
 }
 
 /** What the model gets when a lookup throws: no stack, no SQL, no file paths (the real error goes to the server log). */
-export const LOOKUP_FAILED = { error: "That lookup failed. Ask the user to try again." } as const;
+const LOOKUP_FAILED = { error: "That lookup failed. Ask the user to try again." } as const;
 
 /* ------------------------------------------------------------------ */
 /* Money visibility: one source of truth for the tools and the prompt  */
@@ -217,7 +217,7 @@ export const TOOL_PERMISSION = {
   searchEverything: "dashboard.view",
 } as const satisfies Record<string, Permission>;
 export type AssistantToolName = keyof typeof TOOL_PERMISSION;
-export const TOOL_NAMES = Object.keys(TOOL_PERMISSION) as AssistantToolName[];
+const TOOL_NAMES = Object.keys(TOOL_PERMISSION) as AssistantToolName[];
 
 export const allowedTools = (role: string) => TOOL_NAMES.filter((n) => can(role, TOOL_PERMISSION[n]));
 

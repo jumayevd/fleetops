@@ -2,7 +2,6 @@ import "server-only";
 import { db } from "@/lib/db";
 import { can } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
-import { LOAD_STATUS_LABELS, type LoadStatus } from "@/lib/constants";
 import { COMPANY_ROOM, PAGE_SIZE, parseRoom, previewOf, type ChatMe, type ChatMessageDTO, type RoomSummary } from "./shared";
 
 /* Server-side data for chat: who may read which room, the rooms column and message pages. */
@@ -140,7 +139,6 @@ export async function roomMeta(ctx: ChatContext, room: string): Promise<RoomSumm
   return l ? (await withLastMessage([loadRoom(l, ctx)]))[0] : null;
 }
 
-export const loadStatusLabel = (s: string | null) => (s && s in LOAD_STATUS_LABELS ? LOAD_STATUS_LABELS[s as LoadStatus] : s);
 
 export const toMessageDTO = (m: { id: string; room: string; userId: string | null; body: string; createdAt: Date; user: { name: string } | null }): ChatMessageDTO => ({
   id: m.id, room: m.room, userId: m.userId, userName: m.user?.name ?? "Former user", body: m.body, createdAt: m.createdAt.toISOString(),

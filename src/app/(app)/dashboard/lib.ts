@@ -39,8 +39,8 @@ export function groupAlerts(alerts: Alert[]): AlertGroup[] {
 /* ------------------------------------------------------------------ */
 
 /** Same thresholds the live map uses: above this a truck counts as moving; a fix older than this is "no signal". */
-export const ROLLING_KMH = 5;
-export const STALE_MS = 30 * 60_000;
+const ROLLING_KMH = 5;
+const STALE_MS = 30 * 60_000;
 
 export const movingTrucks = (fleet: Pick<FleetSnapshot[number], "status" | "speedKmh">[]) =>
   fleet.filter((t) => t.status === "ACTIVE" && t.speedKmh > ROLLING_KMH).length;
@@ -74,11 +74,6 @@ export function fleetLegend(fleet: FleetSnapshot, now: number) {
 /* Activity feed                                                       */
 /* ------------------------------------------------------------------ */
 
-/** LoadEvent.type → tone. Problems are red, hand-offs blue, movement violet, bookkeeping quiet. */
-export const EVENT_TONE: Record<string, Tone> = {
-  CREATED: "neutral", ASSIGNED: "info", STATUS: "progress", NOTE: "neutral", CHECK_CALL: "info",
-  ISSUE: "danger", DOCUMENT: "neutral", BILLING: "ok", EDIT: "neutral",
-};
 
 /* ------------------------------------------------------------------ */
 /* Copy helpers                                                        */
@@ -91,7 +86,7 @@ export const pts = (d: number) => `${d > 0 ? "+" : ""}${d} pts`;
 export const pct = (d: number) => `${d > 0 ? "+" : ""}${d}%`;
 
 /** Company-local hour, so the greeting is right even when the server runs elsewhere. */
-export function companyHour(now: Date) {
+function companyHour(now: Date) {
   const h = new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: TIMEZONE }).format(now);
   return Number(h) % 24;
 }

@@ -28,8 +28,8 @@ export function scoreGrade(score: number): { grade: Grade; tone: Tone } {
   return { grade: "D", tone: "danger" };
 }
 
-export const AT_RISK_SCORE = 75;
-export const EXPIRY_SOON_DAYS = 30;
+const AT_RISK_SCORE = 75;
+const EXPIRY_SOON_DAYS = 30;
 
 export type RiskInput = { score: number; licenseExpiry: Date | string; medicalExpiry: Date | string | null };
 export type Risk = { tone: Tone; text: string };

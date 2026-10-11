@@ -10,7 +10,7 @@ import { DOC_KIND_LABELS, REQUIRED_DRIVER_DOCS } from "@/lib/documents";
 import { ago, date, dateTime, daysAgo, daysUntil, km, money, money2, number } from "@/lib/format";
 import { estimatedArrival, loadProgress } from "@/lib/telemetry";
 import { DocumentsPanel } from "@/components/documents/panel";
-import { Spark } from "@/components/charts";
+import { Spark } from "@/components/charts-lite";
 import { Badge, Card, Cell, Chip, DL, EmptyState, ExpiryBadge, LinkButton, PageHeader, Progress, STATUS_TONE, Stat, StatusDot, TONE_DOT, Table, Tabs, cn, type Tone } from "@/components/ui";
 import { TeamDot } from "../team-control";
 import { HoldControl } from "./hold-control";

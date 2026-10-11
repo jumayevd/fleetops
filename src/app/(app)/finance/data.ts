@@ -84,7 +84,7 @@ export type BillingQueue = Awaited<ReturnType<typeof billingQueueLoads>>;
 /* Invoices                                                            */
 /* ------------------------------------------------------------------ */
 
-export function invoiceWhere(filter: InvoiceFilter, now: Date): Prisma.InvoiceWhereInput {
+function invoiceWhere(filter: InvoiceFilter, now: Date): Prisma.InvoiceWhereInput {
   switch (filter) {
     case "open": return { status: { in: ["DRAFT", "SENT"] } };
     case "overdue": return { status: "SENT", dueAt: { lt: now } };

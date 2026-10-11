@@ -247,8 +247,6 @@ export async function saveMaintenance(_: ActionState, fd: FormData): Promise<Act
   });
 }
 
-/** @deprecated use setWorkOrderStatus */
-export const setMaintenanceStatus = setWorkOrderStatus;
 
 /* ------------------------------------------------------------------ */
 /* Fuel                                                                */

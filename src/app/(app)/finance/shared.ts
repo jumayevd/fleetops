@@ -17,7 +17,7 @@ export type InvoiceFilter = (typeof INVOICE_FILTERS)[number];
 export const FILTER_LABELS: Record<InvoiceFilter, string> = {
   open: "Open", overdue: "Overdue", DRAFT: "Draft", SENT: "Sent", PAID: "Paid", VOID: "Void", all: "All",
 };
-export const DEFAULT_FILTER: InvoiceFilter = "open";
+const DEFAULT_FILTER: InvoiceFilter = "open";
 
 export function parseFilter(v: unknown): InvoiceFilter {
   return typeof v === "string" && (INVOICE_FILTERS as readonly string[]).includes(v) ? (v as InvoiceFilter) : DEFAULT_FILTER;
@@ -118,7 +118,7 @@ export type Letterhead = {
 };
 
 /** Used when the company profile has not been filled in yet, so an invoice never prints with blanks. */
-export const LETTERHEAD_FALLBACK: Letterhead = {
+const LETTERHEAD_FALLBACK: Letterhead = {
   legalName: "FleetOps Logistics", brand: "FleetOps", taxId: "", licenseNumber: "", director: "", phone: "", email: "",
   address: "Tashkent, Uzbekistan",
   bank: { name: "", account: "", mfo: "", swift: "" },

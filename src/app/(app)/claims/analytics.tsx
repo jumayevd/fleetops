@@ -3,7 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { CLAIM_FAULT_LABELS, CLAIM_TYPE_LABELS } from "@/lib/constants";
 import { money, number } from "@/lib/format";
 import { Card, Table } from "@/components/ui";
-import { Bars, Donut, TrendLine, type ChartTone } from "@/components/charts";
+import { Bars, type ChartTone } from "@/components/charts-lite";
+import { Donut, TrendLine } from "@/components/charts-lazy";
 import { claimAnalytics } from "./query";
 import { FAULT_TONE, claimStatusLabel, claimsHref, type ClaimFilters } from "./shared";
 

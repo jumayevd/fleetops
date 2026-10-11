@@ -14,7 +14,7 @@ function useSeen() {
   return useMemo(() => parseSeen(raw), [raw]);
 }
 
-export const roomHref = (id: string) => (id === COMPANY_ROOM ? "/chat" : `/chat?room=${encodeURIComponent(id)}`);
+const roomHref = (id: string) => (id === COMPANY_ROOM ? "/chat" : `/chat?room=${encodeURIComponent(id)}`);
 
 function split(rooms: RoomSummary[]) {
   return {

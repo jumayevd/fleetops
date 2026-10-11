@@ -18,7 +18,7 @@ export type CompanyProfile = {
   insurance: { carrier: string; policy: string; agent: string };
 };
 
-export const EMPTY_PROFILE: CompanyProfile = {
+const EMPTY_PROFILE: CompanyProfile = {
   legalName: "", brand: "", taxId: "", licenseNumber: "", director: "", phone: "", email: "", address: "",
   bank: { name: "", account: "", mfo: "", swift: "" },
   insurance: { carrier: "", policy: "", agent: "" },

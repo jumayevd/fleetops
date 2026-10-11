@@ -4,11 +4,11 @@ import { ROLE_LABELS, TIMEZONE, type Role } from "@/lib/constants";
 import { allowedTools, buildAssistantTools, LIMIT, moneyAccess, type AssistantToolName, type MoneyAccess } from "./tools";
 
 /** Vercel AI Gateway model id. Override with ASSISTANT_MODEL. */
-export const DEFAULT_ASSISTANT_MODEL = "anthropic/claude-sonnet-5.5";
+const DEFAULT_ASSISTANT_MODEL = "anthropic/claude-sonnet-5.5";
 export const assistantModelId = () => process.env.ASSISTANT_MODEL?.trim() || DEFAULT_ASSISTANT_MODEL;
 
 /** Max model calls per answer (each tool round trip is one step). */
-export const MAX_STEPS = 8;
+const MAX_STEPS = 8;
 
 /**
  * The gateway authenticates with AI_GATEWAY_API_KEY locally and with Vercel OIDC in production
@@ -41,7 +41,7 @@ function moneyRule(role: string) {
   return `Money: they may see ${may.length ? may.join("; ") : "no money figures"}. They may not see ${mayNot.join("; ")}. The tools leave those out, so never estimate them or work them out from other numbers; say the finance team or an owner can see them in FleetOps.`;
 }
 
-export function systemPrompt(user: AssistantUser, now = new Date()) {
+function systemPrompt(user: AssistantUser, now = new Date()) {
   const tools = allowedTools(user.role);
   const areas = [...new Set(tools.map((t) => AREA_BY_TOOL[t]).filter((a): a is string => Boolean(a)))];
   const when = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(now);

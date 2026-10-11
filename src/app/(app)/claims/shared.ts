@@ -1,5 +1,5 @@
 import type { Tone } from "@/components/ui";
-import { CLAIM_OPEN_STATUSES, CLAIM_STATUSES } from "@/lib/constants";
+import { CLAIM_STATUSES } from "@/lib/constants";
 
 /* Pure helpers shared by the claims list, analytics, form, detail page and client controls (safe on client and server). */
 
@@ -27,7 +27,7 @@ export const SEVERITY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, MED
  * Lifecycle. Reported → under review → docs collected → submitted → negotiation → approved | denied.
  * Approved → paid → closed. Denied → closed | disputed. Disputed → negotiation | litigation. Litigation → closed.
  */
-export const CLAIM_TRANSITIONS: Record<ClaimStatus, ClaimStatus[]> = {
+const CLAIM_TRANSITIONS: Record<ClaimStatus, ClaimStatus[]> = {
   REPORTED: ["UNDER_REVIEW"],
   UNDER_REVIEW: ["DOCS_COLLECTED"],
   DOCS_COLLECTED: ["SUBMITTED"],
@@ -44,7 +44,6 @@ export const allowedClaimTransitions = (from: string): ClaimStatus[] => CLAIM_TR
 
 /** Statuses that stamp `closedAt` (the claim leaves the open book). */
 export const CLAIM_CLOSING_STATUSES: readonly ClaimStatus[] = ["PAID", "CLOSED", "DENIED"];
-export const isOpenClaimStatus = (s: string) => (CLAIM_OPEN_STATUSES as readonly string[]).includes(s);
 export const isClosingStatus = (s: string) => (CLAIM_CLOSING_STATUSES as readonly string[]).includes(s);
 
 /**
@@ -170,8 +169,6 @@ export function claimsHref(f: Partial<ClaimFilters>, patch: Partial<Record<keyof
 
 export const hasClaimFilters = (f: ClaimFilters) => Boolean(f.type || f.status || f.severity || f.fault || f.q);
 
-/** Lifecycle order for the status funnel (the constants list is already in flow order). */
-export const FUNNEL_ORDER: readonly ClaimStatus[] = CLAIM_STATUSES;
 
 /** Everything the claim form's selects need (loaded server-side in options.ts). */
 export type ClaimFormOptions = {

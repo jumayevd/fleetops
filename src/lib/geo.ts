@@ -1,6 +1,6 @@
 export type LatLng = { lat: number; lng: number };
 
-export function haversineKm(a: LatLng, b: LatLng) {
+function haversineKm(a: LatLng, b: LatLng) {
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
   const dLng = ((b.lng - a.lng) * Math.PI) / 180;
@@ -30,7 +30,7 @@ function controlPoint(a: LatLng, b: LatLng): LatLng {
   return { lat: mid.lat - dx * 0.12, lng: mid.lng + dy * 0.12 };
 }
 
-export function pointOnRoute(a: LatLng, b: LatLng, t: number): LatLng {
+function pointOnRoute(a: LatLng, b: LatLng, t: number): LatLng {
   const c = controlPoint(a, b);
   const u = 1 - t;
   return {
@@ -39,7 +39,7 @@ export function pointOnRoute(a: LatLng, b: LatLng, t: number): LatLng {
   };
 }
 
-export function routePolyline(a: LatLng, b: LatLng, steps = 32): [number, number][] {
+function routePolyline(a: LatLng, b: LatLng, steps = 32): [number, number][] {
   return Array.from({ length: steps + 1 }, (_, i) => {
     const p = pointOnRoute(a, b, i / steps);
     return [p.lat, p.lng];

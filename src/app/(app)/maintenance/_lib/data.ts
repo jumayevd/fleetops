@@ -20,7 +20,7 @@ export const PERIODS = {
   year: { days: 365, label: "Year", hint: "Last 12 months" },
 } as const;
 export type PeriodKey = keyof typeof PERIODS;
-export const DEFAULT_PERIOD: PeriodKey = "quarter";
+const DEFAULT_PERIOD: PeriodKey = "quarter";
 
 export function parsePeriod(v: unknown): PeriodKey {
   return typeof v === "string" && v in PERIODS ? (v as PeriodKey) : DEFAULT_PERIOD;
@@ -238,7 +238,7 @@ export const leaseTone = (r: LeaseRow): Tone => (r.over > 0 ? "danger" : r.remai
 /* ------------------------------------------------------------------ */
 
 export type DocState = "expired" | "expiring" | "missing" | "ok";
-export const DOC_STATE_RANK: Record<DocState, number> = { expired: 0, expiring: 1, missing: 2, ok: 3 };
+const DOC_STATE_RANK: Record<DocState, number> = { expired: 0, expiring: 1, missing: 2, ok: 3 };
 export const DOC_STATE_TONE: Record<DocState, Tone> = { expired: "danger", expiring: "warn", missing: "info", ok: "ok" };
 export const DOC_STATE_LABEL: Record<DocState, string> = { expired: "Expired", expiring: "Expiring", missing: "Missing", ok: "On file" };
 

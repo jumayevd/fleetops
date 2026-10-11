@@ -21,7 +21,7 @@ export const EVENT_LABEL: Record<string, string> = {
  * Board statuses only dispatch can lift (a dispatcher override, never derived from a load). The portal's status
  * toggle is locked while one is set and setDriverStatus refuses to change it.
  */
-export const DISPATCH_HELD_STATUSES: readonly string[] = ["STOP", "VACATION"];
+const DISPATCH_HELD_STATUSES: readonly string[] = ["STOP", "VACATION"];
 export const isDispatchHeld = (status: string) => DISPATCH_HELD_STATUSES.includes(status);
 
 /** Message types a driver can send from the portal (addLoadEvent accepts NOTE, CHECK_CALL, ISSUE). */

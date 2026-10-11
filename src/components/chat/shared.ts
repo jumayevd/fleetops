@@ -123,7 +123,7 @@ const keyOf = (p: { y: number; mo: number; d: number }) => `${p.y}-${pad(p.mo)}-
 export const dayKeyOf = (at: string | Date) => keyOf(zoned(at));
 
 /** Day separator: "Today", "Yesterday", "Friday 2 Oct" within the past week, otherwise "02 Oct 2026". */
-export function dayLabel(day: string, today: string) {
+function dayLabel(day: string, today: string) {
   const at = Date.parse(`${day}T00:00:00Z`);
   const diff = Math.round((Date.parse(`${today}T00:00:00Z`) - at) / DAY_MS);
   if (diff <= 0) return "Today"; // a clock running behind the server never shows a future day
