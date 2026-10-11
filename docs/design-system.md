@@ -111,3 +111,18 @@ The overview is the calmest page in the app and the template for new summary pag
 
 Rules of thumb: show the top items and link to the full list; in long lists one severity dot replaces badges;
 secondary forms and hints (recover to another unit, keyboard shortcuts) start collapsed.
+
+## Personal appearance
+
+Everyone can tune the look from the palette icon in the top bar (also on My account). Choices live in cookies
+(`theme`, `accent`, `density`, `font`, `nav`), so the server renders the first paint with them: no flash.
+
+- **Accent**: blue (default), indigo, violet, teal, green, amber, graphite. Palettes in `globals.css`
+  (`:root[data-accent=…]`, plus a Night variant each); every accent-tinted element follows, including charts
+  and map markers.
+- **Density**: compact (13 px root), default (14 px), roomy (15.5 px). Only rem-based spacing and control
+  heights scale; text sizes stay put.
+- **Font**: Inter (default), Geist, or the system UI font. Numbers use the same face with tabular figures.
+- **Overview**: "Customize" shows or hides each section (`overview` cookie); hidden sections are not queried.
+
+Keep new UI on tokens (`accent`, `accent-soft`, `primary`…) so it follows every accent and density.

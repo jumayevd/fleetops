@@ -6,10 +6,10 @@ import { Suspense, use, useEffect, useRef, useState, type ReactNode } from "reac
 import {
   LayoutDashboard, Rows3, Package, Map, CalendarRange, Navigation, Truck, Container, Wrench, ClipboardList, Users, Building2,
   Receipt, BarChart3, ShieldAlert, MessageSquare, Megaphone, Landmark, ShieldCheck, Send, ScrollText,
-  Bell, Search, Menu, X, LogOut, UserCircle, PanelLeftClose, PanelLeftOpen, ChevronRight, type LucideIcon,
+  Bell, Search, Menu, X, LogOut, UserCircle, PanelLeftClose, PanelLeftOpen, ChevronRight, Palette, type LucideIcon,
 } from "lucide-react";
 import { cn, Avatar, Kbd, StatusDot } from "./ui";
-import { ThemeToggle } from "./theme-toggle";
+import { AppearanceControls } from "./appearance";
 import { CommandPalette } from "./command-palette";
 import { NavProgress } from "./nav-progress";
 import { NAV, NAV_COOKIE, SEGMENT_LABELS, allNavItems, findNavItem } from "@/lib/nav";
@@ -40,11 +40,11 @@ export function AppShell({ user, data, navOpen, children }: {
   const [pinned, setPinned] = useState(navOpen);
   const [cmd, setCmd] = useState(false);
   const chord = useRef<string | null>(null);
-  const togglePinned = () => {
-    const next = !pinned;
-    setPinned(next);
-    document.cookie = `${NAV_COOKIE}=${next ? "open" : "rail"}; path=/; max-age=31536000; samesite=lax`;
+  const setSidebar = (open: boolean) => {
+    setPinned(open);
+    document.cookie = `${NAV_COOKIE}=${open ? "open" : "rail"}; path=/; max-age=31536000; samesite=lax`;
   };
+  const togglePinned = () => setSidebar(!pinned);
 
   // Global keys: ⌘K / Ctrl+K or "/" opens search; "g" then a letter jumps (g l → loads).
   useEffect(() => {
@@ -85,7 +85,7 @@ export function AppShell({ user, data, navOpen, children }: {
 
       <div className={cn("transition-[padding] duration-200 ease-out", pinned ? "lg:pl-60" : "lg:pl-14", "print:pl-0")}>
         {/* Keyed by path so popovers and the mobile drawer close on navigation without effects. */}
-        <TopBar key={path} user={user} path={path} data={data} pinned={pinned} openSearch={() => setCmd(true)} />
+        <TopBar key={path} user={user} path={path} data={data} pinned={pinned} onSidebar={setSidebar} openSearch={() => setCmd(true)} />
         <main className="mx-auto w-full max-w-[1680px] p-4 lg:px-6 lg:py-5">{children}</main>
       </div>
       {cmd && <CommandPalette onClose={() => setCmd(false)} role={user.role} />}
@@ -150,12 +150,14 @@ function NavBadge({ data, href, expanded }: { data: Promise<ShellData>; href: st
     : <span className="fade-in absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />;
 }
 
-function TopBar({ user, path, data, pinned, openSearch }: {
-  user: ShellUser; path: string; data: Promise<ShellData>; pinned: boolean; openSearch: () => void;
+function TopBar({ user, path, data, pinned, onSidebar, openSearch }: {
+  user: ShellUser; path: string; data: Promise<ShellData>; pinned: boolean; onSidebar: (open: boolean) => void; openSearch: () => void;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [bell, setBell] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
+  const [look, setLook] = useState(false);
+  const only = (which: "bell" | "user" | "look") => { setBell(which === "bell" ? (b) => !b : false); setUserMenu(which === "user" ? (u) => !u : false); setLook(which === "look" ? (l) => !l : false); };
   const crumbs = breadcrumbs(path);
 
   return (
@@ -187,14 +189,28 @@ function TopBar({ user, path, data, pinned, openSearch }: {
             <Search className="h-3.5 w-3.5" /><span className="flex-1 text-left">Search…</span><Kbd>⌘K</Kbd>
           </button>
           <button onClick={openSearch} className="rounded-md p-1.5 text-fg-muted transition-colors hover:bg-raised sm:hidden" aria-label="Search"><Search className="h-4 w-4" /></button>
-          <ThemeToggle />
+          <div className="relative">
+            <button onClick={() => only("look")} className={cn("rounded-md p-1.5 text-fg-muted transition-colors hover:bg-raised hover:text-fg", look && "bg-raised text-fg")}
+              aria-label="Appearance" aria-expanded={look} title="Appearance">
+              <Palette className="h-4 w-4" />
+            </button>
+            {look && (
+              <Popover onClose={() => setLook(false)} className="w-80">
+                <div className="px-4 pb-1 pt-3">
+                  <p className="text-[13px] font-semibold text-fg">Appearance</p>
+                  <p className="text-[12px] text-fg-subtle">Saved in this browser</p>
+                </div>
+                <div className="px-4 pb-4 pt-3"><AppearanceControls sidebarOpen={pinned} onSidebar={onSidebar} /></div>
+              </Popover>
+            )}
+          </div>
           <div className="relative">
             <Suspense fallback={<BellButton count={0} critical={0} onClick={() => {}} />}>
-              <BellMenu data={data} open={bell} onToggle={() => { setBell((b) => !b); setUserMenu(false); }} onClose={() => setBell(false)} />
+              <BellMenu data={data} open={bell} onToggle={() => only("bell")} onClose={() => setBell(false)} />
             </Suspense>
           </div>
           <div className="relative">
-            <button onClick={() => { setUserMenu((u) => !u); setBell(false); }} className="flex items-center gap-2 rounded-md p-1 pr-2 transition-colors hover:bg-raised" aria-label="Account menu">
+            <button onClick={() => only("user")} className="flex items-center gap-2 rounded-md p-1 pr-2 transition-colors hover:bg-raised" aria-label="Account menu">
               <Avatar name={user.name} size={26} />
               <span className="hidden text-[13px] font-medium text-fg-muted md:block">{user.name.split(" ")[0]}</span>
             </button>

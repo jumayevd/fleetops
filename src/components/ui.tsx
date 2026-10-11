@@ -33,15 +33,17 @@ export function Card({ title, actions, children, className, bodyClassName, flush
   /** No body padding (tables, lists, maps). */
   flush?: boolean;
 }) {
+  const header = Boolean(title || actions);
+  // No divider under the title: whitespace separates header and body, so cards read as one calm block.
   return (
     <section id={id} className={clsx("rounded-lg border border-line bg-surface shadow-card", className)}>
-      {(title || actions) && (
-        <header className="flex min-h-11 items-center justify-between gap-2 border-b border-line px-4 py-2">
+      {header && (
+        <header className="flex min-h-11 items-center justify-between gap-2 px-4 pb-1 pt-3">
           <h2 className="text-[14px] font-semibold text-fg">{title}</h2>
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={clsx(flush ? "" : "p-4", bodyClassName)}>{children}</div>
+      <div className={clsx(flush ? "" : header ? "px-4 pb-4 pt-2" : "p-4", bodyClassName)}>{children}</div>
     </section>
   );
 }

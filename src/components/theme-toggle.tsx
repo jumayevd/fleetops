@@ -18,7 +18,7 @@ function apply(pref: ThemePref) {
   const resolved = pref === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : pref;
   document.documentElement.setAttribute("data-theme", resolved);
 }
-function writePref(pref: ThemePref) {
+export function writePref(pref: ThemePref) {
   document.cookie = `${THEME_COOKIE}=${pref}; path=/; max-age=31536000; samesite=lax`;
   apply(pref);
   listeners.forEach((l) => l());
@@ -31,9 +31,12 @@ function subscribe(cb: () => void) {
   return () => { listeners.delete(cb); mq.removeEventListener("change", onChange); };
 }
 
+/** Current Day / Night / Auto choice (from the cookie), re-rendering when it changes. */
+export const useThemePref = () => useSyncExternalStore(subscribe, readPref, () => DEFAULT_THEME);
+
 /** Day / Night / Auto. Persists in a cookie so the server renders the right theme next time. */
 export function ThemeToggle({ className, showLabel }: { className?: string; showLabel?: boolean }) {
-  const pref = useSyncExternalStore(subscribe, readPref, () => DEFAULT_THEME);
+  const pref = useThemePref();
   const cycle = () => writePref(ORDER[(ORDER.indexOf(pref) + 1) % ORDER.length]);
   const Icon = pref === "light" ? Sun : pref === "dark" ? Moon : MonitorSmartphone;
   return (

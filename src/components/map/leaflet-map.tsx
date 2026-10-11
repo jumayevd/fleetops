@@ -50,7 +50,7 @@ let cached: { mode: string; vars: Vars } | null = null;
 const listeners = new Set<() => void>();
 let observer: MutationObserver | null = null;
 
-const mode = () => document.documentElement.getAttribute("data-theme") ?? "";
+const mode = () => `${document.documentElement.getAttribute("data-theme") ?? ""}|${document.documentElement.getAttribute("data-accent") ?? ""}`;
 function read(): Vars {
   const cs = getComputedStyle(document.documentElement);
   return Object.fromEntries(VARS.map((v) => [v, cs.getPropertyValue(v).trim() || `var(${v})`])) as Vars;
@@ -63,7 +63,7 @@ function subscribe(cb: () => void) {
   listeners.add(cb);
   if (!observer) {
     observer = new MutationObserver(() => { cached = { mode: mode(), vars: read() }; listeners.forEach((l) => l()); });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent"] });
   }
   return () => {
     listeners.delete(cb);

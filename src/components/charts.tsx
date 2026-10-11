@@ -89,8 +89,14 @@ let cached: ChartTheme | null = null;
 const listeners = new Set<() => void>();
 let observer: MutationObserver | null = null;
 
+let cachedAccent: string | null = null;
+const currentAccent = () => document.documentElement.getAttribute("data-accent") ?? "";
+
 function getSnapshot(): ChartTheme {
-  if (!cached || cached.mode !== currentMode()) cached = readTheme();
+  if (!cached || cached.mode !== currentMode() || cachedAccent !== currentAccent()) {
+    cached = readTheme();
+    cachedAccent = currentAccent();
+  }
   return cached;
 }
 function subscribe(cb: () => void) {
@@ -98,9 +104,10 @@ function subscribe(cb: () => void) {
   if (!observer) {
     observer = new MutationObserver(() => {
       cached = readTheme();
+      cachedAccent = currentAccent();
       listeners.forEach((l) => l());
     });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent"] });
   }
   return () => {
     listeners.delete(cb);

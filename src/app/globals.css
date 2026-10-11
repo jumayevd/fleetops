@@ -12,7 +12,7 @@
   --raised: #f2f4f7;
   --sunken: #eef1f5;
   --overlay: #ffffff;
-  --line: #e4e7ec;
+  --line: #eaecf0;
   --line-strong: #d0d5dd;
   --fg: #101828;
   --fg-muted: #475467;
@@ -45,7 +45,8 @@
   --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow-float: 0 12px 24px -4px rgba(16, 24, 40, 0.14), 0 4px 8px -2px rgba(16, 24, 40, 0.06);
   --scrim: rgba(16, 24, 40, 0.4);
-  --map-filter: none;
+  /* Muted basemap so routes and trucks carry the colour */
+  --map-filter: saturate(0.3) brightness(1.04) contrast(0.94);
 }
 
 :root[data-theme="dark"] {
@@ -88,8 +89,72 @@
   --map-filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.55);
 }
 
+/* ------------------------------------------------------------------ */
+/* Personal appearance: accent colour, density, font                   */
+/* (set on <html> from cookies; see lib/theme.ts and appearance.tsx)   */
+/* ------------------------------------------------------------------ */
+
+:root[data-accent="indigo"] {
+  --accent: #4f46e5; --accent-hover: #4338ca; --accent-text: #4338ca; --accent-soft: #eef2ff; --on-accent: #ffffff;
+  --primary: #4f46e5; --primary-hover: #4338ca; --on-primary: #ffffff;
+}
+:root[data-accent="violet"] {
+  --accent: #7c3aed; --accent-hover: #6d28d9; --accent-text: #6d28d9; --accent-soft: #f5f3ff; --on-accent: #ffffff;
+  --primary: #7c3aed; --primary-hover: #6d28d9; --on-primary: #ffffff;
+}
+:root[data-accent="teal"] {
+  --accent: #0d9488; --accent-hover: #0f766e; --accent-text: #0f766e; --accent-soft: #effcf9; --on-accent: #ffffff;
+  --primary: #0d9488; --primary-hover: #0f766e; --on-primary: #ffffff;
+}
+:root[data-accent="green"] {
+  --accent: #16a34a; --accent-hover: #15803d; --accent-text: #15803d; --accent-soft: #effbf3; --on-accent: #ffffff;
+  --primary: #16a34a; --primary-hover: #15803d; --on-primary: #ffffff;
+}
+:root[data-accent="amber"] {
+  --accent: #d97706; --accent-hover: #b45309; --accent-text: #b45309; --accent-soft: #fff8e6; --on-accent: #ffffff;
+  --primary: #f59e0b; --primary-hover: #fbbf24; --on-primary: #1c1400;
+}
+:root[data-accent="graphite"] {
+  --accent: #344054; --accent-hover: #1d2939; --accent-text: #1d2939; --accent-soft: #f2f4f7; --on-accent: #ffffff;
+  --primary: #101828; --primary-hover: #1d2939; --on-primary: #ffffff;
+}
+:root[data-theme="dark"][data-accent="indigo"] {
+  --accent: #6366f1; --accent-hover: #818cf8; --accent-text: #a5b4fc; --accent-soft: rgba(99, 102, 241, 0.18);
+  --primary: #6366f1; --primary-hover: #7c7ff4;
+}
+:root[data-theme="dark"][data-accent="violet"] {
+  --accent: #8b5cf6; --accent-hover: #a78bfa; --accent-text: #c4b5fd; --accent-soft: rgba(139, 92, 246, 0.18);
+  --primary: #8b5cf6; --primary-hover: #9d74f7;
+}
+:root[data-theme="dark"][data-accent="teal"] {
+  --accent: #2dd4bf; --accent-hover: #5eead4; --accent-text: #5eead4; --accent-soft: rgba(45, 212, 191, 0.14);
+  --primary: #0f9f90; --primary-hover: #14b8a6;
+}
+:root[data-theme="dark"][data-accent="green"] {
+  --accent: #4ade80; --accent-hover: #86efac; --accent-text: #86efac; --accent-soft: rgba(74, 222, 128, 0.14);
+  --primary: #16a34a; --primary-hover: #22c55e;
+}
+:root[data-theme="dark"][data-accent="amber"] {
+  --accent: #fbbf24; --accent-hover: #fcd34d; --accent-text: #fcd34d; --accent-soft: rgba(251, 191, 36, 0.14);
+  --primary: #f59e0b; --primary-hover: #fbbf24; --on-primary: #1c1400;
+}
+:root[data-theme="dark"][data-accent="graphite"] {
+  --accent: #d0d5dd; --accent-hover: #f2f4f7; --accent-text: #e4e7ec; --accent-soft: rgba(255, 255, 255, 0.08); --on-accent: #101828;
+  --primary: #f2f4f7; --primary-hover: #ffffff; --on-primary: #101828;
+}
+
+/* Density scales every rem-based space and control height; text sizes stay put. */
+:root { font-size: 14px; }
+:root[data-density="compact"] { font-size: 13px; }
+:root[data-density="comfortable"] { font-size: 15.5px; }
+
+/* Font choice */
+:root { --font-ui: var(--font-inter); }
+:root[data-font="geist"] { --font-ui: var(--font-geist-sans); }
+:root[data-font="system"] { --font-ui: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+
 @theme inline {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --color-canvas: var(--canvas);
@@ -133,23 +198,31 @@
   --radius-lg: 12px;
 }
 
-html,
 body {
   background: var(--canvas);
   color: var(--fg);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+html {
+  background: var(--canvas);
 }
 
 ::selection {
   background: var(--accent-soft);
 }
 
-/* Tabular, monospaced numerals for metrics, IDs and money. */
+/* Tabular numerals for metrics, IDs and money: columns line up, in the same face as the text. */
 .num {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+  font-feature-settings: "tnum";
+  letter-spacing: -0.005em;
+}
+
+/* Finer icon strokes read lighter and more refined at UI sizes. */
+svg.lucide {
+  stroke-width: 1.75;
 }
 /* Small label above a value or section: sentence case, quiet, no tracking. */
 .eyebrow {

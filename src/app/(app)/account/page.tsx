@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { MonitorSmartphone, Moon, Sun } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { can } from "@/lib/permissions";
@@ -8,7 +7,7 @@ import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { ago, date, dateTime } from "@/lib/format";
 import { changePassword } from "@/app/actions/auth";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AppearanceControls } from "@/components/appearance";
 import { Avatar, Badge, Card, DL, Field, Input, Kbd, PageHeader } from "@/components/ui";
 import { ROLE_TONE, TeamLabel } from "../admin/shared";
 import { TelegramCard } from "./telegram-card";
@@ -63,14 +62,9 @@ export default async function AccountPage() {
             </ActionForm>
           </Card>
 
-          <Card title="Appearance" actions={<ThemeToggle showLabel className="border border-line" />}>
-            <p className="mb-3 text-[12px] text-fg-muted">Pick the theme for this device. The choice is remembered in this browser, so each workstation can differ.</p>
-            <ul className="space-y-2 text-[12px]">
-              <li className="flex gap-2.5"><Sun className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-subtle" /><span><span className="font-medium text-fg">Day</span><span className="text-fg-muted"> — light graphite for bright offices and printing.</span></span></li>
-              <li className="flex gap-2.5"><Moon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-subtle" /><span><span className="font-medium text-fg">Night</span><span className="text-fg-muted"> — dark surfaces for dispatch rooms, night shifts and wall screens.</span></span></li>
-              <li className="flex gap-2.5"><MonitorSmartphone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-subtle" /><span><span className="font-medium text-fg">Auto</span><span className="text-fg-muted"> — follows the device setting and switches when the system does.</span></span></li>
-            </ul>
-            <p className="mt-3 text-[11px] text-fg-subtle">The toggle is also in the top bar on every page.</p>
+          <Card title="Appearance">
+            <p className="mb-4 text-[12px] text-fg-muted">Make FleetOps yours. Choices are saved in this browser and apply instantly; the same panel is behind the palette icon in the top bar.</p>
+            <AppearanceControls />
           </Card>
         </div>
 

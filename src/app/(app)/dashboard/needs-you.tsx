@@ -14,7 +14,7 @@ export function NeedsAttention({ alerts, groups, className }: { alerts: Alert[];
   const more = alerts.length - SHOW;
   return (
     <section aria-labelledby="needs-attention" className={cn("flex min-w-0 flex-col rounded-lg border border-line bg-surface shadow-card", className)}>
-      <header className="flex min-h-11 items-center justify-between gap-2 border-b border-line px-4 py-2">
+      <header className="flex min-h-11 items-center justify-between gap-2 px-4 pb-0 pt-3">
         <h2 id="needs-attention" className="flex items-center gap-2 text-[14px] font-semibold text-fg">
           Needs attention
           {alerts.length > 0 && (
@@ -36,7 +36,7 @@ export function NeedsAttention({ alerts, groups, className }: { alerts: Alert[];
         </div>
       ) : (
         <>
-          <nav aria-label="Filter by kind" className="flex flex-wrap gap-1.5 px-4 pb-1 pt-3">
+          <nav aria-label="Filter by kind" className="flex flex-wrap gap-1.5 px-4 pb-1 pt-2">
             {groups.map((g) => (
               <Link key={g.kind} href={`/dashboard/alerts?kind=${g.kind}`}
                 className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-0.5 text-[12px] text-fg-muted transition-colors hover:border-line-strong hover:text-fg">
