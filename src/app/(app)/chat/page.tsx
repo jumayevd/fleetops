@@ -1,6 +1,6 @@
 import { Megaphone } from "lucide-react";
 import { requireUser } from "@/lib/auth";
-import { LinkButton, PageHeader } from "@/components/ui";
+import { LinkButton, LiveDot, PageHeader, Tip } from "@/components/ui";
 import { canAccessRoom, chatContext, chatMe, fetchMessages, listRooms, roomMeta } from "@/components/chat/data";
 import { COMPANY_ROOM, PAGE_SIZE, dayKeyOf, parseRoom } from "@/components/chat/shared";
 import { ChatWorkspace } from "@/components/chat/workspace";
@@ -47,7 +47,11 @@ export default async function ChatPage({ searchParams }: PageProps<"/chat">) {
       <PageHeader
         eyebrow="Team"
         title="Chat"
-        subtitle={`Company room · ${teams} team ${teams === 1 ? "room" : "rooms"} · ${capped ? `${loadsShown} of ${total}` : total} active load ${total === 1 ? "thread" : "threads"} · refreshes every 4 s`}
+        subtitle={
+          <Tip content={`Company room · ${teams} team ${teams === 1 ? "room" : "rooms"} · ${capped ? `${loadsShown} of ${total}` : total} active load ${total === 1 ? "thread" : "threads"}. Refreshes every 4 s.`}>
+            <LiveDot />
+          </Tip>
+        }
         actions={<LinkButton href="/announcements" variant="secondary"><Megaphone />Announcements</LinkButton>}
       />
       <ChatWorkspace rooms={rooms} active={room} initial={messages} hasMore={hasMore} me={chatMe(user)} notice={notice}

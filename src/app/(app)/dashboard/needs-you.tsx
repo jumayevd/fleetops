@@ -1,68 +1,71 @@
 import Link from "next/link";
+import { Banknote, FileBadge, Route, ShieldAlert, Truck, type LucideIcon } from "lucide-react";
 import type { Alert } from "@/lib/alerts";
-import { StatusDot, cn } from "@/components/ui";
-import type { AlertGroup } from "./lib";
+import { Disclosure, IconTile, StatusDot, cardClass, cn, type Hue } from "@/components/ui";
+import type { AlertGroup, AlertKind } from "./lib";
 
-const SHOW = 6;
+/** Items listed inside an open category; the rest are one click away on /dashboard/alerts. */
+const SHOW = 5;
+
+const KIND_ICON: Record<AlertKind, LucideIcon> = { dispatch: Route, compliance: FileBadge, fleet: Truck, money: Banknote, safety: ShieldAlert };
+const KIND_HUE: Record<AlertKind, Hue> = { dispatch: "hue-2", compliance: "hue-1", fleet: "hue-3", money: "hue-6", safety: "hue-5" };
 
 /**
- * What needs a decision, in one short list: critical first, a filter chip per kind, and the full list one click
- * away (/dashboard/alerts). A single calm line when nothing is open. Alerts are already filtered to this role.
+ * What needs a decision, sorted into categories (worst first). Each category opens on click and only one is
+ * open at a time, so the card stays short; the worst one starts open. Alerts are already filtered to this role.
  */
 export function NeedsAttention({ alerts, groups, className }: { alerts: Alert[]; groups: AlertGroup[]; className?: string }) {
   const critical = alerts.filter((a) => a.level === "critical").length;
-  const more = alerts.length - SHOW;
   return (
-    <section aria-labelledby="needs-attention" className={cn("flex min-w-0 flex-col rounded-lg border border-line bg-surface shadow-card", className)}>
-      <header className="flex min-h-11 items-center justify-between gap-2 px-4 pb-0 pt-3">
+    <section aria-labelledby="needs-attention" className={cn(cardClass, "flex min-w-0 flex-col", className)}>
+      <header className="flex min-h-12 items-center justify-between gap-2 px-4 pb-2 pt-3">
         <h2 id="needs-attention" className="flex items-center gap-2 text-[14px] font-semibold text-fg">
           Needs attention
-          {alerts.length > 0 && (
-            <span className="num text-[12px] font-normal text-fg-subtle">
-              {alerts.length}{critical > 0 && <span className="text-danger"> · {critical} critical</span>}
-            </span>
-          )}
+          {alerts.length > 0 && <span className="num rounded-full bg-neutral-soft px-1.5 text-[11px] font-medium leading-5 text-fg-muted">{alerts.length}</span>}
+          {critical > 0 && <span className="num rounded-full bg-danger-soft px-1.5 text-[11px] font-medium leading-5 text-danger">{critical} critical</span>}
         </h2>
         {alerts.length > 0 && <Link href="/dashboard/alerts" className="text-[12px] font-medium text-fg-muted hover:text-fg">View all →</Link>}
       </header>
 
       {alerts.length === 0 ? (
         <div className="flex flex-1 items-center gap-3 px-4 py-8">
-          <StatusDot tone="ok" />
+          <IconTile tone="ok"><StatusDot tone="ok" /></IconTile>
           <div>
             <p className="text-[13px] font-medium text-fg">All clear</p>
             <p className="text-[12px] text-fg-muted">Nothing needs a decision right now.</p>
           </div>
         </div>
       ) : (
-        <>
-          <nav aria-label="Filter by kind" className="flex flex-wrap gap-1.5 px-4 pb-1 pt-2">
-            {groups.map((g) => (
-              <Link key={g.kind} href={`/dashboard/alerts?kind=${g.kind}`}
-                className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-0.5 text-[12px] text-fg-muted transition-colors hover:border-line-strong hover:text-fg">
-                {g.label}<span className="num text-fg-subtle">{g.items.length}</span>
-              </Link>
-            ))}
-          </nav>
-          <ul className="flex-1 py-1">
-            {alerts.slice(0, SHOW).map((a, i) => (
-              <li key={`${a.href}-${i}`}>
-                <Link href={a.href} className="flex items-start gap-3 px-4 py-2 transition-colors hover:bg-raised">
-                  <StatusDot tone={a.level === "critical" ? "danger" : "warn"} className="mt-[5px]" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] text-fg">{a.title}</span>
-                    <span className="block truncate text-[12px] text-fg-subtle">{a.detail}</span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {more > 0 && (
-            <Link href="/dashboard/alerts" className="border-t border-line px-4 py-2 text-[12px] text-fg-muted transition-colors hover:bg-raised hover:text-fg">
-              <span className="num">{more}</span> more
-            </Link>
-          )}
-        </>
+        <div className="flex-1 divide-y divide-line border-t border-line">
+          {groups.map((g, gi) => {
+            const Icon = KIND_ICON[g.kind];
+            const more = g.items.length - SHOW;
+            return (
+              <Disclosure key={g.kind} name="attention" open={gi === 0} title={g.label} icon={<Icon />} tone={KIND_HUE[g.kind]}
+                count={g.items.length}
+                meta={g.critical > 0 ? <span className="num rounded-full bg-danger-soft px-1.5 text-[11px] font-medium leading-5 text-danger">{g.critical} critical</span> : null}>
+                <ul className="pb-1.5">
+                  {g.items.slice(0, SHOW).map((a, i) => (
+                    <li key={`${a.href}-${i}`}>
+                      <Link href={a.href} className="flex items-center gap-2.5 py-1.5 pl-[52px] pr-4 transition-colors hover:bg-raised">
+                        <StatusDot tone={a.level === "critical" ? "danger" : "warn"} />
+                        <span className="min-w-0 flex-1 truncate text-[13px] text-fg" title={a.detail}>{a.title}</span>
+                        <span className="hidden max-w-[45%] shrink-0 truncate text-[12px] text-fg-subtle sm:block">{a.detail}</span>
+                      </Link>
+                    </li>
+                  ))}
+                  {more > 0 && (
+                    <li>
+                      <Link href={`/dashboard/alerts?kind=${g.kind}`} className="block py-1.5 pl-[52px] pr-4 text-[12px] font-medium text-fg-muted hover:text-fg">
+                        All {g.items.length} in {g.label.toLowerCase()} →
+                      </Link>
+                    </li>
+                  )}
+                </ul>
+              </Disclosure>
+            );
+          })}
+        </div>
       )}
     </section>
   );

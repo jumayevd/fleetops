@@ -11,12 +11,6 @@ import { AgingTab } from "./aging-tab";
 
 export const metadata = { title: "Finance" };
 
-const SUBTITLE = {
-  queue: "Delivered and TONU loads waiting on paperwork, and loads ready to bill.",
-  invoices: "Every invoice by status: mark sent, record payments, void mistakes.",
-  aging: "Who owes what, how late it is, and how much credit each customer is using.",
-} as const;
-
 const plural = (n: number, one: string, many = `${one}s`) => `${number(n)} ${n === 1 ? one : many}`;
 const sumRate = (xs: QueueLoad[]) => xs.reduce((a, l) => a + l.rate, 0);
 
@@ -52,7 +46,6 @@ export default async function FinancePage({ searchParams }: PageProps<"/finance"
       <PageHeader
         eyebrow="Money & safety"
         title="Finance"
-        subtitle={SUBTITLE[tab]}
         actions={<LinkButton href="/reports" variant="secondary"><BarChart3 />Reports</LinkButton>}
       />
 

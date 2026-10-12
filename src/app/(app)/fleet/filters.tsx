@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Search, X } from "lucide-react";
 import { cn, inputClass } from "@/components/ui";
+import { FilterChip, FilterField, FilterMenu } from "@/components/filter-menu";
 
-export type FilterSelect = { name: string; placeholder: string; options: { value: string; label: string }[] };
+export type FilterSelect = { name: string; placeholder: string; label?: string; options: { value: string; label: string }[] };
 
 /**
  * Search box + compact selects that live in the URL (?q=…&ownership=…). Server filters, this only
@@ -50,10 +51,10 @@ export function ListFilters({ basePath, params, selects = [], placeholder = "Sea
   return (
     <div className={cn("flex flex-wrap items-center gap-2", pending && "opacity-70", className)} aria-busy={pending || undefined}>
       <label className="relative block">
-        <Search className="pointer-events-none absolute inset-y-0 left-2 my-auto h-3.5 w-3.5 text-fg-subtle" />
-        <input value={q} onChange={(e) => onSearch(e.target.value)} placeholder={placeholder} aria-label={placeholder}
+        <Search className="pointer-events-none absolute inset-y-0 left-2.5 my-auto h-3.5 w-3.5 text-fg-faint" />
+        <input value={q} onChange={(e) => onSearch(e.target.value)} placeholder="Search…" title={placeholder} aria-label={placeholder}
           onKeyDown={(e) => { if (e.key === "Enter") { if (timer.current) clearTimeout(timer.current); go({ q: q.trim() || undefined }); } }}
-          className={cn(inputClass, "h-7 w-56 pl-7 pr-7 text-[12px]")} />
+          className={cn(inputClass, "w-56 pl-8 pr-7")} />
         {q && (
           <button type="button" aria-label="Clear search" onClick={() => onSearch("")}
             className="absolute inset-y-0 right-1 my-auto inline-flex h-5 w-5 items-center justify-center rounded text-fg-subtle hover:bg-raised hover:text-fg">
@@ -61,13 +62,24 @@ export function ListFilters({ basePath, params, selects = [], placeholder = "Sea
           </button>
         )}
       </label>
-      {selects.map((s) => (
-        <select key={s.name} value={params[s.name] ?? ""} onChange={(e) => go({ [s.name]: e.target.value || undefined })} aria-label={s.placeholder}
-          className={cn(inputClass, "h-7 w-auto min-w-28 pr-7 text-[12px]", !params[s.name] && "text-fg-muted")}>
-          <option value="">{s.placeholder}</option>
-          {s.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      ))}
+      {/* The selects open from one "Filters" button; whatever is applied shows as a removable chip. */}
+      {selects.length > 0 && (
+        <FilterMenu count={selects.filter((s) => params[s.name]).length} align="right"
+          onClear={() => go(Object.fromEntries(selects.map((s) => [s.name, undefined])))}>
+          {selects.map((s) => (
+            <FilterField key={s.name} label={s.label ?? s.placeholder}>
+              <select value={params[s.name] ?? ""} onChange={(e) => go({ [s.name]: e.target.value || undefined })} className={inputClass}>
+                <option value="">{s.placeholder}</option>
+                {s.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </FilterField>
+          ))}
+        </FilterMenu>
+      )}
+      {selects.map((s) => {
+        const v = params[s.name];
+        return v ? <FilterChip key={s.name} onRemove={() => go({ [s.name]: undefined })}>{s.options.find((o) => o.value === v)?.label ?? v}</FilterChip> : null;
+      })}
     </div>
   );
 }

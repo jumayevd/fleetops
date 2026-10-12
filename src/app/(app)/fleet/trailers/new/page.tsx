@@ -11,7 +11,7 @@ export default async function NewTrailer() {
   const trucks = await db.truck.findMany({ where: { status: { not: "INACTIVE" } }, orderBy: { unitNumber: "asc" }, select: { id: true, unitNumber: true, make: true, model: true } });
   return (
     <>
-      <PageHeader eyebrow="Fleet · Trailers" title="Add trailer" subtitle="Type, capacity, pairing and paperwork dates. Documents can be uploaded once it is saved." />
+      <PageHeader eyebrow="Fleet · Trailers" title="Add trailer" />
       <TrailerForm action={saveTrailer.bind(null, null)} trucks={trucks.map((t) => ({ id: t.id, label: `${t.unitNumber} · ${t.make} ${t.model}` }))} cancelHref="/fleet/trailers" />
     </>
   );

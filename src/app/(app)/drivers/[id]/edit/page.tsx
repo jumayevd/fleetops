@@ -17,7 +17,7 @@ export default async function EditDriver({ params }: PageProps<"/drivers/[id]/ed
   if (!driver) notFound();
   return (
     <>
-      <PageHeader eyebrow="Drivers" title={`Edit ${driver.name}`} subtitle="Changes apply to the roster and the dispatch board immediately." />
+      <PageHeader eyebrow="Drivers" title={`Edit ${driver.name}`} />
       <DriverForm action={saveDriver.bind(null, id)} driver={driver} teams={teams} cancelHref={`/drivers/${id}`} />
     </>
   );

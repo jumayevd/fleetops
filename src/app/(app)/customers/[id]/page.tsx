@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil, Plus, Phone, Mail, MapPin } from "lucide-react";
+import { ChevronRight, ListChecks, Pencil, Plus, Phone, Mail, MapPin } from "lucide-react";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
@@ -8,7 +8,7 @@ import { BILLING_STAGE_LABELS, CUSTOMER_KIND_LABELS, LOAD_STATUS_LABELS, type Bi
 import { DOC_KIND_LABELS } from "@/lib/documents";
 import { ago, date, dateTime, daysAgo, money, number } from "@/lib/format";
 import { DocumentsPanel } from "@/components/documents/panel";
-import { Badge, Card, Cell, Chip, DL, EmptyState, LinkButton, PageHeader, Progress, Stat, StatusDot, Table, Tabs, cn, type Tone } from "@/components/ui";
+import { Badge, Card, Chip, DL, Disclosure, EmptyState, InfoTip, LinkButton, PageHeader, Progress, Stat, StatusDot, Table, Tabs, cardClass, cn, type Tone } from "@/components/ui";
 import { onTimeTone } from "../../drivers/shared";
 import { ACTIVE_LOAD_STATUSES, COMPLETED_LOAD_STATUSES, KIND_SHORT, KIND_TONE, creditTone, grossInvoice, isBroker, requiredCustomerDocs } from "../shared";
 
@@ -122,7 +122,7 @@ export default async function CustomerDetail({ params, searchParams }: PageProps
               <li key={i}>
                 {a.href ? (
                   <Link href={a.href} className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg hover:bg-raised">
-                    <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><span className="text-[11px] text-fg-subtle">Open →</span>
+                    <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><ChevronRight aria-hidden className="h-4 w-4 text-fg-faint" />
                   </Link>
                 ) : (
                   <p className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg"><StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span></p>
@@ -141,16 +141,18 @@ export default async function CustomerDetail({ params, searchParams }: PageProps
         <div className="grid gap-4 xl:grid-cols-3">
           <div className="xl:col-span-2">
             <DocumentsPanel user={user} target={{ type: "customer", id }} path={`/customers/${id}`} withExpiry required={required}
-              description={broker ? "Keep the signed contract and the broker's carrier setup packet here. Set an expiry on insurance certificates and agreements that renew." : "Keep the signed contract and rate agreements here. Set an expiry on agreements that renew so they surface as alerts."} />
+              description={broker ? "Set an expiry on insurance certificates and agreements that renew." : "Set an expiry on agreements that renew so they surface as alerts."} />
           </div>
-          <Card title="What belongs here">
-            <ul className="space-y-2 text-[13px] text-fg">
-              <li><span className="font-medium">Contract</span><span className="block text-[12px] text-fg-muted">Master agreement or rate confirmation template, signed by both sides.</span></li>
-              {broker && <li><span className="font-medium">Setup packet</span><span className="block text-[12px] text-fg-muted">Carrier packet returned to the broker: W-9 equivalent, insurance certificate, authority, bank letter.</span></li>}
-              <li><span className="font-medium">Other</span><span className="block text-[12px] text-fg-muted">Credit applications, NDAs, correspondence worth keeping.</span></li>
-            </ul>
-            <p className="mt-3 text-[11px] text-fg-subtle">{required.length - missingDocs.length}/{required.length} required documents on file.</p>
-          </Card>
+          {/* A reference guide, closed by default. The documents panel already shows which required ones are on file. */}
+          <section className={cn(cardClass, "self-start")}>
+            <Disclosure title="What belongs here" icon={<ListChecks />} tone="neutral" className="[&>summary]:rounded-lg [&>summary]:py-3">
+              <ul className="space-y-2 border-t border-line px-4 py-3 text-[13px] text-fg">
+                <li><span className="font-medium">Contract</span><span className="block text-[12px] text-fg-muted">Master agreement or rate confirmation template, signed by both sides.</span></li>
+                {broker && <li><span className="font-medium">Setup packet</span><span className="block text-[12px] text-fg-muted">Carrier packet returned to the broker: W-9 equivalent, insurance certificate, authority, bank letter.</span></li>}
+                <li><span className="font-medium">Other</span><span className="block text-[12px] text-fg-muted">Credit applications, NDAs, correspondence worth keeping.</span></li>
+              </ul>
+            </Disclosure>
+          </section>
         </div>
       )}
       {tab === "details" && (
@@ -168,7 +170,7 @@ export default async function CustomerDetail({ params, searchParams }: PageProps
               ["Country", c.country ?? "—"],
               ["Payment terms", <span key="n" className="num">Net {c.paymentTerms} days</span>],
               ["Credit limit", <span key="cl" className="num">{money(c.creditLimit)}</span>],
-              ["Customer since", <span key="s"><span className="num">{date(c.createdAt)}</span> <span className="text-fg-subtle">· {ago(c.createdAt).replace(" ago", "")}</span></span>],
+              ["Customer since", <span key="s" className="num" title={ago(c.createdAt).replace(" ago", "")}>{date(c.createdAt)}</span>],
             ]} />
           </Card>
           <div className="space-y-4">
@@ -185,7 +187,7 @@ export default async function CustomerDetail({ params, searchParams }: PageProps
             </Card>
             <Card title="Notes">
               {c.notes ? <p className="whitespace-pre-wrap text-[13px] text-fg">{c.notes}</p>
-                : <p className="text-[12px] text-fg-muted">No notes.{editable && <> Add billing quirks, preferred lanes or contacts on the <Link href={`/customers/${id}/edit`} className="text-fg hover:underline">edit form</Link>.</>}</p>}
+                : <p className="text-[12px] text-fg-muted">No notes.{editable && <> <Link href={`/customers/${id}/edit`} title="Billing quirks, preferred lanes, contacts" className="text-fg hover:underline">Add some</Link></>}</p>}
             </Card>
           </div>
         </div>
@@ -218,10 +220,10 @@ async function LoadsTab({ customerId, broker }: { customerId: string; broker: bo
           const counterpart = l.brokerId === customerId ? l.customer : l.broker;
           return (
             <tr key={l.id} className={l.status === "CANCELLED" ? "opacity-60" : undefined}>
-              <td><Cell mono primary={<Link href={`/loads/${l.id}`} className="font-medium text-fg hover:underline">{l.reference}</Link>} secondary={l.customerRef ? `ref ${l.customerRef}` : undefined} /></td>
+              <td><Link href={`/loads/${l.id}`} title={l.customerRef ? `Ref ${l.customerRef}` : undefined} className="num font-medium text-fg hover:underline">{l.reference}</Link></td>
               {showRole && <td><Chip tone={l.brokerId === customerId ? "progress" : "info"} className="normal-case tracking-normal">{l.brokerId === customerId ? "Broker" : "Shipper"}</Chip></td>}
               <td><Badge value={l.status} label={LOAD_STATUS_LABELS[l.status as LoadStatus] ?? l.status} /></td>
-              <td className="whitespace-nowrap text-fg">{l.originCity} → {l.destCity}<span className="num ml-1.5 text-[11px] text-fg-subtle">{number(l.distanceKm)} km</span></td>
+              <td className="whitespace-nowrap text-fg" title={`${number(l.distanceKm)} km`}>{l.originCity} → {l.destCity}</td>
               <td className="max-w-44 truncate">{counterpart ? <Link href={`/customers/${counterpart.id}`} className="hover:underline">{counterpart.name}</Link> : <span className="text-fg-faint">—</span>}</td>
               <td className="num whitespace-nowrap text-fg-muted">{dateTime(l.pickupAt)}</td>
               <td className="whitespace-nowrap">
@@ -252,7 +254,7 @@ async function InvoicesTab({ customerId }: { customerId: string }) {
   const order = (i: (typeof invoices)[number]) => (i.status === "SENT" ? (i.dueAt < now ? 0 : 1) : i.status === "DRAFT" ? 2 : 3);
   const sorted = [...invoices].sort((a, b) => order(a) - order(b));
   return (
-    <Card title="Invoices" flush actions={
+    <Card title={<span className="flex items-center gap-1.5">Invoices<InfoTip>Overdue first, then open, then settled. Amounts include VAT.</InfoTip></span>} flush actions={
       <span className="text-[11px] text-fg-subtle">
         <span className="num">{open.length}</span> open · <span className={cn("num", overdue.length && "text-danger")}>{overdue.length}</span> overdue
         {avgDaysToPay != null && <> · pays in <span className="num">{avgDaysToPay}</span> days on average</>}
@@ -268,14 +270,13 @@ async function InvoicesTab({ customerId }: { customerId: string }) {
               <td>{i.load ? <Link href={`/loads/${i.load.id}`} className="num hover:underline">{i.load.reference}</Link> : <span className="text-fg-faint">—</span>}</td>
               <td className="num whitespace-nowrap text-fg-muted">{date(i.issuedAt)}</td>
               <td className="whitespace-nowrap"><span className={cn("num", isOverdue ? "text-danger" : "text-fg-muted")}>{date(i.dueAt)}</span>{isOverdue && <span className="ml-1.5 text-[11px] text-danger">{lateDays}d late</span>}</td>
-              <td><Cell mono primary={money(grossInvoice(i))} secondary={i.taxRate ? `${money(i.amount)} + ${Math.round(i.taxRate * 100)}% VAT` : undefined} /></td>
-              <td><Badge value={isOverdue ? "OVERDUE" : i.status} dot />{i.paidAt && <span className="num ml-1.5 text-[11px] text-fg-subtle">{date(i.paidAt)}</span>}</td>
+              <td className="num" title={i.taxRate ? `${money(i.amount)} + ${Math.round(i.taxRate * 100)}% VAT` : undefined}>{money(grossInvoice(i))}</td>
+              <td><span title={i.paidAt ? `Paid ${date(i.paidAt)}` : undefined}><Badge value={isOverdue ? "OVERDUE" : i.status} dot /></span></td>
             </tr>
           );
         })}
       </Table>
       {invoices.length === 0 && <EmptyState title="No invoices yet" description="Invoices are generated from delivered loads in the billing queue." />}
-      {invoices.length > 0 && <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Overdue first, then open, then settled. Amounts include VAT.</p>}
     </Card>
   );
 }

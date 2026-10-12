@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
-import { Plus, Truck as TruckIcon, Container, FileCheck, CalendarClock } from "lucide-react";
+import { Plus, Truck as TruckIcon, Container, FileCheck, CalendarClock, X } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
@@ -9,10 +9,10 @@ import { EQUIPMENT, EQUIPMENT_LABELS, TRAILER_STATUSES, TRAILER_STATUS_LABELS } 
 import { REQUIRED_UNIT_DOCS } from "@/lib/documents";
 import { kg, ago, daysUntil } from "@/lib/format";
 import { syncSimulatedPositions } from "@/lib/telemetry";
-import { Badge, Card, Cell, EmptyState, ExpiryBadge, FilterPills, LinkButton, PageHeader, Segmented, STATUS_TONE, Stat, Table, cn } from "@/components/ui";
+import { Badge, Card, Cell, EmptyState, ExpiryBadge, FilterPills, InfoTip, LinkButton, PageHeader, Segmented, STATUS_TONE, Stat, Table, cn } from "@/components/ui";
 import { ListFilters } from "../filters";
 import { LinkRow } from "../link-row";
-import { daysSince, docExpiryByUnit, docsByUnit, EXPIRY_SOON_DAYS, expiryCounts, LIST_LIMIT, missingDocs, paperworkExpiry, sinceShort } from "../lib";
+import { daysSince, docExpiryByUnit, docsByUnit, EXPIRY_SOON_DAYS, expiryCounts, LIST_LIMIT, missingDocs, paperworkExpiry, pingStale, sinceShort } from "../lib";
 import { TrailerStatusControl } from "./status-control";
 import { TrailerRowMenu } from "./row-menu";
 
@@ -106,7 +106,6 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
       <PageHeader
         eyebrow="Fleet"
         title="Trailers"
-        subtitle={`${all.length} trailers · ${byStatus("IN_USE").length} in use · ${paired} paired with a tractor`}
         actions={
           <>
             <Segmented active="trailers" items={[
@@ -119,7 +118,7 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
       />
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-9">
-        {tile(status || docsFilter || type || q ? "/fleet/trailers" : qs({}), <Stat className={tileClass} label="Trailers" value={all.length} hint={`${truckCount} tractors`} icon={<Container />} />)}
+        {tile(status || docsFilter || type || q ? "/fleet/trailers" : qs({}), <Stat className={tileClass} label="Trailers" value={all.length} hint={`${paired} paired · ${truckCount} tractors`} icon={<Container />} />)}
         {statusTile("IN_USE", "on a load")}
         {statusTile("EMPTY", emptyLoose ? `unloaded · ${emptyLoose} unpaired` : "unloaded, still paired")}
         {statusTile("DROPPED", dropOldest ? `oldest ${daysSince(dropOldest.statusSince)}d · ${dropOldest.unitNumber}` : "at customer sites")}
@@ -136,10 +135,10 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
             { key: "all", label: "All", href: qs({ status: undefined }), count: all.length },
             ...TRAILER_STATUSES.map((s) => ({ key: s, label: TRAILER_STATUS_LABELS[s], href: qs({ status: s }), count: byStatus(s).length })),
           ]} />
-          {docsFilter && <Link href={qs({ docs: undefined })} className="inline-flex h-6 items-center gap-1 rounded-full bg-accent-soft px-2.5 text-[12px] font-medium text-accent-text hover:opacity-80">{docsFilter === "expiring" ? "Docs expiring" : "Docs incomplete"} ×</Link>}
+          {docsFilter && <Link href={qs({ docs: undefined })} className="inline-flex h-6 items-center gap-1 rounded-full bg-accent-soft px-2.5 text-[12px] font-medium text-accent-text hover:opacity-80">{docsFilter === "expiring" ? "Docs expiring" : "Docs incomplete"}<X className="h-3 w-3" /></Link>}
         </div>
         <ListFilters basePath="/fleet/trailers" params={params} placeholder="Unit, plate, truck, driver, place…" selects={[
-          { name: "type", placeholder: "All types", options: EQUIPMENT.map((e) => ({ value: e, label: EQUIPMENT_LABELS[e] })) },
+          { name: "type", label: "Type", placeholder: "All types", options: EQUIPMENT.map((e) => ({ value: e, label: EQUIPMENT_LABELS[e] })) },
         ]} />
       </div>
 
@@ -149,7 +148,9 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
             Showing the first <span className="num">{trailers.length}</span> of <span className="num">{matching}</span> matching trailers. Narrow the search or filters to see the rest.
           </p>
         )}
-        <Table head={["Unit", "Status", "Paired truck", "Driver", "Location", "GPS", "Capacity", "Inspection", "Insurance", "Registration", "Documents", ""]}>
+        <Table head={["Unit",
+          <span key="status" className="inline-flex items-center gap-1">Status<InfoTip>The small number next to a status is how long the trailer has been in it.</InfoTip></span>,
+          "Paired truck", "Driver", "Location", "GPS", "Capacity", "Inspection", "Insurance", "Registration", "Documents", ""]}>
           {trailers.map((t) => {
             const missing = missingFor(t.id);
             const onFile = REQUIRED_UNIT_DOCS.length - missing.length;
@@ -157,9 +158,9 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
             const paper = paperworkExpiry(t, docExpiry.get(t.id));
             return (
               <LinkRow key={t.id} href={`/fleet/trailers/${t.id}`}>
-                <td>
+                <td title={[t.year, t.plate].filter(Boolean).join(" · ") || undefined}>
                   <Cell mono primary={<Link href={`/fleet/trailers/${t.id}`} className="font-semibold hover:underline">{t.unitNumber}</Link>}
-                    secondary={<span>{EQUIPMENT_LABELS[t.type] ?? t.type}{t.year ? <span className="num"> · {t.year}</span> : ""}{t.plate ? <span className="num"> · {t.plate}</span> : ""}</span>} />
+                    secondary={EQUIPMENT_LABELS[t.type] ?? t.type} />
                 </td>
                 <td className="whitespace-nowrap"><TrailerStatusControl id={t.id} status={t.status} locationName={t.locationName} editable={editable} since={sinceShort(t.statusSince)} /></td>
                 <td>
@@ -169,7 +170,11 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
                   ) : <span className="text-fg-faint">—</span>}
                 </td>
                 <td>{t.truck?.driver ? <Link href={`/drivers/${t.truck.driver.id}`} className="hover:underline">{t.truck.driver.name}</Link> : <span className="text-fg-faint">—</span>}</td>
-                <td><Cell primary={t.locationName ?? <span className="text-fg-faint">Unknown</span>} secondary={t.lastPingAt ? ago(t.lastPingAt) : t.gpsProvider ? "no ping yet" : "no tracker"} /></td>
+                <td title={t.lastPingAt ? `Last position ${ago(t.lastPingAt)}` : t.gpsProvider ? "No ping yet" : "No tracker"}>
+                  {/* The age of the position only shows when it is old or missing; the GPS column already says when there is no tracker. */}
+                  <Cell primary={t.locationName ?? <span className="text-fg-faint">Unknown</span>}
+                    secondary={t.lastPingAt ? (pingStale(t.lastPingAt) ? ago(t.lastPingAt) : undefined) : t.gpsProvider ? "no ping yet" : undefined} />
+                </td>
                 <td className="whitespace-nowrap">{t.gpsProvider ?? <span className="text-fg-faint">None</span>}</td>
                 <td className="num whitespace-nowrap text-fg-muted">{kg(t.capacityKg)}</td>
                 <td><ExpiryBadge days={daysUntil(paper.INSPECTION)} /></td>
@@ -190,11 +195,6 @@ export default async function TrailersPage({ searchParams }: PageProps<"/fleet/t
             : <EmptyState title="No trailers match" description="Try another status or type, or clear the search." action={<LinkButton href="/fleet/trailers" variant="secondary">Clear filters</LinkButton>} />
         )}
       </Card>
-      {trailers.length > 0 && (
-        <p className="mt-2 text-[11px] text-fg-subtle">
-          Showing <span className="num">{trailers.length}</span> of <span className="num">{all.length}</span> · the small number next to a status is time in that status{editable ? " · click a status to change it" : ""}.
-        </p>
-      )}
     </>
   );
 }

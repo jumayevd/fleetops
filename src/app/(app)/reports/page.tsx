@@ -1,12 +1,12 @@
 import { Download } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { date, fmtMoneyCompact, money, number } from "@/lib/format";
-import { Card, LinkButton, PageHeader, Segmented, Stat } from "@/components/ui";
+import { Card, InfoTip, LinkButton, PageHeader, Segmented, Stat } from "@/components/ui";
 import { Bars, ChartEmpty } from "@/components/charts-lite";
 import { Donut, RevenueChart, SimpleBar, TrendLine } from "@/components/charts-lazy";
 import { reportData } from "./data";
 import { PERIODS, PERIOD_KEYS, deltaTone, exportHref, fmtDelta, fmtPerKm, fmtPts, parsePeriod, reportsHref, type ExportType, type PeriodKey } from "./shared";
-import { ClaimsTable, DriverTable, LaneTable, TruckTable } from "./tables";
+import { ClaimsTable, DriverTable, LANE_LIMIT, LaneTable, TruckTable } from "./tables";
 
 export const metadata = { title: "Reports" };
 
@@ -38,7 +38,12 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       <PageHeader
         eyebrow="Money & safety"
         title="Reports"
-        subtitle={<>Completed loads delivered <span className="num text-fg">{date(from)} – {date(to)}</span> · deltas compare with {compare}</>}
+        subtitle={
+          <span className="inline-flex items-center gap-1.5">
+            <span>Delivered <span className="num text-fg">{date(from)} – {date(to)}</span></span>
+            <InfoTip>Completed loads delivered in this window. Deltas compare with {compare}.</InfoTip>
+          </span>
+        }
         actions={<Segmented active={period} items={PERIOD_KEYS.map((p) => ({ key: p, label: PERIODS[p].label, href: reportsHref(p) }))} />}
       />
 
@@ -69,11 +74,11 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
 
       {/* Trends */}
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2" title="Revenue vs direct costs"
-          actions={<span className="num text-[11px] text-fg-subtle">per {bucket} · the gap is gross margin{r.trimmedBucket ? ` · ${r.trimmedBucket} has no deliveries yet` : ""}</span>}>
+        <Card className="xl:col-span-2"
+          title={<span className="flex items-center gap-1.5">Revenue vs direct costs<InfoTip>Per {bucket}; the gap between the lines is gross margin.{r.trimmedBucket ? ` ${r.trimmedBucket} has no deliveries yet, so it is left off.` : ""}</InfoTip></span>}>
           <RevenueChart data={r.series} height={270} />
         </Card>
-        <Card title="Delivery performance" actions={<span className="num text-[11px] text-fg-subtle">per {bucket}</span>}>
+        <Card title={<span className="flex items-center gap-1.5">Delivery performance<InfoTip>On-time rate and loads delivered per {bucket}.</InfoTip></span>}>
           {delivered ? (
             <>
               <p className="eyebrow mb-1">On time</p>
@@ -101,7 +106,9 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       </div>
 
       {/* Tables */}
-      <Card flush className="mt-4" title="Lane profitability" actions={<ExportLink type="lanes" period={period} />}>
+      <Card flush className="mt-4"
+        title={<span className="flex items-center gap-1.5">Lane profitability<InfoTip>Lanes ranked by revenue. The table shows the top {LANE_LIMIT}; the CSV export has every lane.</InfoTip></span>}
+        actions={<>{r.lanes.length > LANE_LIMIT && <span className="num text-[11px] text-fg-subtle">Top {LANE_LIMIT} of {number(r.lanes.length)}</span>}<ExportLink type="lanes" period={period} /></>}>
         <LaneTable rows={r.lanes} />
       </Card>
 

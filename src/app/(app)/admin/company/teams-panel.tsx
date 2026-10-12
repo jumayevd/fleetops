@@ -6,7 +6,7 @@ import { useState, useTransition } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { deleteTeam, saveTeam } from "@/app/actions/people";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Button, Card, EmptyState, Field, IconButton, Input, Table, cn } from "@/components/ui";
+import { Button, Card, EmptyState, Field, IconButton, InfoTip, Input, Table, cn } from "@/components/ui";
 import { TEAM_COLORS, TeamDot } from "../shared";
 
 export type TeamRow = {
@@ -57,7 +57,7 @@ function TeamForm({ team, nextOrder, onDone }: { team?: TeamRow; nextOrder: numb
     <ActionForm action={saveTeam.bind(null, team?.id ?? null)} onSuccess={() => { router.refresh(); onDone(); }} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <Field label="Team name" required><Input name="name" required defaultValue={team?.name} placeholder="Team Alpha" autoFocus /></Field>
-        <Field label="Order" hint="Position on the dispatch board"><Input name="sortOrder" type="number" min={0} step={1} defaultValue={team?.sortOrder ?? nextOrder} className={cn("num", "w-20")} /></Field>
+        <Field label="Board order"><Input name="sortOrder" type="number" min={0} step={1} defaultValue={team?.sortOrder ?? nextOrder} className={cn("num", "w-20")} /></Field>
       </div>
       <ColorField defaultValue={team?.color ?? null} />
       <div className="flex items-center justify-end gap-2">
@@ -97,7 +97,12 @@ export function TeamsPanel({ teams, editable }: { teams: TeamRow[]; editable: bo
   };
 
   return (
-    <Card title="Dispatcher teams" flush
+    <Card flush
+      title={
+        <span className="flex items-center gap-1.5">Dispatcher teams
+          <InfoTip>Teams group the dispatch board and the weekly production totals. Assign dispatchers under Users &amp; roles and drivers on their profile.</InfoTip>
+        </span>
+      }
       actions={editable && !creating && (
         <Button variant="secondary" size="sm" onClick={() => { setCreating(true); setEditing(null); }}><Plus />New team</Button>
       )}>
@@ -119,9 +124,6 @@ export function TeamsPanel({ teams, editable }: { teams: TeamRow[]; editable: bo
         </div>
       )}
       {error && <p role="alert" className="border-t border-line bg-danger-soft px-4 py-2 text-[12px] text-danger">{error}</p>}
-      <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
-        Assign dispatchers on <Link href="/admin/users" className="text-fg-muted underline-offset-2 hover:text-fg hover:underline">Users &amp; roles</Link>, drivers on their profile. Teams group the <Link href="/dispatch" className="text-fg-muted underline-offset-2 hover:text-fg hover:underline">dispatch board</Link> and the weekly production totals.
-      </p>
     </Card>
   );
 }

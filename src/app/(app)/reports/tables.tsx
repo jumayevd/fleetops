@@ -2,34 +2,34 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { DRIVER_TYPE_SHORT, DRIVER_TYPE_LABELS } from "@/lib/constants";
 import { money, number } from "@/lib/format";
-import { Chip, Table, cn } from "@/components/ui";
+import { Chip, InfoTip, Table, cn } from "@/components/ui";
 import type { ClaimRow, DriverRow, LaneRow, TruckRow } from "./data";
 import { TONE_TEXT, emptyTone, fmtPerKm, marginTone, onTimeTone, scoreTone } from "./shared";
 
 const R = (key: string, label: string) => <span key={key} className="block text-right">{label}</span>;
+/** Right-aligned header with an explanation on hover. */
+const RT = (key: string, label: string, tip: string) => <span key={key} className="flex items-center justify-end gap-1">{label}<InfoTip>{tip}</InfoTip></span>;
 
-export function LaneTable({ rows, limit = 25 }: { rows: LaneRow[]; limit?: number }) {
+/** Lanes shown on the page; the card header says when there are more (the CSV has them all). */
+export const LANE_LIMIT = 25;
+
+export function LaneTable({ rows, limit = LANE_LIMIT }: { rows: LaneRow[]; limit?: number }) {
   const shown = rows.slice(0, limit);
   return (
-    <>
-      <Table dense head={["Lane", R("n", "Loads"), R("km", "Km · empty"), R("rev", "Revenue"), R("m", "Margin"), R("rpk", "$/km"), R("e", "Empty")]}
-        empty={rows.length === 0} emptyTitle="No completed loads in this period" emptyDescription="Lane figures appear once loads are delivered. Try a longer period.">
-        {shown.map((l) => (
-          <tr key={l.lane}>
-            <td className="whitespace-nowrap font-medium text-fg"><span className="inline-flex items-center gap-1">{l.origin}<ArrowRight className="h-3 w-3 shrink-0 text-fg-faint" />{l.dest}</span></td>
-            <td className="num text-right text-fg-muted">{l.loads}</td>
-            <td className="num whitespace-nowrap text-right text-fg-muted">{number(l.km)} <span className="text-fg-subtle">· {number(l.emptyKm)}</span></td>
-            <td className="num text-right font-medium">{money(l.revenue)}</td>
-            <td className={cn("num whitespace-nowrap text-right", TONE_TEXT[marginTone(l.marginPct)])}>{money(l.margin)} <span className="text-[11px]">· {l.marginPct}%</span></td>
-            <td className="num text-right text-fg-muted">{fmtPerKm(l.perKm)}</td>
-            <td className={cn("num text-right", TONE_TEXT[emptyTone(l.emptyPct)])}>{l.emptyPct}%</td>
-          </tr>
-        ))}
-      </Table>
-      {rows.length > shown.length && (
-        <p className="border-t border-line px-3 py-2 text-[11px] text-fg-subtle">Top {shown.length} of {number(rows.length)} lanes by revenue. The CSV export has every lane.</p>
-      )}
-    </>
+    <Table dense head={["Lane", R("n", "Loads"), R("km", "Km · empty"), R("rev", "Revenue"), R("m", "Margin"), R("rpk", "$/km"), R("e", "Empty")]}
+      empty={rows.length === 0} emptyTitle="No completed loads in this period" emptyDescription="Lane figures appear once loads are delivered. Try a longer period.">
+      {shown.map((l) => (
+        <tr key={l.lane}>
+          <td className="whitespace-nowrap font-medium text-fg"><span className="inline-flex items-center gap-1">{l.origin}<ArrowRight className="h-3 w-3 shrink-0 text-fg-faint" />{l.dest}</span></td>
+          <td className="num text-right text-fg-muted">{l.loads}</td>
+          <td className="num whitespace-nowrap text-right text-fg-muted">{number(l.km)} <span className="text-fg-subtle">· {number(l.emptyKm)}</span></td>
+          <td className="num text-right font-medium">{money(l.revenue)}</td>
+          <td className={cn("num whitespace-nowrap text-right", TONE_TEXT[marginTone(l.marginPct)])}>{money(l.margin)} <span className="text-[11px]">· {l.marginPct}%</span></td>
+          <td className="num text-right text-fg-muted">{fmtPerKm(l.perKm)}</td>
+          <td className={cn("num text-right", TONE_TEXT[emptyTone(l.emptyPct)])}>{l.emptyPct}%</td>
+        </tr>
+      ))}
+    </Table>
   );
 }
 
@@ -59,13 +59,14 @@ export function DriverTable({ rows }: { rows: DriverRow[] }) {
 
 export function TruckTable({ rows }: { rows: TruckRow[] }) {
   return (
-    <Table dense head={["Truck", "Ownership", R("n", "Loads"), R("km", "Km"), R("rev", "Revenue"), R("wo", "Work orders"), R("cpk", "Cost/km"), R("rpk", "$/km")]}
+    <Table dense head={["Truck", "Ownership", R("n", "Loads"), R("km", "Km"), R("rev", "Revenue"), R("wo", "Work orders"),
+      RT("cpk", "Cost/km", "Driver pay, fuel, other load costs and work orders per km run."),
+      RT("rpk", "$/km", "Revenue per km run, loaded and empty. Red when it does not cover the cost per km.")]}
       empty={rows.length === 0} emptyTitle="No truck activity in this period" emptyDescription="Trucks appear here once their loads are delivered.">
       {rows.map((t) => (
         <tr key={t.id}>
           <td className="whitespace-nowrap">
-            <Link href={`/fleet/${t.id}`} className="num font-medium text-fg hover:underline">{t.unit}</Link>
-            {t.model && <span className="ml-1.5 text-[11px] text-fg-subtle">{t.model}</span>}
+            <Link href={`/fleet/${t.id}`} title={t.model ?? undefined} className="num font-medium text-fg hover:underline">{t.unit}</Link>
           </td>
           <td className="whitespace-nowrap text-fg-muted">{t.ownership}</td>
           <td className="num text-right text-fg-muted">{t.loads}</td>
@@ -74,7 +75,7 @@ export function TruckTable({ rows }: { rows: TruckRow[] }) {
           <td className="num whitespace-nowrap text-right text-fg-muted" title={t.workOrders ? `${t.workOrders} completed work ${t.workOrders === 1 ? "order" : "orders"} in this period` : "No completed work orders in this period"}>
             {t.workOrderCost ? money(t.workOrderCost) : <span className="text-fg-faint">—</span>}{t.workOrders > 0 && <span className="text-[11px] text-fg-subtle"> · {t.workOrders}</span>}
           </td>
-          <td className="num text-right text-fg-muted" title="Driver pay, fuel, other load costs and work orders per km run">{fmtPerKm(t.costPerKm)}</td>
+          <td className="num text-right text-fg-muted">{fmtPerKm(t.costPerKm)}</td>
           <td className={cn("num text-right", t.perKm != null && t.costPerKm != null && t.costPerKm >= t.perKm ? "font-medium text-danger" : "text-fg")}>{fmtPerKm(t.perKm)}</td>
         </tr>
       ))}

@@ -4,12 +4,18 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Search, X } from "lucide-react";
 import { CLAIM_FAULTS, CLAIM_FAULT_LABELS, CLAIM_SEVERITIES, CLAIM_STATUSES, CLAIM_TYPES, CLAIM_TYPE_LABELS } from "@/lib/constants";
-import { buttonClass, cn, inputClass } from "@/components/ui";
-import { CLAIM_SEVERITY_LABELS, CLAIM_STATUS_LABELS, claimPhase, claimsHref, hasClaimFilters, type ClaimFilters, type ClaimPhase } from "./shared";
+import { cn, inputClass } from "@/components/ui";
+import { FilterChip, FilterField, FilterMenu } from "@/components/filter-menu";
+import { CLAIM_SEVERITY_LABELS, CLAIM_STATUS_LABELS, STATUS_GROUPS, claimPhase, claimsHref, type ClaimFilters, type ClaimPhase } from "./shared";
+
+/** Statuses the pill row beside this bar already shows as selected; anything else counts as a menu filter. */
+const PILL_STATUSES: readonly string[] = [...STATUS_GROUPS, "APPROVED"];
 
 /**
  * Filter bar. Everything lives in the URL (shareable, back-button friendly): selects apply
  * immediately, search is debounced and also applies on Enter. The server does the filtering.
+ * Search stays in view; type, status, severity and fault live behind one "Filters" button,
+ * and whatever is applied shows as a chip you can remove.
  */
 export function ClaimFilterBar({ values }: { values: ClaimFilters }) {
   const router = useRouter();
@@ -43,17 +49,18 @@ export function ClaimFilterBar({ values }: { values: ClaimFilters }) {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => search(v), 300);
   };
-  const select = cn(inputClass, "h-7 w-auto min-w-0 pr-7 text-[12px]");
-  const muted = (v: string | undefined) => (!v ? "text-fg-muted" : undefined);
   const inPhase = (phase: ClaimPhase) => CLAIM_STATUSES.filter((s) => claimPhase(s) === phase);
+  // A lifecycle status picked here is shown by the pill row, so it counts on the button but gets no chip.
+  const specificStatus = values.status && !PILL_STATUSES.includes(values.status) ? values.status : undefined;
+  const count = [values.type, specificStatus, values.severity, values.fault].filter(Boolean).length;
 
   return (
     <div className={cn("flex flex-wrap items-center gap-2", pending && "opacity-70")} aria-busy={pending || undefined}>
       <label className="relative block">
-        <Search className="pointer-events-none absolute inset-y-0 left-2 my-auto h-3.5 w-3.5 text-fg-subtle" />
-        <input value={q} onChange={(e) => onSearch(e.target.value)} placeholder="Number, load, driver, unit, location…" aria-label="Search claims"
+        <Search className="pointer-events-none absolute inset-y-0 left-2.5 my-auto h-3.5 w-3.5 text-fg-faint" />
+        <input value={q} onChange={(e) => onSearch(e.target.value)} placeholder="Search claims…" title="Number, load, driver, unit or location" aria-label="Search claims"
           onKeyDown={(e) => { if (e.key === "Enter") { if (timer.current) clearTimeout(timer.current); search(q); } }}
-          className={cn(inputClass, "h-7 w-64 pl-7 pr-7 text-[12px]")} />
+          className={cn(inputClass, "w-60 pl-8 pr-7")} />
         {q && (
           <button type="button" aria-label="Clear search" onClick={() => onSearch("")}
             className="absolute inset-y-0 right-1 my-auto inline-flex h-5 w-5 items-center justify-center rounded text-fg-subtle hover:bg-raised hover:text-fg">
@@ -62,36 +69,40 @@ export function ClaimFilterBar({ values }: { values: ClaimFilters }) {
         )}
       </label>
 
-      <select aria-label="Claim type" value={values.type ?? ""} onChange={(e) => go({ type: e.target.value || undefined })} className={cn(select, muted(values.type))}>
-        <option value="">All types</option>
-        {CLAIM_TYPES.map((t) => <option key={t} value={t}>{CLAIM_TYPE_LABELS[t]}</option>)}
-      </select>
+      <FilterMenu count={count} onClear={() => go({ type: undefined, status: undefined, severity: undefined, fault: undefined })}>
+        <FilterField label="Claim type">
+          <select value={values.type ?? ""} onChange={(e) => go({ type: e.target.value || undefined })} className={inputClass}>
+            <option value="">All types</option>
+            {CLAIM_TYPES.map((t) => <option key={t} value={t}>{CLAIM_TYPE_LABELS[t]}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Status">
+          <select value={values.status ?? ""} onChange={(e) => go({ status: e.target.value || undefined })} className={inputClass}>
+            <option value="">All statuses</option>
+            <option value="open">Open (any)</option>
+            <option value="closed">Closed (any)</option>
+            <optgroup label="Open">{inPhase("open").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
+            <optgroup label="Awaiting payment">{inPhase("awaiting").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
+            <optgroup label="Closed">{inPhase("closed").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
+          </select>
+        </FilterField>
+        <FilterField label="Severity">
+          <select value={values.severity ?? ""} onChange={(e) => go({ severity: e.target.value || undefined })} className={inputClass}>
+            <option value="">All severities</option>
+            {CLAIM_SEVERITIES.map((s) => <option key={s} value={s}>{CLAIM_SEVERITY_LABELS[s] ?? s}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Fault">
+          <select value={values.fault ?? ""} onChange={(e) => go({ fault: e.target.value || undefined })} className={inputClass}>
+            <option value="">Any fault</option>
+            {CLAIM_FAULTS.map((f) => <option key={f} value={f}>{CLAIM_FAULT_LABELS[f]}</option>)}
+          </select>
+        </FilterField>
+      </FilterMenu>
 
-      <select aria-label="Status" value={values.status ?? ""} onChange={(e) => go({ status: e.target.value || undefined })} className={cn(select, muted(values.status))}>
-        <option value="">All statuses</option>
-        <option value="open">Open (any)</option>
-        <option value="closed">Closed (any)</option>
-        <optgroup label="Open">{inPhase("open").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
-        <optgroup label="Awaiting payment">{inPhase("awaiting").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
-        <optgroup label="Closed">{inPhase("closed").map((s) => <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>)}</optgroup>
-      </select>
-
-      <select aria-label="Severity" value={values.severity ?? ""} onChange={(e) => go({ severity: e.target.value || undefined })} className={cn(select, muted(values.severity))}>
-        <option value="">All severities</option>
-        {CLAIM_SEVERITIES.map((s) => <option key={s} value={s}>{CLAIM_SEVERITY_LABELS[s] ?? s}</option>)}
-      </select>
-
-      <select aria-label="Fault" value={values.fault ?? ""} onChange={(e) => go({ fault: e.target.value || undefined })} className={cn(select, muted(values.fault))}>
-        <option value="">Any fault</option>
-        {CLAIM_FAULTS.map((f) => <option key={f} value={f}>{CLAIM_FAULT_LABELS[f]}</option>)}
-      </select>
-
-      {hasClaimFilters(values) && (
-        <button type="button" onClick={() => { if (timer.current) clearTimeout(timer.current); setQ(""); go({ type: undefined, status: undefined, severity: undefined, fault: undefined, q: undefined }); }}
-          className={buttonClass("ghost", "sm")}>
-          <X className="h-3.5 w-3.5" />Clear
-        </button>
-      )}
+      {values.type && <FilterChip onRemove={() => go({ type: undefined })}>{CLAIM_TYPE_LABELS[values.type] ?? values.type}</FilterChip>}
+      {values.severity && <FilterChip onRemove={() => go({ severity: undefined })}>{CLAIM_SEVERITY_LABELS[values.severity] ?? values.severity} severity</FilterChip>}
+      {values.fault && <FilterChip onRemove={() => go({ fault: undefined })}>Fault: {(CLAIM_FAULT_LABELS[values.fault] ?? values.fault).toLowerCase()}</FilterChip>}
     </div>
   );
 }

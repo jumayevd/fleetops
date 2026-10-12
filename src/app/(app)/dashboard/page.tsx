@@ -6,7 +6,7 @@ import { fleetSnapshot } from "@/lib/telemetry";
 import { getAlerts } from "@/lib/alerts";
 import { monthlyFinancials, receivables, revenueMtdComparison, weeklyProduction } from "@/lib/stats";
 import { money, money2 } from "@/lib/format";
-import { Card, EmptyState, LinkButton, PageHeader, cn } from "@/components/ui";
+import { Card, EmptyState, InfoTip, LinkButton, PageHeader, cn } from "@/components/ui";
 import { RevenueChart, SimpleBar } from "@/components/charts-lazy";
 import { LiveFleetMini } from "@/components/live-fleet";
 import { NeedsAttention } from "./needs-you";
@@ -26,8 +26,8 @@ const trend = (d: number | null, lowerIsBetter = false) =>
 const none = Promise.resolve(null);
 
 /**
- * Overview, top to bottom: the day in six numbers; today's pickups and activity next to what needs attention;
- * the live fleet with billing and the week's production; then the month's performance. Each person can hide
+ * Overview, top to bottom: the day in six numbers; then two columns (today's pickups and activity over the live
+ * fleet; what needs attention over billing and the week's production); then the month's performance. Each person can hide
  * sections (Customize, saved in a cookie); hidden sections are not queried at all. Every figure links to the
  * page that owns it, and only where this role can open it.
  */
@@ -74,31 +74,33 @@ export default async function Dashboard() {
     const inShop = fleet.length - activeTrucks.length;
     const runningLate = fleet.filter((t) => isRunningLate(t.load)).length;
     const growth = rev && rev.mtd > 0 && rev.prior > 0 ? Math.round(((rev.mtd - rev.prior) / rev.prior) * 100) : null;
-    // One calm accent for every icon tile; only an exception switches its tile to the warning colour.
+    // Each number has its own colour so the row scans at a glance; an exception switches its tile to warning or danger.
     kpis = [
       {
-        label: "In transit", value: ops.inTransit, href: to("/loads?status=IN_TRANSIT"), icon: Route, tone: runningLate ? "danger" : "accent",
+        label: "In transit", value: ops.inTransit, href: to("/loads?status=IN_TRANSIT"), icon: Route, tone: runningLate ? "danger" : "hue-2",
         sub: runningLate ? <Flag tone="danger">{plural(runningLate, "load")} running late</Flag> : ops.inTransit ? "All on schedule" : "Nothing on the road",
+        alert: runningLate > 0,
       },
-      { label: "Awaiting pickup", value: ops.assigned, href: to("/loads?status=ASSIGNED"), icon: Clock3, tone: "accent", sub: `${ops.pickupsSoon} in the next 24 h` },
+      { label: "Awaiting pickup", value: ops.assigned, href: to("/loads?status=ASSIGNED"), icon: Clock3, tone: "hue-3", sub: `${ops.pickupsSoon} in the next 24 h` },
       {
-        label: "Needs a truck", value: ops.unassignedSoon, href: to(canEdit ? "/dispatch" : "/loads?status=PLANNED"), icon: PackageOpen, tone: ops.unassignedSoon ? "warn" : "accent",
+        label: "Needs a truck", value: ops.unassignedSoon, href: to(canEdit ? "/dispatch" : "/loads?status=PLANNED"), icon: PackageOpen, tone: ops.unassignedSoon ? "warn" : "hue-4",
         sub: ops.unassignedSoon ? <Flag tone="warn">Pickup within 24 h</Flag> : `${plural(ops.planned, "booked load")} later`,
+        alert: ops.unassignedSoon > 0,
       },
-      { label: "Fleet utilization", value: `${Math.round(utilization * 100)}%`, href: to("/tracking"), icon: Gauge, tone: "accent", sub: `${busyTrucks} of ${activeTrucks.length} trucks on loads` },
+      { label: "Fleet utilization", value: `${Math.round(utilization * 100)}%`, href: to("/tracking"), icon: Gauge, tone: "hue-1", sub: `${busyTrucks} of ${activeTrucks.length} trucks on loads` },
       {
-        label: "Drivers ready", value: ops.driversReady, href: to("/drivers"), icon: UserCheck, tone: "accent",
+        label: "Drivers ready", value: ops.driversReady, href: to("/drivers"), icon: UserCheck, tone: "hue-5",
         sub: ops.hold ? <><Flag tone="warn">{ops.hold} on hold</Flag> · {ops.driversWorking} working</> : `${ops.driversWorking} working`,
+        alert: ops.hold > 0,
       },
       rev
         ? {
-            label: "Revenue this month", value: money(rev.mtd), href: to("/finance"), icon: Banknote, tone: "accent",
-            sub: growth === null
-              ? (rev.prior ? `${money(rev.prior)} by now last month` : "No deliveries yet")
-              : <><Flag tone={trend(growth)}>{pct(growth)}</Flag> vs last month</>,
+            label: "Revenue this month", value: money(rev.mtd), href: to("/finance"), icon: Banknote, tone: "hue-6",
+            delta: growth === null ? undefined : { text: pct(growth), tone: trend(growth) },
+            sub: growth === null ? (rev.prior ? `${money(rev.prior)} by now last month` : "No deliveries yet") : `${money(rev.prior)} by now last month`,
           }
         : {
-            label: "Trucks in shop", value: inShop, href: to("/maintenance"), icon: Wrench, tone: inShop ? "warn" : "accent",
+            label: "Trucks in shop", value: inShop, href: to("/maintenance"), icon: Wrench, tone: inShop ? "warn" : "hue-4",
             sub: inShop ? `${Math.round((inShop / Math.max(1, fleet.length)) * 100)}% of the fleet` : "Every truck available",
           },
     ];
@@ -139,10 +141,10 @@ export default async function Dashboard() {
         ]
       : [delivered, onTime, emptyKm];
     performance = (
-      <Card title="Performance" bodyClassName="grid gap-6 px-4 pb-4 pt-2 lg:grid-cols-3"
-        actions={<><span className="hidden text-[12px] text-fg-subtle sm:inline">{months[0].month} – {perf.month}</span><MoreLink href="/reports">Reports</MoreLink></>}>
+      <Card bodyClassName="grid gap-6 px-4 pb-4 pt-2 lg:grid-cols-3"
+        title={<span className="flex items-center gap-1.5">Performance<InfoTip>{showMoney ? "Revenue and direct costs by month; the gap between them is gross margin." : "Loads delivered by month."}</InfoTip></span>}
+        actions={<><span className="num hidden rounded-full bg-neutral-soft px-2 text-[11px] leading-5 text-fg-muted sm:inline">{months[0].month} – {perf.month}</span><MoreLink href="/reports">Reports</MoreLink></>}>
         <div className="min-w-0 lg:col-span-2">
-          <p className="mb-2 text-[12px] text-fg-muted">{showMoney ? "Revenue and direct costs by month · the gap is gross margin" : "Loads delivered by month"}</p>
           {showMoney
             ? <RevenueChart data={months} height={220} />
             : <SimpleBar data={months.map((m) => ({ month: m.month, loads: m.loads }))} dataKey="loads" nameKey="month" tone="accent" height={220} format="number" />}
@@ -154,34 +156,36 @@ export default async function Dashboard() {
 
   /* ---------- Cards ---------- */
   const today = upcoming && events && (
-    <TabbedCard label="Today" className={show("attention") ? "xl:col-span-2" : undefined} tabs={[
+    <TabbedCard label="Today" tabs={[
       {
-        key: "pickups", label: "Pickups", hint: "next 24 h", count: upcoming.total,
+        key: "pickups", label: "Pickups · 24 h", count: upcoming.total,
         more: { href: "/dispatch", label: "Dispatch board" },
         content: <UpcomingPickups loads={upcoming.loads} total={upcoming.total} now={now} canEdit={canEdit} />,
       },
       {
-        key: "activity", label: "Recent activity",
+        key: "activity", label: "Activity",
         more: can(user.role, "audit.view") ? { href: "/admin/audit", label: "Audit log" } : { href: "/loads", label: "Loads" },
         content: <RecentActivity events={events} />,
       },
     ]} />
   );
   const attention = show("attention") && <NeedsAttention alerts={alerts} groups={groupAlerts(alerts)} />;
-  const billing = queue && (
-    <Card title="Billing" flush actions={<MoreLink href={showMoney ? "/finance" : "/loads?billing=MISSING_DOCS"}>{showMoney ? "Finance" : "Loads"}</MoreLink>}>
-      <BillingQueue queue={queue} overdue={overdue} showMoney={showMoney} />
-    </Card>
-  );
-  const thisWeek = week && (
-    <Card title="This week" actions={<MoreLink href="/dispatch/weekly">Weekly board</MoreLink>}>
-      <WeekProduction week={week} showMoney={showMoney} />
-    </Card>
-  );
-  const side = [billing, thisWeek].filter(Boolean);
+  // Billing and the week's production share one card: two short lists, one at a time.
+  const moneyTabs = [
+    queue && {
+      key: "billing", label: "Billing", count: queue.missingDocs.count + queue.ready.count + (overdue?.count ?? 0),
+      more: { href: showMoney ? "/finance" : "/loads?billing=MISSING_DOCS", label: showMoney ? "Finance" : "Loads" },
+      content: <BillingQueue queue={queue} overdue={overdue} showMoney={showMoney} />,
+    },
+    week && {
+      key: "week", label: "This week", more: { href: "/dispatch/weekly", label: "Weekly board" },
+      content: <div className="p-4"><WeekProduction week={week} showMoney={showMoney} /></div>,
+    },
+  ].filter((t) => !!t);
+  const side = moneyTabs.length > 0 ? <TabbedCard label="Billing and this week" tabs={moneyTabs} /> : null;
   const map = show("fleet") && fleet && seesTracking && (
-    <Card title="Live fleet" className={side.length ? "xl:col-span-2" : undefined} bodyClassName="p-1.5 pt-1" actions={<MoreLink href="/tracking">Live map</MoreLink>}>
-      <LiveFleetMini initial={fleet} height={side.length ? (showMoney ? 340 : 280) : 380} />
+    <Card title="Live fleet" bodyClassName="p-1.5 pt-1" actions={<MoreLink href="/tracking">Live map</MoreLink>}>
+      <LiveFleetMini initial={fleet} height={320} />
     </Card>
   );
   // The mini map polls /api/fleet, which needs tracking.view: other roles get the same counts as a page-load snapshot.
@@ -190,7 +194,10 @@ export default async function Dashboard() {
       <FleetSummary legend={fleetLegend(fleet, now.getTime())} />
     </Card>
   );
-  const nothing = [kpis.length, today, attention, map, fleetCounts, billing, thisWeek, performance].every((x) => !x);
+  const fleetCard = map || fleetCounts;
+  const hasMain = Boolean(today || fleetCard);
+  const hasAside = Boolean(attention || side);
+  const nothing = !kpis.length && !hasMain && !hasAside && !performance;
 
   return (
     <>
@@ -203,18 +210,13 @@ export default async function Dashboard() {
       <div className="space-y-4">
         {kpis.length > 0 && <KpiStrip items={kpis} />}
 
-        {(today || attention) && (
-          <div className={cn("grid gap-4", today && attention && "xl:grid-cols-3")}>{today}{attention}</div>
-        )}
-
-        {map ? (
-          <div className={cn("grid gap-4", side.length && "xl:grid-cols-3")}>
-            {map}
-            {side.length > 0 && <div className="grid content-start gap-4 sm:grid-cols-2 xl:grid-cols-1">{billing}{thisWeek}</div>}
+        {/* Two columns that flow independently: the day's work and the fleet on the left, what to act on on the right
+            (first on a phone, where it stacks). */}
+        {(hasMain || hasAside) && (
+          <div className={cn("grid items-start gap-4", hasMain && hasAside && "xl:grid-cols-3")}>
+            {hasMain && <div className={cn("grid min-w-0 gap-4", hasAside && "xl:col-span-2")}>{today}{fleetCard}</div>}
+            {hasAside && <div className={cn("order-first grid min-w-0 gap-4 xl:order-none", !hasMain && "md:grid-cols-2")}>{attention}{side}</div>}
           </div>
-        ) : (fleetCounts || side.length > 0) && (
-          // Three cards share a row on wide screens; one or two take half the width each instead of a narrow third.
-          <div className={cn("grid gap-4 md:grid-cols-2", [fleetCounts, billing, thisWeek].filter(Boolean).length > 2 && "xl:grid-cols-3")}>{fleetCounts}{billing}{thisWeek}</div>
         )}
 
         {performance}

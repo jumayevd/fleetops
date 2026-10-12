@@ -3,7 +3,7 @@ import type { Prisma, Trailer, Truck } from "@prisma/client";
 import { db } from "@/lib/db";
 import { WORK_ORDER_CATEGORIES, WORK_ORDER_CATEGORY_LABELS, humanize } from "@/lib/constants";
 import { date, money, number } from "@/lib/format";
-import { Card, Cell, Table } from "@/components/ui";
+import { Card, Table } from "@/components/ui";
 import { daysBetween, periodRange, PERIODS, type PeriodKey } from "../_lib/data";
 import { newWorkOrderHref, workOrderHref } from "../_lib/links";
 import { NO_VENDOR } from "../_lib/shared";
@@ -43,11 +43,8 @@ export async function LogTab({ period, trucks, trailers, filters }: { period: Pe
 
   return (
     <Card flush
-      title={<span>Completed work <span className="num ml-1 font-normal text-fg-subtle">{PERIODS[period].hint.toLowerCase()}</span></span>}
-      actions={rows.length > 0 && (
-        <span className="num text-[11px] text-fg-subtle">{number(rows.length)} records · {money(totals.cost)}{totals.timed ? ` · avg ${(totals.days / totals.timed).toFixed(1)}d in shop` : ""}</span>
-      )}>
-      <div className="border-b border-line px-4 py-3">
+      title={<span>Completed work <span className="num ml-1 font-normal text-fg-subtle">{PERIODS[period].hint.toLowerCase()}</span></span>}>
+      <div className="border-b border-line px-4 pb-3">
         <FilterBar keep={["tab", "period"]} filters={[
           { name: "category", label: "Category", value: category ?? "", options: WORK_ORDER_CATEGORIES.map((c) => ({ value: c, label: WORK_ORDER_CATEGORY_LABELS[c] ?? humanize(c) })) },
           { name: "vendor", label: "Vendor", value: filters.vendor ?? "", options: vendorOptions },
@@ -63,8 +60,8 @@ export async function LogTab({ period, trucks, trailers, filters }: { period: Pe
             <tr key={w.id}>
               <td><UnitLink truck={w.truck} trailer={w.trailer} /></td>
               <td className="whitespace-nowrap text-fg-muted">{WORK_ORDER_CATEGORY_LABELS[w.category] ?? humanize(w.category)}</td>
-              <td className="max-w-72">
-                <Cell primary={<Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>} secondary={<span className="num">#{w.number}</span>} />
+              <td className="max-w-72 truncate" title={`#${w.number} · ${w.title}`}>
+                <Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>
               </td>
               <td className="max-w-44 truncate text-fg-muted">{w.vendor ?? <span className="text-fg-faint">{NO_VENDOR}</span>}</td>
               <td className="whitespace-nowrap text-fg-muted">{date(w.inAt)}</td>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { date, money, number } from "@/lib/format";
-import { Badge, Card, Cell, Chip, FilterPills, LinkButton, Table, cn } from "@/components/ui";
+import { Badge, Card, Chip, FilterPills, LinkButton, Table, cn } from "@/components/ui";
 import type { InvoiceRow } from "./data";
 import {
   FILTER_LABELS, INVOICE_FILTERS, INVOICE_PAGE_SIZE, daysLate, financeHref, invoiceBadge, invoiceOrder, invoiceTotal, isOverdue, type InvoiceFilter,
@@ -18,25 +18,25 @@ const EMPTY: Record<InvoiceFilter, [string, string]> = {
   all: ["No invoices yet", "Invoices are created from delivered loads on the billing queue."],
 };
 
+/** Due date. The second line is kept for what needs chasing (late, or due within a week); the rest is on hover. */
 function Due({ i, now }: { i: InvoiceRow; now: Date }) {
   if (i.status === "PAID") {
     const early = i.paidAt ? daysLate(i.dueAt, i.paidAt) : null;
     return (
-      <div className="whitespace-nowrap">
-        <div className="num text-fg-muted">{date(i.dueAt)}</div>
-        <div className="text-[11px] text-ok">paid {date(i.paidAt)}{early != null && early > 0 ? ` · ${early} d late` : ""}</div>
-      </div>
+      <span className="num whitespace-nowrap text-fg-muted" title={`Paid ${date(i.paidAt)}${early != null && early > 0 ? ` · ${early} d late` : ""}`}>
+        {date(i.dueAt)}
+      </span>
     );
   }
   if (i.status === "VOID" || i.status === "DRAFT") return <span className="num text-fg-subtle">{date(i.dueAt)}</span>;
   const late = daysLate(i.dueAt, now);
   const overdue = late > 0;
+  const soon = !overdue && late >= -7;
+  const label = overdue ? `${late} d late` : late === 0 ? "due today" : `due in ${-late} d`;
   return (
-    <div className="whitespace-nowrap">
+    <div className="whitespace-nowrap" title={overdue || soon ? undefined : label}>
       <div className={cn("num", overdue ? "font-medium text-danger" : "text-fg-muted")}>{date(i.dueAt)}</div>
-      <div className={cn("text-[11px]", overdue ? "text-danger" : late >= -7 ? "text-warn" : "text-fg-subtle")}>
-        {overdue ? `${late} d late` : late === 0 ? "due today" : `due in ${-late} d`}
-      </div>
+      {(overdue || soon) && <div className={cn("text-[11px]", overdue ? "text-danger" : "text-warn")}>{label}</div>}
     </div>
   );
 }
@@ -48,9 +48,8 @@ function Pager({ filter, page, pages, shown, count }: { filter: InvoiceFilter; p
   const [prev, next] = invoiceOrder(filter) === "due" ? ["Due sooner", "Due later"] : ["Newer", "Older"];
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-2 text-[11px] text-fg-subtle">
-      <span>
-        <span className="num">{number(from)}–{number(from + shown - 1)}</span> of <span className="num">{number(count)}</span>,{" "}
-        {invoiceOrder(filter) === "due" ? "due soonest first" : "most recent first"}
+      <span title={invoiceOrder(filter) === "due" ? "Due soonest first" : "Most recent first"}>
+        <span className="num">{number(from)}–{number(from + shown - 1)}</span> of <span className="num">{number(count)}</span>
       </span>
       <div className="flex items-center gap-1">
         {page > 1 && <LinkButton href={href(page - 1)} variant="ghost" size="sm"><ArrowLeft />{prev}</LinkButton>}
@@ -86,17 +85,18 @@ export function InvoicesTab({ invoices, filter, counts, page, pages, editable, n
             <tr key={i.id} className="group">
               <td>
                 <Link href={`/finance/invoices/${i.id}`} className="num font-medium text-fg hover:underline">{i.number}</Link>
+                {/* The load stays visible: it is a link people follow. Its route waits on hover. */}
                 {i.load && (
                   <div className="num text-[11px] text-fg-subtle">
-                    <Link href={`/loads/${i.load.id}`} className="hover:underline">{i.load.reference}</Link>
+                    <Link href={`/loads/${i.load.id}`} title={`${i.load.originCity} → ${i.load.destCity}`} className="hover:underline">{i.load.reference}</Link>
                   </div>
                 )}
               </td>
               <td className="max-w-60">
-                <Cell
-                  primary={<span className="flex items-center gap-1.5"><Link href={`/customers/${i.customer.id}`} className="truncate hover:underline">{i.customer.name}</Link>{i.customer.kind === "BROKER" && <Chip>Broker</Chip>}</span>}
-                  secondary={i.load ? <span className="flex items-center gap-1">{i.load.originCity}<ArrowRight className="h-3 w-3 shrink-0 text-fg-faint" />{i.load.destCity}</span> : "Transportation services"}
-                />
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Link href={`/customers/${i.customer.id}`} title={i.load ? undefined : "Transportation services (no load attached)"} className="truncate text-fg hover:underline">{i.customer.name}</Link>
+                  {i.customer.kind === "BROKER" && <Chip>Broker</Chip>}
+                </span>
               </td>
               <td className="num whitespace-nowrap text-fg-muted">{date(i.issuedAt)}</td>
               <td><Due i={i} now={now} /></td>

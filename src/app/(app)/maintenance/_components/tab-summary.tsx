@@ -3,7 +3,7 @@ import type { Trailer, Truck } from "@prisma/client";
 import { maintenanceSummary } from "@/lib/stats";
 import { WORK_ORDER_CATEGORY_LABELS, humanize } from "@/lib/constants";
 import { fmtMoneyCompact, km, money, money2, number } from "@/lib/format";
-import { Card, Chip, Stat, Table, type Tone } from "@/components/ui";
+import { Card, Chip, InfoTip, Stat, Table, type Tone } from "@/components/ui";
 import { Bars } from "@/components/charts-lite";
 import { Donut } from "@/components/charts-lazy";
 import { countUnits, daysBetween, leaseRows, periodRange, PERIODS, type PeriodKey } from "../_lib/data";
@@ -65,7 +65,6 @@ export async function SummaryTab({ period, trucks, trailers }: { period: PeriodK
               href: logHref({ vendor: isNoVendor(v.name) ? "__none" : v.name }),
             }))}
             format="money" labelWidth={150} valueWidth={72} />
-          {cur.byVendor.length > 0 && <p className="mt-3 text-[11px] text-fg-subtle">Click a vendor to open its jobs in the repair log.</p>}
         </Card>
 
         <Card title="Spend by category">
@@ -73,17 +72,16 @@ export async function SummaryTab({ period, trucks, trailers }: { period: PeriodK
             height={236} total={fmtMoneyCompact(cur.spend)} totalLabel="spend" />
         </Card>
 
-        <Card title="Jobs by category" actions={byFrequency.length > 0 && <span className="text-[11px] text-fg-subtle">most frequent first</span>}>
+        <Card title={<span className="flex items-center gap-1.5">Jobs by category<InfoTip>The kinds of work that keep coming back, most frequent first.</InfoTip></span>}>
           <Bars
             data={byFrequency.map((c) => ({
               label: categoryLabel(c.name), value: c.count, hint: `${plural(c.count, "job")} · ${money(c.cost)} · avg ${money(c.cost / c.count)}`,
               href: logHref({ category: c.name }),
             }))}
             format="number" labelWidth={150} valueWidth={40} />
-          {byFrequency.length > 0 && <p className="mt-3 text-[11px] text-fg-subtle">The kinds of work that keep coming back. Click one to see its jobs.</p>}
         </Card>
 
-        <Card title="Units above median spend" flush
+        <Card title={<span className="flex items-center gap-1.5">Units above median spend<InfoTip>Units that spent more than 1.8× the median per serviced unit (and over $500) in this window.</InfoTip></span>} flush
           actions={cur.perUnit.length > 0 && <span className="num text-[11px] text-fg-subtle">median {money(cur.median)}</span>}>
           <Table dense head={["Unit", "Jobs", "Spend", "vs median", ""]} empty={cur.flagged.length === 0}
             emptyTitle="No outliers" emptyDescription={cur.records ? `Every unit is within 1.8× the median spend of ${money(cur.median)} for this window.` : "Completed work orders in this window will be compared here."}>

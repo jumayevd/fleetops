@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { ago, dateTime, toLocalInput } from "@/lib/format";
-import { Card, EmptyState, LinkButton, PageHeader, Segmented, cn } from "@/components/ui";
+import { Card, EmptyState, InfoTip, LinkButton, PageHeader, Segmented, cn } from "@/components/ui";
 import { AnnouncementForm } from "./form";
 import { AnnouncementItem } from "./item";
 import { expiresSoon, isExpired, type AnnouncementDTO } from "./shared";
@@ -64,7 +64,6 @@ export default async function AnnouncementsPage({ searchParams }: PageProps<"/an
       <PageHeader
         eyebrow="Team"
         title="Announcements"
-        subtitle={`${pinned.length} pinned · ${recent.length} recent${expiredCount ? ` · ${expiredCount} expired` : ""}`}
         actions={
           <>
             <Segmented active={showExpired ? "all" : "live"} items={[
@@ -103,12 +102,13 @@ export default async function AnnouncementsPage({ searchParams }: PageProps<"/an
         </div>
         {manage && (
           <div className="space-y-4 xl:sticky xl:top-16 xl:self-start">
-            <Card title="New announcement">
+            <Card title={
+              <span className="flex items-center gap-1.5">New announcement
+                <InfoTip>Pinned announcements stay at the top and count on the sidebar badge. Set an expiry for anything time-boxed (border queues, shop closures): it leaves the list after that time, so the list stays current without clean-up.</InfoTip>
+              </span>
+            }>
               <AnnouncementForm />
             </Card>
-            <p className="px-1 text-[11px] leading-4 text-fg-subtle">
-              Pinned announcements stay at the top and count on the sidebar badge. Set an expiry for anything time-boxed — border queues, shop closures — so the list stays current without clean-up.
-            </p>
           </div>
         )}
       </div>

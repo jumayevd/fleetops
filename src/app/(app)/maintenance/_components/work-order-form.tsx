@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Container, Truck as TruckIcon } from "lucide-react";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Card, Field, Input, Select, Textarea, buttonClass, cn } from "@/components/ui";
+import { Card, Field, InfoTip, Input, Select, Textarea, buttonClass, cn } from "@/components/ui";
 import { WORK_ORDER_CATEGORIES, WORK_ORDER_CATEGORY_LABELS, WORK_ORDER_PRIORITIES, WORK_ORDER_STATUSES, humanize } from "@/lib/constants";
 import { money2, number } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
@@ -57,6 +57,25 @@ const IN_SHOP_HINT = "In the shop now. Complete it here, or use Cancel on the wo
 
 const numOrEmpty = (v: number | null | undefined) => (v == null ? "" : String(v));
 
+/**
+ * Like Field, but the explanation waits behind an (i) next to the label; `hint` stays visible for warnings.
+ * The (i) sits outside the <label>, so the control's accessible name stays just the label.
+ */
+function TipField({ id, label, tip, hint, required, children }: {
+  id: string; label: string; tip?: ReactNode; hint?: ReactNode; required?: boolean; children: ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center gap-1">
+        <label htmlFor={id} className="text-[12px] font-medium text-fg-muted">{label}{required && <span className="text-danger"> *</span>}</label>
+        {tip && <InfoTip>{tip}</InfoTip>}
+      </div>
+      {children}
+      {hint && <span className="mt-1 block text-[11px] text-fg-subtle">{hint}</span>}
+    </div>
+  );
+}
+
 export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial = {}, savedStatus, now, submitLabel, cancelHref }: {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   trucks: UnitOption[];
@@ -72,6 +91,7 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
   cancelHref: string;
 }) {
   const inShop = savedStatus === "IN_PROGRESS";
+  const uid = useId();
   const [mode, setMode] = useState<Mode>(initial.trailerId && !initial.truckId ? "trailer" : "truck");
   const [truckId, setTruckId] = useState(initial.truckId ?? "");
   const [trailerId, setTrailerId] = useState(initial.trailerId ?? "");
@@ -139,12 +159,12 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
               <input type="hidden" name={mode === "truck" ? "truckId" : "trailerId"} value={mode === "truck" ? truckId : trailerId} />
             </Field>
           ) : mode === "truck" ? (
-            <Field label="Truck" required hint={truck ? `Odometer ${number(truck.odometerKm)} km · ${truck.detail}${truck.onLoad ? ` · on ${truck.onLoad}` : ""}` : "Pick the tractor this work is for."}>
+            <Field label="Truck" required hint={truck ? `Odometer ${number(truck.odometerKm)} km · ${truck.detail}${truck.onLoad ? ` · on ${truck.onLoad}` : ""}` : undefined}>
               <Select name="truckId" required value={truckId} onChange={(e) => pickTruck(e.target.value)} placeholder="Select a truck…"
                 options={trucks.map((t) => ({ value: t.id, label: `${t.unitNumber} · ${t.detail}` }))} />
             </Field>
           ) : (
-            <Field label="Trailer" required hint={unit?.onLoad ? `On ${unit.onLoad}.` : "Pick the trailer this work is for."}>
+            <Field label="Trailer" required hint={unit?.onLoad ? `On ${unit.onLoad}.` : undefined}>
               <Select name="trailerId" required value={trailerId} onChange={(e) => setTrailerId(e.target.value)} placeholder="Select a trailer…"
                 options={trailers.map((t) => ({ value: t.id, label: `${t.unitNumber} · ${t.detail}` }))} />
             </Field>
@@ -162,18 +182,19 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
             <Field label="Priority">
               <Select name="priority" defaultValue={initial.priority ?? "MEDIUM"} options={WORK_ORDER_PRIORITIES.map((p) => ({ value: p, label: humanize(p) }))} />
             </Field>
-            <Field label="Status" hint={loadBlock ? <span className="text-warn">{loadBlock}</span> : inShop && status === "IN_PROGRESS" ? IN_SHOP_HINT : STATUS_HINT[status]}>
-              <Select name="status" value={status} onChange={(e) => changeStatus(e.target.value)} options={statusOptions(inShop ? IN_SHOP_STATUSES : WORK_ORDER_STATUSES)} />
-            </Field>
-            <Field label="Vendor / shop" hint={<>Your own shop is <span className="font-medium text-fg-muted">{IN_HOUSE_VENDOR}</span>; outside shops are suggested as you type.</>}>
-              <Input name="vendor" defaultValue={initial.vendor ?? ""} placeholder="e.g. Volvo Center Tashkent" list={vendors.length ? "wo-vendors" : undefined} />
+            <TipField id={`${uid}-status`} label="Status" tip={inShop && status === "IN_PROGRESS" ? IN_SHOP_HINT : STATUS_HINT[status]}
+              hint={loadBlock ? <span className="text-warn">{loadBlock}</span> : undefined}>
+              <Select id={`${uid}-status`} name="status" value={status} onChange={(e) => changeStatus(e.target.value)} options={statusOptions(inShop ? IN_SHOP_STATUSES : WORK_ORDER_STATUSES)} />
+            </TipField>
+            <TipField id={`${uid}-vendor`} label="Vendor / shop" tip={<>Your own shop is {IN_HOUSE_VENDOR}; outside shops are suggested as you type.</>}>
+              <Input id={`${uid}-vendor`} name="vendor" defaultValue={initial.vendor ?? ""} placeholder="e.g. Volvo Center Tashkent" list={vendors.length ? "wo-vendors" : undefined} />
               {vendors.length > 0 && <datalist id="wo-vendors">{vendors.map((v) => <option key={v} value={v} />)}</datalist>}
-            </Field>
+            </TipField>
             <Field label="Description" className="sm:col-span-2">
               <Textarea name="description" defaultValue={initial.description ?? ""} placeholder="Symptoms, diagnosis, parts to order…" />
             </Field>
-            <Field label="Internal notes" className="sm:col-span-2" hint="Not shown to vendors or drivers.">
-              <Textarea name="notes" rows={2} defaultValue={initial.notes ?? ""} />
+            <Field label="Internal notes" className="sm:col-span-2">
+              <Textarea name="notes" rows={2} defaultValue={initial.notes ?? ""} placeholder="Not shown to vendors or drivers" />
             </Field>
           </div>
         </Card>
@@ -191,15 +212,15 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
               <Input type="datetime-local" value={dates.inAt} onChange={(e) => setDate("inAt", e.target.value)} className="num" />
               <input type="hidden" name="inAt" value={submitted("inAt")} />
             </Field>
-            <Field label="Out of the shop" required={status === "DONE"} hint={status === "DONE" ? "When the work finished." : undefined}>
+            <Field label="Out of the shop" required={status === "DONE"}>
               <Input type="datetime-local" required={status === "DONE"} min={dates.inAt || undefined} value={dates.outAt} onChange={(e) => setDate("outAt", e.target.value)} className="num" />
               <input type="hidden" name="outAt" value={submitted("outAt")} />
             </Field>
-            <Field label="Odometer (km)" hint={belowLastPm
-              ? <span className="text-warn">Below this truck&apos;s last PM reading of {number(lastPmKm)} km.</span>
-              : mode === "truck" ? (category === "PM" ? "Used to reset the PM interval when this work order is done." : "Prefilled from the truck; adjust to the reading at check-in.") : "Optional for trailers."}>
-              <Input name="odometerKm" type="number" inputMode="numeric" min={0} value={odometer} onChange={(e) => { setOdometer(e.target.value); setOdometerTouched(true); }} className="num" />
-            </Field>
+            <TipField id={`${uid}-odometer`} label="Odometer (km)"
+              tip={mode === "truck" ? (category === "PM" ? "Used to reset the PM interval when this work order is done." : "Prefilled from the truck; adjust to the reading at check-in.") : "Optional for trailers."}
+              hint={belowLastPm ? <span className="text-warn">Below this truck&apos;s last PM reading of {number(lastPmKm)} km.</span> : undefined}>
+              <Input id={`${uid}-odometer`} name="odometerKm" type="number" inputMode="numeric" min={0} value={odometer} onChange={(e) => { setOdometer(e.target.value); setOdometerTouched(true); }} className="num" />
+            </TipField>
           </div>
         </Card>
 
@@ -207,11 +228,12 @@ export function WorkOrderForm({ action, trucks, trailers, vendors = [], initial 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
             <Field label="Labour"><Input name="laborCost" type="number" inputMode="decimal" min={0} step="0.01" value={labor} onChange={(e) => setLabor(e.target.value)} className="num" placeholder="0" /></Field>
             <Field label="Parts"><Input name="partsCost" type="number" inputMode="decimal" min={0} step="0.01" value={parts} onChange={(e) => setParts(e.target.value)} className="num" placeholder="0" /></Field>
-            <Field label="Total" hint={manualTotal ? `Edited by hand · labour + parts = ${money2(sum)}. Clear the field to sum again.` : "Summed from labour + parts. Type to override."}>
-              <Input name="cost" type="number" inputMode="decimal" min={0} step="0.01" value={shownTotal}
+            <TipField id={`${uid}-total`} label="Total" tip="Summed from labour + parts. Type to override; clear the field to sum again."
+              hint={manualTotal ? `Edited by hand · labour + parts = ${money2(sum)}` : undefined}>
+              <Input id={`${uid}-total`} name="cost" type="number" inputMode="decimal" min={0} step="0.01" value={shownTotal}
                 onChange={(e) => { const v = e.target.value; if (v === "") { setManualTotal(false); setTotal(""); } else { setManualTotal(true); setTotal(v); } }}
                 className="num font-semibold" placeholder="0" />
-            </Field>
+            </TipField>
           </div>
         </Card>
 

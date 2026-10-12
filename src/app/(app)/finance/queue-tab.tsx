@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { DOC_KIND_LABELS } from "@/lib/documents";
 import { date, money, number } from "@/lib/format";
 import { invoiceLoad } from "@/app/actions/finance";
-import { Card, Cell, Chip, LinkButton, Table, cn } from "@/components/ui";
+import { Card, Cell, Chip, InfoTip, LinkButton, Table, cn } from "@/components/ui";
 import type { QueueLoad } from "./data";
 import { billableSince } from "./shared";
 import { CreateInvoiceButton } from "./create-invoice-button";
@@ -16,9 +16,13 @@ function waitingDays(l: QueueLoad, now: Date) {
 }
 const waitTone = (days: number) => (days > 14 ? "text-danger" : days > 7 ? "text-warn" : "text-fg-subtle");
 
+/** Who gets the invoice. "Broker for …" stays visible (it changes who pays); the customer ref waits on hover. */
 function BillTo({ l }: { l: QueueLoad }) {
   const party = l.broker ?? l.customer;
-  return <Cell primary={<Link href={`/customers/${party.id}`} className="hover:underline">{party.name}</Link>} secondary={l.broker ? `broker for ${l.customer.name}` : l.customerRef ? `ref ${l.customerRef}` : "direct shipper"} />;
+  return (
+    <Cell primary={<Link href={`/customers/${party.id}`} title={l.broker ? undefined : l.customerRef ? `Ref ${l.customerRef}` : "Direct shipper"} className="hover:underline">{party.name}</Link>}
+      secondary={l.broker ? `broker for ${l.customer.name}` : undefined} />
+  );
 }
 
 function LoadRef({ l }: { l: QueueLoad }) {
@@ -38,15 +42,17 @@ function Route({ l }: { l: QueueLoad }) {
   );
 }
 
+/** The wait shows under the date only once it is long enough to chase (over a week); otherwise on hover. */
 function Delivered({ l, now }: { l: QueueLoad; now: Date }) {
   const days = waitingDays(l, now);
+  const wait = days === 0 ? "today" : `${days} d waiting`;
   return (
-    <div className="whitespace-nowrap">
+    <div className="whitespace-nowrap" title={days > 7 ? undefined : wait}>
       <div className="text-fg-muted">
         {!l.deliveredAt && l.status === "TONU" && <span className="text-fg-subtle">ordered for </span>}
         <span className="num">{date(billableSince(l))}</span>
       </div>
-      <div className={cn("text-[11px]", waitTone(days))}>{days === 0 ? "today" : `${days} d waiting`}</div>
+      {days > 7 && <div className={cn("text-[11px]", waitTone(days))}>{wait}</div>}
     </div>
   );
 }
@@ -56,11 +62,11 @@ export function QueueTab({ missing, ready, editable, now }: { missing: QueueLoad
   const right = (k: string, label: string) => <span key={k} className="block text-right">{label}</span>;
   return (
     <div className="space-y-4">
-      <Card flush title="Ready to invoice"
+      <Card flush
+        title={<span className="flex items-center gap-1.5">Ready to invoice<InfoTip>Delivered loads move here once the rate confirmation and proof of delivery are on file; TONU loads need only the rate confirmation.</InfoTip></span>}
         actions={<span className="num text-[11px] text-fg-subtle">{number(ready.length)} {ready.length === 1 ? "load" : "loads"} · {money(sum(ready))}</span>}>
         <Table dense head={["Load", "Bill to", "Route", "Delivered", "Proof of delivery", right("rate", "Rate"), ""]}
-          empty={ready.length === 0} emptyTitle="Nothing is ready to invoice"
-          emptyDescription="Delivered loads move here once the rate confirmation and proof of delivery are on file; TONU loads need only the rate confirmation.">
+          empty={ready.length === 0} emptyTitle="Nothing is ready to invoice">
           {ready.map((l) => (
             <tr key={l.id}>
               <td><LoadRef l={l} /></td>
@@ -87,11 +93,11 @@ export function QueueTab({ missing, ready, editable, now }: { missing: QueueLoad
         </Table>
       </Card>
 
-      <Card flush title="Missing documents"
+      <Card flush
+        title={<span className="flex items-center gap-1.5">Missing documents<InfoTip>Delivered loads without a rate confirmation or proof of delivery, and TONU loads without a rate confirmation, wait here until the documents are uploaded.</InfoTip></span>}
         actions={<span className="num text-[11px] text-fg-subtle">{number(missing.length)} {missing.length === 1 ? "load" : "loads"} · {money(sum(missing))} on hold</span>}>
         <Table dense head={["Load", "Bill to", "Route", "Delivered", "Missing", "Driver", right("rate", "Rate"), ""]}
-          empty={missing.length === 0} emptyTitle="No loads are waiting on paperwork"
-          emptyDescription="Delivered loads without a rate confirmation or proof of delivery, and TONU loads without a rate confirmation, wait here until the documents are uploaded.">
+          empty={missing.length === 0} emptyTitle="No loads are waiting on paperwork">
           {missing.map((l) => (
             <tr key={l.id}>
               <td><LoadRef l={l} /></td>

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Select } from "@/components/ui";
+import { FilterChip, FilterField, FilterMenu } from "@/components/filter-menu";
 
 export type FilterDef = {
   name: string;
@@ -12,43 +12,51 @@ export type FilterDef = {
   placeholder?: string;
 };
 
-/** URL-bound select filters: changing one updates the query string in place (no submit button). */
-export function FilterBar({ filters, keep = [] }: {
+/**
+ * URL-bound select filters behind one "Filters" button: changing one updates the query string in place (no submit
+ * button), and whatever is applied shows as a removable chip.
+ */
+export function FilterBar({ filters, keep = [], align = "left" }: {
   filters: FilterDef[];
   /** Query keys to preserve when clearing (tab, period). */
   keep?: string[];
+  /** Which edge of the button the popover lines up with. */
+  align?: "left" | "right";
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
 
-  const set = (name: string, value: string) => {
-    const p = new URLSearchParams(sp.toString());
-    if (value) p.set(name, value); else p.delete(name);
+  const replace = (p: URLSearchParams) => {
     const q = p.toString();
     router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
   };
-  const clearHref = () => {
+  const set = (name: string, value: string) => {
+    const p = new URLSearchParams(sp.toString());
+    if (value) p.set(name, value); else p.delete(name);
+    replace(p);
+  };
+  const clear = () => {
     const p = new URLSearchParams();
     for (const k of keep) { const v = sp.get(k); if (v) p.set(k, v); }
-    const q = p.toString();
-    return q ? `${pathname}?${q}` : pathname;
+    replace(p);
   };
-  const active = filters.some((f) => f.value);
+  const applied = filters.filter((f) => f.value);
 
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      {filters.map((f) => (
-        <label key={f.name} className="block w-44">
-          <span className="mb-1 block text-[11px] font-medium text-fg-subtle">{f.label}</span>
-          <Select name={f.name} value={f.value} onChange={(e) => set(f.name, e.target.value)} options={f.options} placeholder={f.placeholder ?? "All"} className="h-7 text-[12px]" />
-        </label>
+    <div className="flex flex-wrap items-center gap-2">
+      <FilterMenu count={applied.length} onClear={clear} align={align}>
+        {filters.map((f) => (
+          <FilterField key={f.name} label={f.label}>
+            <Select name={f.name} value={f.value} onChange={(e) => set(f.name, e.target.value)} options={f.options} placeholder={f.placeholder ?? "All"} />
+          </FilterField>
+        ))}
+      </FilterMenu>
+      {applied.map((f) => (
+        <FilterChip key={f.name} onRemove={() => set(f.name, "")}>
+          <span className="text-fg-subtle">{f.label}:</span>&nbsp;{f.options.find((o) => o.value === f.value)?.label ?? f.value}
+        </FilterChip>
       ))}
-      {active && (
-        <Link href={clearHref()} className="inline-flex h-7 items-center rounded-md px-2 text-[12px] font-medium text-fg-muted hover:bg-raised hover:text-fg">
-          Clear filters
-        </Link>
-      )}
     </div>
   );
 }

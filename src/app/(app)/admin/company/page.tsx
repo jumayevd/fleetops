@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { BadgeCheck, CalendarClock, FileWarning, FileX2, Users } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -8,7 +7,7 @@ import { ago, date } from "@/lib/format";
 import { saveCompanyProfile } from "@/app/actions/company";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { DocumentsPanel } from "@/components/documents/panel";
-import { Badge, Card, Field, Input, LinkButton, PageHeader, Stat, Textarea, type Tone } from "@/components/ui";
+import { Badge, Card, Field, InfoTip, Input, LinkButton, PageHeader, Stat, Textarea, type Tone } from "@/components/ui";
 import { getCompanyCompliance, getCompanyProfileRecord } from "./profile";
 import { REQUIRED_COMPANY_DOCS, companyDisplayName, complianceCounts, type DocCompliance, type DocComplianceStatus } from "./shared";
 import { TeamsPanel, type TeamRow } from "./teams-panel";
@@ -52,10 +51,9 @@ export default async function CompanyPage() {
   const insurance = compliance.find((r) => r.kind === "COMPANY_INSURANCE");
   const problems = counts.expired + counts.missing;
 
+  // INN and licence number sit in the form right below; the subtitle keeps the legal name and when it was saved.
   const subtitle = [
     profile.legalName && profile.brand ? profile.legalName : null,
-    profile.taxId ? `INN ${profile.taxId}` : null,
-    profile.licenseNumber ? `Licence ${profile.licenseNumber}` : null,
     updatedAt ? `Saved ${ago(updatedAt)}` : "Not saved yet",
   ].filter(Boolean).join(" · ");
 
@@ -91,10 +89,10 @@ export default async function CompanyPage() {
           <ActionForm action={saveCompanyProfile} className="space-y-4">
             <fieldset disabled={!editable} className="contents">
               <div className="grid gap-4 lg:grid-cols-2">
-                <Card title="Legal entity">
+                <Card title={<span className="flex items-center gap-1.5">Legal entity<InfoTip>The brand heads printed invoices; leave it empty to use the legal name.</InfoTip></span>}>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label="Legal name" required className="sm:col-span-2"><Input name="legalName" required defaultValue={profile.legalName} placeholder="«Fleet Logistics» LLC" /></Field>
-                    <Field label="Brand / trading name" hint="Heads printed invoices. Leave empty to use the legal name."><Input name="brand" defaultValue={profile.brand} placeholder="FleetOps" /></Field>
+                    <Field label="Brand / trading name"><Input name="brand" defaultValue={profile.brand} placeholder="FleetOps" /></Field>
                     <Field label="Director"><Input name="director" defaultValue={profile.director} placeholder="Full name" /></Field>
                     <Field label="INN (tax ID)"><Input name="taxId" defaultValue={profile.taxId} placeholder="123456789" className="num" inputMode="numeric" /></Field>
                     <Field label="Carrier licence number"><Input name="licenseNumber" defaultValue={profile.licenseNumber} placeholder="AA 0000000" className="num" /></Field>
@@ -109,14 +107,13 @@ export default async function CompanyPage() {
                   </div>
                 </Card>
 
-                <Card title="Bank details">
+                <Card title={<span className="flex items-center gap-1.5">Bank details<InfoTip>Printed on invoices so customers pay to the right account.</InfoTip></span>}>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label="Bank" className="sm:col-span-2"><Input name="bankName" defaultValue={profile.bank.name} placeholder="Bank name and branch" /></Field>
                     <Field label="Account number" className="sm:col-span-2"><Input name="bankAccount" defaultValue={profile.bank.account} placeholder="2020 8000 0000 0000 0000" className="num" /></Field>
                     <Field label="MFO"><Input name="bankMfo" defaultValue={profile.bank.mfo} placeholder="00000" className="num" inputMode="numeric" /></Field>
                     <Field label="SWIFT / BIC"><Input name="bankSwift" defaultValue={profile.bank.swift} placeholder="XXXXUZ22" className="num" /></Field>
                   </div>
-                  <p className="mt-3 text-[11px] text-fg-subtle">Printed on invoices so customers pay to the right account.</p>
                 </Card>
 
                 <Card title="Insurance">
@@ -136,8 +133,9 @@ export default async function CompanyPage() {
 
               {editable && (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-2.5">
-                  <p className="text-[12px] text-fg-muted">
-                    {updatedAt ? <>Last saved <span className="num">{ago(updatedAt)}</span>. Changes are recorded in the audit log.</> : "Nothing saved yet. Fill in at least the legal name."}
+                  <p className="flex items-center gap-1.5 text-[12px] text-fg-muted">
+                    {updatedAt ? <>Last saved <span className="num">{ago(updatedAt)}</span></> : "Nothing saved yet. Fill in at least the legal name."}
+                    <InfoTip side="top">Changes are recorded in the audit log.</InfoTip>
                   </p>
                   <SubmitButton pendingText="Saving…">Save profile</SubmitButton>
                 </div>
@@ -148,7 +146,12 @@ export default async function CompanyPage() {
 
         {/* Compliance detail + documents */}
         <div className="space-y-4">
-          <Card title="Compliance" flush
+          <Card flush
+            title={
+              <span className="flex items-center gap-1.5">Compliance
+                <InfoTip>Expiring means 30 days or fewer left. The newest document of each kind counts; one without an expiry date never lapses. Set the expiry when you upload so renewals show up here and on the overview.</InfoTip>
+              </span>
+            }
             actions={problems ? <Badge value="HIGH" tone="danger" label={`${problems} to fix`} /> : counts.expiring ? <Badge value="HIGH" tone="warn" label="Renewal due" /> : <Badge value="ACTIVE" tone="ok" label="All in order" />}>
             <ul className="divide-y divide-line">
               {compliance.map((r) => (
@@ -163,14 +166,10 @@ export default async function CompanyPage() {
                 </li>
               ))}
             </ul>
-            <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
-              Expiring means 30 days or fewer left. The newest document of each kind counts; one without an expiry date never lapses.
-            </p>
           </Card>
 
           <DocumentsPanel user={user} target={{ type: "company", id: "company" }} path="/admin/company" title="Company documents"
-            withExpiry required={REQUIRED_COMPANY_DOCS}
-            description="Licence, insurance and tax certificate are required. Set the expiry date on upload so renewals show up here and on the overview." />
+            withExpiry required={REQUIRED_COMPANY_DOCS} />
         </div>
       </div>
 
@@ -178,9 +177,6 @@ export default async function CompanyPage() {
         <TeamsPanel teams={teamRows} editable={can(user.role, "users.manage")} />
       </div>
 
-      <p className="mt-3 text-[11px] text-fg-subtle">
-        Looking for the Telegram bot or the audit trail? See <Link href="/admin/telegram" className="text-fg-muted hover:text-fg hover:underline">Telegram alerts</Link> and the <Link href="/admin/audit" className="text-fg-muted hover:text-fg hover:underline">audit log</Link>.
-      </p>
     </>
   );
 }

@@ -19,9 +19,7 @@ export function ClaimNotes({ claimId, notes, canPost }: { claimId: string; notes
         </ActionForm>
       )}
       {notes.length === 0 ? (
-        <p className="px-4 py-6 text-center text-[12px] text-fg-muted">
-          No notes yet. {canPost ? "Log calls, decisions and what is still missing so the next person can pick the claim up." : "Notes from the team appear here."}
-        </p>
+        <p className="px-4 py-6 text-center text-[12px] text-fg-muted">No notes yet.</p>
       ) : (
         <ol className="divide-y divide-line">
           {notes.map((n) => (

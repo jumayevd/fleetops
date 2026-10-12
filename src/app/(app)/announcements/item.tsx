@@ -51,9 +51,7 @@ export function AnnouncementItem({ a, canManage, loadLinks }: { a: AnnouncementD
         <Avatar name={a.author} size={16} className="mr-0.5" />
         <span className="text-fg-muted">{a.author}</span>
         <span>·</span>
-        <span className="num">{a.createdLabel}</span>
-        <span>·</span>
-        <span>{a.agoLabel}</span>
+        <span title={a.createdLabel}>{a.agoLabel}</span>
         {a.expiresLabel && (
           <>
             <span>·</span>

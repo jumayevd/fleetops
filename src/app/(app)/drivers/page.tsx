@@ -6,7 +6,7 @@ import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { BOARD_STATUS_LABELS, DRIVER_STATUSES, DRIVER_TYPES, DRIVER_TYPE_LABELS, DRIVER_TYPE_SHORT, type BoardStatus } from "@/lib/constants";
 import { daysAgo, daysUntil, money, number } from "@/lib/format";
-import { Badge, Card, Cell, Chip, EmptyState, ExpiryBadge, LinkButton, PageHeader, Stat, Table } from "@/components/ui";
+import { Avatar, Badge, Card, Chip, EmptyState, ExpiryBadge, InfoTip, LinkButton, PageHeader, Stat, Table } from "@/components/ui";
 import { DriverFilters } from "./filters";
 import { LinkRow } from "./link-row";
 import { TeamControl } from "./team-control";
@@ -98,7 +98,6 @@ export default async function DriversPage({ searchParams }: PageProps<"/drivers"
   const activeCount = tally((g) => g.status === "ACTIVE");
   const onLeave = tally((g) => g.status === "ON_LEAVE");
   const inactiveCount = tally((g) => g.status === "INACTIVE");
-  const workingCount = total - inactiveCount;
   const ready = tally((g) => g.status === "ACTIVE" && g.boardStatus === "READY" && !g.hold);
   const onTrips = tally((g) => g.status !== "INACTIVE" && (ON_TRIP_STATUSES as readonly string[]).includes(g.boardStatus));
   const enRoute = tally((g) => g.status !== "INACTIVE" && g.boardStatus === "EN_ROUTE");
@@ -121,7 +120,6 @@ export default async function DriversPage({ searchParams }: PageProps<"/drivers"
       <PageHeader
         eyebrow="People & partners"
         title="Drivers"
-        subtitle={`${workingCount} on the roster · ${ready} ready · ${onTrips} on trips right now`}
         actions={editable && <LinkButton href="/drivers/new"><Plus />Add driver</LinkButton>}
       />
 
@@ -140,16 +138,19 @@ export default async function DriversPage({ searchParams }: PageProps<"/drivers"
           teams={teams.map((t) => ({ value: t.id, label: t.name }))}
           types={DRIVER_TYPES.map((t) => ({ value: t, label: DRIVER_TYPE_LABELS[t] }))}
           statuses={DRIVER_STATUSES.map((s) => ({ value: s, label: EMPLOYMENT_LABELS[s] }))} />
-        <p className="text-[11px] text-fg-subtle">
-          {matched > drivers.length
-            ? <>Showing the first <span className="num">{drivers.length}</span> of <span className="num">{number(matched)}</span> matches</>
-            : <>Showing <span className="num">{drivers.length}</span> of <span className="num">{number(total)}</span></>}
-          {!inactive && !status && inactiveCount > 0 && <> · {inactiveCount} inactive hidden</>}
+        <p className="num text-[12px] text-fg-subtle">
+          {matched > drivers.length ? <>First {drivers.length} of {number(matched)}</> : <>{drivers.length} of {number(total)}</>}
         </p>
       </div>
 
       <Card flush>
-        <Table head={["Driver", "Score", "Status", "Team", "Truck", "Phone", "30d loads", "30d km", "30d revenue", "30d avg/load", "Licence", "Medical", "App login"]}>
+        <Table head={[
+          "Driver",
+          <span key="score" className="inline-flex items-center gap-1">Score<InfoTip>A from 90 · B from 80 · C from 70 · D below. At risk: score under 75, or licence or medical expired or expiring within 30 days.</InfoTip></span>,
+          "Status", "Team", "Truck", "Phone",
+          <span key="30d" className="inline-flex items-center gap-1">30d loads<InfoTip>Delivered loads in the last 30 days, by delivery date. Hover a number for the all-time count.</InfoTip></span>,
+          "30d km", "30d revenue", "30d avg/load", "Licence", "Medical", "App login",
+        ]}>
           {drivers.map((d) => {
             const r = recentFor.get(d.id);
             const l = loadFor.get(d.id);
@@ -157,14 +158,17 @@ export default async function DriversPage({ searchParams }: PageProps<"/drivers"
             const risks = atRisk(d);
             return (
               <LinkRow key={d.id} href={`/drivers/${d.id}`}>
-                <td className="min-w-48">
-                  <div className="flex items-center gap-1.5">
-                    <Link href={`/drivers/${d.id}`} className="truncate font-medium text-fg hover:underline">{d.name}</Link>
-                    <Chip tone={DRIVER_TYPE_TONE[d.type]} title={DRIVER_TYPE_LABELS[d.type]}>{DRIVER_TYPE_SHORT[d.type] ?? d.type}</Chip>
-                    {d.hold && <Chip tone="warn" title={d.holdReason ?? "On hold"}>Hold</Chip>}
-                  </div>
-                  <div className="mt-0.5 truncate text-[11px] text-fg-subtle">
-                    {d.status !== "ACTIVE" ? <Badge value={d.status} label={EMPLOYMENT_LABELS[d.status] ?? d.status} /> : d.email ?? DRIVER_TYPE_LABELS[d.type]}
+                <td className="min-w-52">
+                  <div className="flex items-center gap-2.5">
+                    <Avatar name={d.name} size={28} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <Link href={`/drivers/${d.id}`} className="truncate font-medium text-fg hover:underline" title={d.email ?? undefined}>{d.name}</Link>
+                        <Chip tone={DRIVER_TYPE_TONE[d.type]} title={DRIVER_TYPE_LABELS[d.type]}>{DRIVER_TYPE_SHORT[d.type] ?? d.type}</Chip>
+                        {d.hold && <Chip tone="warn" title={d.holdReason ?? "On hold"}>Hold</Chip>}
+                      </div>
+                      {d.status !== "ACTIVE" && <Badge value={d.status} label={EMPLOYMENT_LABELS[d.status] ?? d.status} className="mt-0.5" />}
+                    </div>
                   </div>
                 </td>
                 <td>
@@ -178,14 +182,14 @@ export default async function DriversPage({ searchParams }: PageProps<"/drivers"
                     <Badge value={d.boardStatus} label={BOARD_STATUS_LABELS[d.boardStatus as BoardStatus] ?? d.boardStatus} dot />
                     <span className="num text-[11px] text-fg-subtle" title="Time in this status">{sinceShort(d.boardStatusSince)}</span>
                   </div>
-                  {l && <div className="mt-0.5 text-[11px] text-fg-subtle"><Link href={`/loads/${l.id}`} className="num hover:underline">{l.reference}</Link> → {l.destCity}</div>}
+                  {l && <div className="mt-0.5 text-[11px] text-fg-subtle"><Link href={`/loads/${l.id}`} className="num hover:underline" title={`To ${l.destCity}`}>{l.reference}</Link></div>}
                 </td>
                 <td><TeamControl driverId={d.id} teamId={d.teamId} teams={teams} editable={editable} /></td>
                 <td>{d.truck ? <Link href={`/fleet/${d.truck.id}`} className="num hover:underline">{d.truck.unitNumber}</Link> : <span className="text-fg-faint">—</span>}</td>
                 <td>
-                  {d.phone ? <Cell mono primary={<a href={`tel:${d.phone}`} className="hover:underline">{d.phone}</a>} secondary={d.phone2} /> : <span className="text-fg-faint">—</span>}
+                  {d.phone ? <a href={`tel:${d.phone}`} title={d.phone2 ? `Second number: ${d.phone2}` : undefined} className="num whitespace-nowrap hover:underline">{d.phone}</a> : <span className="text-fg-faint">—</span>}
                 </td>
-                <td><Cell mono primary={r?._count ?? 0} secondary={`${number(d._count.loads)} all time`} /></td>
+                <td className="num" title={`${number(d._count.loads)} all time`}>{r?._count ?? 0}</td>
                 <td className="num text-fg-muted">{number(r?._sum.distanceKm)}</td>
                 <td className="num">{r ? money(r._sum.rate) : <span className="text-fg-faint">—</span>}</td>
                 <td className="num text-fg-muted">{r?._count ? money((r._sum.rate ?? 0) / r._count) : <span className="text-fg-faint">—</span>}</td>
@@ -207,12 +211,7 @@ export default async function DriversPage({ searchParams }: PageProps<"/drivers"
           </p>
         )}
       </Card>
-      {drivers.length > 0 && (
-        <p className="mt-2 text-[11px] text-fg-subtle">
-          Score grades: A from 90 · B from 80 · C from 70 · D below. At risk = score under 75, or licence / medical expired or expiring within 30 days.
-          30-day figures count delivered loads by delivery date; all time counts every delivered load.{noLogin > 0 && <> · <span className="num">{noLogin}</span> drivers have no app login</>}
-        </p>
-      )}
+      {noLogin > 0 && <p className="mt-2 text-[12px] text-fg-subtle"><span className="num">{noLogin}</span> drivers have no app login yet.</p>}
     </>
   );
 }

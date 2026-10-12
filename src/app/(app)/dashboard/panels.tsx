@@ -2,9 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { isSameDay, addDays, format } from "date-fns";
 import {
-  ArrowRightLeft, FileText, Pencil, Phone, PackagePlus, Receipt, StickyNote, TriangleAlert, UserCheck, type LucideIcon,
+  ArrowRightLeft, ArrowUpRight, CalendarClock, FileText, FileWarning, Pencil, Phone, PackagePlus, Receipt, StickyNote, TriangleAlert, UserCheck,
+  type LucideIcon,
 } from "lucide-react";
-import { Chip, EmptyState, LinkButton, Progress, StatusDot, TONE_SOFT, cn, type Tone } from "@/components/ui";
+import { Chip, EmptyState, IconTile, LinkButton, Progress, StatusDot, buttonClass, cardClass, cn, type Hue, type Tone } from "@/components/ui";
 import { ago, km, money, money2 } from "@/lib/format";
 import type { weeklyProduction } from "@/lib/stats";
 import type { billingQueue, RecentEvent, UpcomingPickup } from "./queries";
@@ -30,41 +31,55 @@ export function Flag({ tone, children }: { tone?: SubTone; children: ReactNode }
 /* Key numbers                                                         */
 /* ------------------------------------------------------------------ */
 
-export type Kpi = { label: string; value: ReactNode; sub?: ReactNode; subTone?: SubTone; href?: string; icon?: LucideIcon; tone?: Tone };
+export type Kpi = {
+  label: string; value: ReactNode; href?: string; icon?: LucideIcon; tone?: Tone | Hue;
+  /** Context line. Shown under the number only when `alert` is set; otherwise it is the tile's hover tip. */
+  sub?: ReactNode; alert?: boolean;
+  /** Small coloured change chip next to the number ("+12%"). */
+  delta?: { text: string; tone?: SubTone };
+};
 
-/** The day in six numbers: one strip, hairline dividers, a tinted icon per number, colour only where it needs a look. */
+/** The day in six numbers: one tile each, a coloured icon per number, words only where something needs a look. */
 export function KpiStrip({ items }: { items: Kpi[] }) {
   return (
-    <section aria-label="Key numbers"
-      className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line shadow-card sm:grid-cols-3 xl:grid-cols-6">
+    <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
       {items.map((k) => {
         const Icon = k.icon;
         const body = (
           <>
             <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-[12px] font-medium text-fg-muted">{k.label}</p>
-              {Icon && (
-                <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-transform duration-150 group-hover:scale-105", TONE_SOFT[k.tone ?? "neutral"])}>
-                  <Icon className="h-4 w-4" aria-hidden />
-                </span>
-              )}
+              {Icon && <IconTile tone={k.tone ?? "accent"}><Icon aria-hidden /></IconTile>}
+              {k.href && <ArrowUpRight aria-hidden className="h-4 w-4 text-fg-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100" />}
             </div>
-            <p className="num mt-1.5 truncate text-[24px] font-semibold leading-tight tracking-tight text-fg">{k.value}</p>
-            <p className={cn("mt-0.5 truncate text-[12px]", k.subTone ? SUB_TONE[k.subTone] : "text-fg-subtle")}>{k.sub ?? " "}</p>
+            <div className="mt-3 flex items-baseline gap-2">
+              <p className="num truncate text-[26px] font-semibold leading-none tracking-[-0.025em] text-fg">{k.value}</p>
+              {k.delta && <span className={cn("num rounded-full px-1.5 text-[11px] font-medium leading-5", DELTA_TONE[k.delta.tone ?? "ok"])}>{k.delta.text}</span>}
+            </div>
+            <p className="mt-1.5 truncate text-[12px] font-medium text-fg-muted">{k.label}</p>
+            {k.sub && (k.alert
+              ? <p className="mt-0.5 truncate text-[12px]">{k.sub}</p>
+              : (
+                <span role="tooltip" className="pointer-events-none absolute left-3 top-full z-30 mt-1 w-max max-w-[calc(100%-1.5rem)] rounded-md bg-fg px-2 py-1 text-[11px] leading-4 text-surface opacity-0 shadow-float transition-opacity duration-150 group-hover:opacity-100 [&_*]:!text-surface">
+                  {k.sub}
+                </span>
+              ))}
           </>
         );
+        const tile = cn("group relative block min-w-0 px-4 py-3.5", cardClass);
         return k.href ? (
           <Link key={k.label} href={k.href}
-            className="group block min-w-0 bg-surface px-4 py-3.5 transition-colors hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40">
+            className={cn(tile, "transition-[box-shadow,border-color,transform] duration-150 hover:-translate-y-px hover:border-line-strong hover:shadow-lift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40")}>
             {body}
           </Link>
         ) : (
-          <div key={k.label} className="min-w-0 bg-surface px-4 py-3.5">{body}</div>
+          <div key={k.label} className={tile}>{body}</div>
         );
       })}
     </section>
   );
 }
+
+const DELTA_TONE: Record<SubTone, string> = { ok: "bg-ok-soft text-ok", warn: "bg-warn-soft text-warn", danger: "bg-danger-soft text-danger" };
 
 /* ------------------------------------------------------------------ */
 /* Metric list (label · value · note)                                  */
@@ -99,17 +114,15 @@ export function MetricList({ items, className }: { items: Metric[]; className?: 
 /* Billing queue                                                       */
 /* ------------------------------------------------------------------ */
 
-function QueueRow({ href, label, hint, count, sum, urgent }: { href: string; label: string; hint: string; count: number; sum?: number; urgent?: boolean }) {
+function QueueRow({ href, label, hint, count, sum, tone, icon: Icon }: {
+  href: string; label: string; hint: string; count: number; sum?: number; tone: Tone; icon: LucideIcon;
+}) {
   return (
-    <Link href={href} className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-raised">
-      <span className="min-w-0">
-        <span className="block truncate text-[13px] text-fg">{label}</span>
-        <span className="block truncate text-[12px] text-fg-subtle">{hint}</span>
-      </span>
-      <span className="shrink-0 text-right">
-        <span className={cn("num block text-[14px] font-semibold", urgent && count ? "text-danger" : count ? "text-fg" : "text-fg-faint")}>{count}</span>
-        {sum !== undefined && <span className="num block text-[12px] text-fg-subtle">{money(sum)}</span>}
-      </span>
+    <Link href={href} title={hint} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-raised">
+      <IconTile tone={count ? tone : "neutral"}><Icon aria-hidden /></IconTile>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{label}</span>
+      {sum !== undefined && count > 0 && <span className="num text-[12px] text-fg-subtle">{money(sum)}</span>}
+      <span className={cn("num min-w-6 text-right text-[16px] font-semibold", count ? (tone === "danger" ? "text-danger" : "text-fg") : "text-fg-faint")}>{count}</span>
     </Link>
   );
 }
@@ -118,9 +131,11 @@ export function BillingQueue({ queue, overdue, showMoney }: { queue: Billing; ov
   // Finance roles work the queue on /finance (its default tab); everyone else gets the loads list filtered by billing stage.
   return (
     <div className="divide-y divide-line">
-      <QueueRow href={showMoney ? "/finance" : "/loads?billing=MISSING_DOCS"} label="Missing documents" hint="Delivered, waiting on RC or POD" count={queue.missingDocs.count} sum={showMoney ? queue.missingDocs.sum : undefined} />
-      <QueueRow href={showMoney ? "/finance" : "/loads?billing=READY_TO_INVOICE"} label="Ready to invoice" hint="Paperwork complete, not billed yet" count={queue.ready.count} sum={showMoney ? queue.ready.sum : undefined} />
-      {overdue && <QueueRow href="/finance?status=overdue" label="Overdue invoices" hint="Sent, past the due date" count={overdue.count} sum={overdue.amount} urgent />}
+      <QueueRow href={showMoney ? "/finance" : "/loads?billing=MISSING_DOCS"} label="Missing documents" hint="Delivered, waiting on RC or POD" icon={FileWarning} tone="warn"
+        count={queue.missingDocs.count} sum={showMoney ? queue.missingDocs.sum : undefined} />
+      <QueueRow href={showMoney ? "/finance" : "/loads?billing=READY_TO_INVOICE"} label="Ready to invoice" hint="Paperwork complete, not billed yet" icon={Receipt} tone="info"
+        count={queue.ready.count} sum={showMoney ? queue.ready.sum : undefined} />
+      {overdue && <QueueRow href="/finance?status=overdue" label="Overdue invoices" hint="Sent, past the due date" icon={CalendarClock} tone="danger" count={overdue.count} sum={overdue.amount} />}
     </div>
   );
 }
@@ -234,7 +249,7 @@ export function UpcomingPickups({ loads, total, now, canEdit }: { loads: Upcomin
                   {(l.priority === "URGENT" || l.priority === "HIGH") && <Chip tone={l.priority === "URGENT" ? "danger" : "warn"}>{l.priority === "URGENT" ? "Urgent" : "High"}</Chip>}
                   {l.hazmat && <Chip tone="warn">Hazmat</Chip>}
                 </span>
-                <span className="block truncate text-[12px] text-fg-subtle">{l.originCity} → {l.destCity} · {l.commodity}</span>
+                <span className="block truncate text-[12px] text-fg-subtle" title={l.commodity}>{l.originCity} → {l.destCity}</span>
               </Link>
               <span className="hidden min-w-0 truncate text-[13px] text-fg-muted md:block" title={l.customer.name}>{l.customer.name}</span>
               <div className="min-w-0 text-right md:text-left">
@@ -253,9 +268,7 @@ export function UpcomingPickups({ loads, total, now, canEdit }: { loads: Upcomin
                     )}
                   </>
                 ) : canEdit ? (
-                  <Link href={`/loads/${l.id}/edit`} className="inline-flex h-6 items-center rounded-md border border-line-strong px-2 text-[12px] font-medium text-fg transition-colors hover:bg-raised">
-                    Assign truck
-                  </Link>
+                  <Link href={`/loads/${l.id}/edit`} className={buttonClass("secondary", "sm")}>Assign truck</Link>
                 ) : (
                   <span className="text-[12px] text-fg-subtle">No truck yet</span>
                 )}
@@ -289,8 +302,8 @@ export function RecentActivity({ events }: { events: RecentEvent[] }) {
       {events.map((e) => {
         const Icon = EVENT_ICON[e.type] ?? ArrowRightLeft;
         return (
-          <li key={e.id} className="flex items-start gap-3 px-4 py-2">
-            <Icon aria-hidden className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", e.type === "ISSUE" ? "text-danger" : "text-fg-subtle")} />
+          <li key={e.id} className="flex items-center gap-3 px-4 py-2">
+            <IconTile size="sm" tone={e.type === "ISSUE" ? "danger" : "neutral"}><Icon aria-hidden /></IconTile>
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] text-fg" title={e.message}>
                 <Link href={`/loads/${e.load.id}`} className="num font-medium hover:text-accent-text">{e.load.reference}</Link>

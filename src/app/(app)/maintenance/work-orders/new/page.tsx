@@ -30,10 +30,7 @@ export default async function NewWorkOrder({ searchParams }: PageProps<"/mainten
       <PageHeader
         eyebrow="Fleet · Maintenance · Work orders"
         title={isPm && truck ? `PM service for ${truck.unitNumber}` : logging ? "Log a completed repair" : "New work order"}
-        subtitle={truck ? `${truck.unitNumber} · ${truck.detail}`
-          : trailer ? `${trailer.unitNumber} · ${trailer.detail}`
-          : logging ? "Record work that is already finished: when the unit was in and out of the shop, and what it cost."
-          : "Pick the unit, describe the work and set a date. Costs can be filled in later."}
+        subtitle={truck ? `${truck.unitNumber} · ${truck.detail}` : trailer ? `${trailer.unitNumber} · ${trailer.detail}` : undefined}
       />
       <WorkOrderForm
         action={saveWorkOrderChecked.bind(null, null)}

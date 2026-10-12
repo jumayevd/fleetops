@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getBot, telegramConfigured } from "@/lib/telegram";
 import { disconnectTelegram, sendMeTest, setTelegramAlerts, startTelegramLink } from "@/app/actions/telegram";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Badge, Card, buttonClass, cn } from "@/components/ui";
+import { Badge, Card, InfoTip, buttonClass, cn } from "@/components/ui";
 import { ConfirmSubmit } from "../admin/confirm-submit";
 
 const WHAT: Record<string, string> = {
@@ -32,17 +32,16 @@ export async function TelegramCard({ userId }: { userId: string }) {
   const on = u.telegramAlerts;
 
   return (
-    <Card title="Telegram alerts" actions={u.telegramChatId ? <Badge value="ACTIVE" tone="ok" label="Connected" dot /> : <Badge value="PLANNED" label="Not connected" />}>
-      <p className="mb-4 text-[13px] text-fg-muted">Get {WHAT[u.role] ?? "alerts"} on Telegram.</p>
+    <Card title={<span className="flex items-center gap-1.5">Telegram alerts<InfoTip>Get {WHAT[u.role] ?? "alerts"} on Telegram.</InfoTip></span>}
+      actions={u.telegramChatId ? <Badge value="ACTIVE" tone="ok" label="Connected" dot /> : <Badge value="PLANNED" label="Not connected" />}>
       {u.telegramChatId ? (
         <div className="space-y-3">
           <form action={setTelegramAlerts.bind(null, !on)}>
-            <button type="submit" role="switch" aria-checked={on} className="group inline-flex items-center gap-2.5 text-[13px] text-fg">
+            <button type="submit" role="switch" aria-checked={on} title={on ? "Pause alerts" : "Resume alerts"} className="group inline-flex items-center gap-2.5 text-[13px] text-fg">
               <span className={cn("relative inline-block h-5 w-9 rounded-full transition-colors", on ? "bg-accent" : "bg-line-strong")}>
                 <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow-sm transition-[left]", on ? "left-[18px]" : "left-0.5")} />
               </span>
               <span>{on ? "Alerts on" : "Alerts paused"}</span>
-              <span className="text-[11px] text-fg-subtle group-hover:text-fg-muted">{on ? "click to pause" : "click to resume"}</span>
             </button>
           </form>
           <div className="flex flex-wrap items-center gap-2">

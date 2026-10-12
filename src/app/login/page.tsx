@@ -20,7 +20,7 @@ const DEMO_ACCOUNTS = [
 function Wordmark() {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-mark text-on-mark shadow-card">
+      <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-mark bg-linear-to-br from-white/25 to-white/0 text-on-mark shadow-card">
         <Truck className="h-4 w-4" />
       </span>
       <span className="text-[15px] font-semibold tracking-tight text-fg">FleetOps</span>
@@ -44,12 +44,15 @@ export default async function LoginPage() {
       {/* Product statement */}
       <section className="relative hidden flex-col justify-between overflow-hidden border-r border-line bg-surface p-10 lg:flex xl:p-14">
         <SignalGrid />
+        {/* A soft wash of the accent behind the headline: colour without a picture. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_45%_at_18%_42%,var(--accent-soft),transparent_70%)]" />
         <div className="relative z-10"><Wordmark /></div>
         <div className="relative z-10 max-w-xl">
           <p className="eyebrow mb-3">Dispatch · Tracking · Fleet · Billing</p>
           {/* Marketing line, not the page heading: this panel is hidden below lg, "Sign in" is the h1. */}
           <p className="text-[32px] font-semibold leading-[1.15] tracking-tight text-fg xl:text-[36px]">
-            Every truck, load and dollar, in one control room.
+            Every truck, load and dollar,{" "}
+            <span className="bg-linear-to-r from-accent to-progress bg-clip-text text-transparent">in one control room.</span>
           </p>
           <p className="mt-4 max-w-md text-[14px] leading-6 text-fg-muted">
             Boards, live map, maintenance, documents and invoices share one record of each load, so dispatch,
@@ -62,11 +65,13 @@ export default async function LoginPage() {
 
       {/* Sign-in form */}
       <section className="flex items-center justify-center px-5 py-14 sm:px-8">
-        <div className="w-full max-w-[360px]">
-          <div className="mb-8 lg:hidden"><Wordmark /></div>
-          <h1 className="text-lg font-semibold tracking-tight text-fg">Sign in</h1>
-          <p className="mt-1 text-[13px] text-fg-muted">Use your company account. Sessions last 12 hours.</p>
+        <div className="w-full max-w-[400px]">
+          <div className="mb-6 lg:hidden"><Wordmark /></div>
+          <div className="rounded-xl border border-line bg-surface p-6 shadow-lift sm:p-7">
+          <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-fg">Welcome back</h1>
+          <p className="mt-1 text-[13px] text-fg-subtle">Sign in with your company account.</p>
           <LoginForm demoAccounts={demo ? DEMO_ACCOUNTS : []} />
+          </div>
         </div>
       </section>
     </main>

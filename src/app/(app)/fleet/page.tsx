@@ -8,7 +8,11 @@ import { OWNERSHIP, OWNERSHIP_LABELS, TRUCK_STATUSES } from "@/lib/constants";
 import { REQUIRED_UNIT_DOCS } from "@/lib/documents";
 import { km, number, ago, daysUntil } from "@/lib/format";
 import { loadProgress, syncSimulatedPositions } from "@/lib/telemetry";
-import { Badge, Card, Cell, Chip, EmptyState, ExpiryBadge, FilterPills, LinkButton, PageHeader, Progress, Segmented, Stat, Table, cn } from "@/components/ui";
+import { Badge, Card, Cell, Chip, EmptyState, ExpiryBadge, FilterPills, InfoTip, LinkButton, PageHeader, Progress, Segmented, Stat, Table, cn } from "@/components/ui";
+
+/** A position older than this gets its age shown under the place name. */
+const STALE_PING_MS = 30 * 60_000;
+const isStale = (at: Date) => Date.now() - at.getTime() > STALE_PING_MS;
 import { ListFilters } from "./filters";
 import { LinkRow } from "./link-row";
 import { docExpiryByUnit, docsByUnit, fuelTone, LIST_LIMIT, missingDocs, OWNERSHIP_SHORT, OWNERSHIP_TONE, paperworkExpiry, pmStatus, TRUCK_STATUS_LABELS } from "./lib";
@@ -102,7 +106,6 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
       <PageHeader
         eyebrow="Fleet"
         title="Trucks"
-        subtitle={`${all.length} tractors · ${byStatus("ACTIVE")} active · ${onLoad} on a load right now`}
         actions={
           <>
             <Segmented active="trucks" items={[
@@ -134,8 +137,8 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
           {docsFilter && <Link href={qs({ docs: undefined })} className="inline-flex h-6 items-center gap-1 rounded-full bg-accent-soft px-2.5 text-[12px] font-medium text-accent-text hover:opacity-80">Paperwork incomplete<X className="h-3 w-3" /></Link>}
         </div>
         <ListFilters basePath="/fleet" params={params} placeholder="Unit, plate, VIN, driver, city…" selects={[
-          { name: "ownership", placeholder: "All ownership", options: OWNERSHIP.map((o) => ({ value: o, label: OWNERSHIP_LABELS[o] })) },
-          ...(groups.length ? [{ name: "group", placeholder: "All groups", options: groups.map((g) => ({ value: g, label: g })) }] : []),
+          { name: "ownership", label: "Ownership", placeholder: "All ownership", options: OWNERSHIP.map((o) => ({ value: o, label: OWNERSHIP_LABELS[o] })) },
+          ...(groups.length ? [{ name: "group", label: "Group", placeholder: "All groups", options: groups.map((g) => ({ value: g, label: g })) }] : []),
         ]} />
       </div>
 
@@ -145,7 +148,9 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
             Showing the first <span className="num">{trucks.length}</span> of <span className="num">{matching}</span> matching trucks. Narrow the search or filters to see the rest.
           </p>
         )}
-        <Table head={["Unit", "Vehicle", "Status", "Ownership", "Driver", "Current load", "Location", "Odometer", "PM", "Insurance", "Inspection", "Registration", "Fuel"]}>
+        <Table head={["Unit", "Vehicle", "Status", "Ownership", "Driver", "Current load", "Location", "Odometer",
+          <span key="pm" className="inline-flex items-center gap-1">PM<InfoTip>Kilometres to the next service: from the next-service odometer, or the last PM plus the interval.</InfoTip></span>,
+          "Insurance", "Inspection", "Registration", "Fuel"]}>
           {trucks.map((t) => {
             const l = t.loads[0];
             const p = pmStatus(t);
@@ -155,9 +160,9 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
             return (
               <LinkRow key={t.id} href={`/fleet/${t.id}`}>
                 <td>
-                  <Cell mono primary={<Link href={`/fleet/${t.id}`} className="font-semibold hover:underline">{t.unitNumber}</Link>} secondary={t.plate} />
+                  <Link href={`/fleet/${t.id}`} className="num font-semibold hover:underline" title={t.plate ?? undefined}>{t.unitNumber}</Link>
                 </td>
-                <td><Cell primary={`${t.make} ${t.model}`} secondary={<span className="num">{t.year}{t.group ? ` · ${t.group}` : ""}</span>} /></td>
+                <td className="whitespace-nowrap" title={`${t.year}${t.group ? ` · ${t.group}` : ""}`}>{t.make} {t.model}</td>
                 <td><Badge value={t.status} label={TRUCK_STATUS_LABELS[t.status]} dot /></td>
                 <td><Chip tone={OWNERSHIP_TONE[t.ownership]} className="normal-case tracking-normal">{OWNERSHIP_SHORT[t.ownership] ?? t.ownership}</Chip></td>
                 <td>
@@ -168,12 +173,15 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
                 <td className="min-w-40">
                   {l ? (
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5"><Link href={`/loads/${l.id}`} className="num font-medium hover:underline">{l.reference}</Link><Badge value={l.status} label={l.status === "IN_TRANSIT" ? "In transit" : "Dispatched"} /></div>
-                      <div className="mt-0.5 flex items-center gap-2 text-[11px] text-fg-subtle"><span className="truncate">{l.originCity} → {l.destCity}</span>{progress != null && <Progress value={progress} className="w-14" />}</div>
+                      <div className="flex items-center gap-1.5"><Link href={`/loads/${l.id}`} className="num font-medium hover:underline" title={`${l.originCity} → ${l.destCity}`}>{l.reference}</Link><Badge value={l.status} label={l.status === "IN_TRANSIT" ? "In transit" : "Dispatched"} /></div>
+                      {progress != null && <Progress value={progress} className="mt-1 w-24" />}
                     </div>
                   ) : <span className={t.status === "ACTIVE" ? "text-fg-muted" : "text-fg-faint"}>{t.status === "ACTIVE" ? "Idle" : "—"}</span>}
                 </td>
-                <td><Cell primary={t.locationName ?? <span className="text-fg-faint">Unknown</span>} secondary={t.lastPingAt ? ago(t.lastPingAt) : "no ping"} /></td>
+                <td title={t.lastPingAt ? `Last position ${ago(t.lastPingAt)}` : "No position yet"}>
+                  <Cell primary={t.locationName ?? <span className="text-fg-faint">Unknown</span>}
+                    secondary={!t.lastPingAt ? "no ping" : isStale(t.lastPingAt) ? ago(t.lastPingAt) : undefined} />
+                </td>
                 <td className="num whitespace-nowrap text-fg-muted">{km(t.odometerKm)}</td>
                 <td className="whitespace-nowrap">
                   {p.left == null ? <span className="text-fg-faint" title="No PM data">—</span>
@@ -207,11 +215,6 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
             : <EmptyState title="No trucks match" description="Try another status, ownership or group, or clear the search." action={<LinkButton href="/fleet" variant="secondary">Clear filters</LinkButton>} />
         )}
       </Card>
-      {trucks.length > 0 && (
-        <p className="mt-2 text-[11px] text-fg-subtle">
-          Showing <span className="num">{trucks.length}</span> of <span className="num">{all.length}</span> trucks · PM from next service km or last PM + interval · positions refresh every 10 s.
-        </p>
-      )}
     </>
   );
 }

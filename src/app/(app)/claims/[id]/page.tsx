@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { ArrowRight, Pencil, Phone } from "lucide-react";
+import { History, Pencil, Phone } from "lucide-react";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { CLAIM_FAULT_LABELS, CLAIM_TYPE_LABELS, CUSTOMER_KIND_LABELS, EQUIPMENT_LABELS, LOAD_STATUS_LABELS, ROLE_LABELS, type LoadStatus, type Role } from "@/lib/constants";
 import { ago, date, dateTime, money } from "@/lib/format";
-import { Badge, Card, Chip, DL, LinkButton, PageHeader, Progress, cn } from "@/components/ui";
+import { Badge, Card, Chip, DL, Disclosure, InfoTip, LinkButton, PageHeader, Progress, cardClass, cn } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents/panel";
 import {
   CLAIM_SEVERITY_LABELS, CLAIM_TYPE_DOC_HINT, FAULT_TONE, ageTone, allowedClaimTransitions, claimPhase, claimStatusLabel, daysOpen, recoveryPct,
@@ -98,8 +98,7 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
         subtitle={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>Incident <span className="num text-fg">{dateTime(claim.incidentAt)}</span>{claim.location && <> at <span className="text-fg">{claim.location}</span></>}</span>
-            <span>Filed <span className="num">{dateTime(claim.createdAt)}</span> by {claim.createdBy?.name ?? "—"}</span>
-            {claim.closedAt && <span>Closed <span className="num">{dateTime(claim.closedAt)}</span></span>}
+            <InfoTip>Filed {dateTime(claim.createdAt)} by {claim.createdBy?.name ?? "—"}{claim.closedAt && ` · closed ${dateTime(claim.closedAt)}`}</InfoTip>
           </span>
         }
         actions={
@@ -125,15 +124,12 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
             )}
           </Card>
 
-          <Card title="Incident details">
+          {/* Incident date, place, type and fault are in the header; this card is who and what was involved. Secondary detail waits on hover. */}
+          <Card title="Involved">
             <DL cols={3} items={[
-              ["Incident date", <span key="d" className="num">{dateTime(claim.incidentAt)}</span>],
-              ["Location", claim.location ?? "—"],
-              ["Type", typeLabel],
               ["Load", claim.load
                 ? <span key="l" className="flex items-center gap-1.5">
-                    <Link href={`/loads/${claim.load.id}`} className="num hover:underline">{claim.load.reference}</Link>
-                    <span className="hidden truncate text-[11px] text-fg-subtle sm:inline-flex sm:items-center sm:gap-1">{claim.load.originCity}<ArrowRight className="h-3 w-3" />{claim.load.destCity}</span>
+                    <Link href={`/loads/${claim.load.id}`} title={`${claim.load.originCity} → ${claim.load.destCity}`} className="num hover:underline">{claim.load.reference}</Link>
                     <Badge value={claim.load.status} label={LOAD_STATUS_LABELS[claim.load.status as LoadStatus] ?? claim.load.status} />
                   </span>
                 : "Not tied to a load"],
@@ -144,19 +140,18 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
                   </span>
                 : "—"],
               ["Truck", claim.truck
-                ? <span key="t"><Link href={`/fleet/${claim.truck.id}`} className="num hover:underline">{claim.truck.unitNumber}</Link><span className="text-[11px] text-fg-subtle"> · {claim.truck.make} {claim.truck.model}</span></span>
+                ? <Link key="t" href={`/fleet/${claim.truck.id}`} title={`${claim.truck.make} ${claim.truck.model}`} className="num hover:underline">{claim.truck.unitNumber}</Link>
                 : "—"],
               ["Trailer", claim.trailer
-                ? <span key="tr"><Link href={`/fleet/trailers/${claim.trailer.id}`} className="num hover:underline">{claim.trailer.unitNumber}</Link><span className="text-[11px] text-fg-subtle"> · {EQUIPMENT_LABELS[claim.trailer.type] ?? claim.trailer.type}</span></span>
+                ? <Link key="tr" href={`/fleet/trailers/${claim.trailer.id}`} title={EQUIPMENT_LABELS[claim.trailer.type] ?? claim.trailer.type} className="num hover:underline">{claim.trailer.unitNumber}</Link>
                 : "—"],
               ["Customer or broker", claim.customer
-                ? <span key="c"><Link href={`/customers/${claim.customer.id}`} className="hover:underline">{claim.customer.name}</Link><span className="text-[11px] text-fg-subtle"> · {CUSTOMER_KIND_LABELS[claim.customer.kind] ?? claim.customer.kind}</span></span>
+                ? <Link key="c" href={`/customers/${claim.customer.id}`} title={CUSTOMER_KIND_LABELS[claim.customer.kind] ?? claim.customer.kind} className="hover:underline">{claim.customer.name}</Link>
                 : "—"],
-              ["Fault", <Badge key="f" value={claim.fault} tone={FAULT_TONE[claim.fault] ?? "neutral"} label={CLAIM_FAULT_LABELS[claim.fault] ?? claim.fault} />],
             ]} />
           </Card>
 
-          <Card title="Amounts" actions={recovery != null && <span className={cn("num text-[11px]", recovery >= 80 ? "text-ok" : recovery >= 50 ? "text-fg-muted" : "text-warn")}>{recovery}% {awaiting ? "agreed" : "recovered"}</span>}>
+          <Card title={<span className="flex items-center gap-1.5">Amounts<InfoTip>{awaiting ? "The bar is the agreed amount as a share of what was claimed. Record the payment when the money arrives." : "The bar is the settled amount as a share of what was claimed."}</InfoTip></span>} actions={recovery != null && <span className={cn("num text-[11px]", recovery >= 80 ? "text-ok" : recovery >= 50 ? "text-fg-muted" : "text-warn")}>{recovery}% {awaiting ? "agreed" : "recovered"}</span>}>
             <div className="grid grid-cols-3 gap-3">
               <Figure label="Claimed" value={money(claim.amountClaimed)} />
               {awaiting ? (
@@ -176,12 +171,7 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
               )}
             </div>
             {claim.amountClaimed > 0 && (
-              <div className="mt-3">
-                <Progress value={(claim.amountSettled ?? 0) / claim.amountClaimed} tone={recovery == null ? "neutral" : recovery >= 80 ? "ok" : recovery >= 50 ? "progress" : "warn"} />
-                <p className="mt-1 text-[11px] text-fg-subtle">
-                  {awaiting ? "Agreed as a share of what was claimed. Record the payment when the money arrives." : "Settled as a share of what was claimed."}
-                </p>
-              </div>
+              <Progress className="mt-3" value={(claim.amountSettled ?? 0) / claim.amountClaimed} tone={recovery == null ? "neutral" : recovery >= 80 ? "ok" : recovery >= 50 ? "progress" : "warn"} />
             )}
           </Card>
 
@@ -197,25 +187,28 @@ export default async function ClaimDetail({ params }: PageProps<"/claims/[id]">)
             description={noDocs && canEdit ? "Photos, reports and estimates attached here make up the claim pack." : undefined}
           />
 
-          <Card title="Assignee">
+          <Card title={canEdit ? <span className="flex items-center gap-1.5">Assignee<InfoTip>The assignee gets every Telegram update on this claim.</InfoTip></span> : "Assignee"}>
             <AssigneeControl claimId={id} assignedToId={claim.assignedToId} assignees={people} editable={canEdit} />
           </Card>
 
-          <Card title="Timeline" flush actions={<span className="num text-[11px] text-fg-subtle">{timeline.length} {timeline.length === 1 ? "event" : "events"}</span>}>
-            <ClaimTimeline items={timeline} />
-          </Card>
+          {/* The audit trail is reference material: closed until someone needs it. */}
+          <section className={cardClass}>
+            <Disclosure title="Timeline" icon={<History />} tone="neutral" count={timeline.length} className="[&>summary]:rounded-lg [&>summary]:py-3">
+              <div className="border-t border-line"><ClaimTimeline items={timeline} /></div>
+            </Disclosure>
+          </section>
         </div>
       </div>
     </>
   );
 }
 
+/** One amount. Its one-line note ("not received yet") sits behind an info icon beside the label. */
 function Figure({ label, value, hint, muted }: { label: string; value: ReactNode; hint?: string; muted?: boolean }) {
   return (
     <div className="min-w-0">
-      <p className="eyebrow truncate">{label}</p>
+      <p className="eyebrow flex items-center gap-1">{label}{hint && <InfoTip>{hint}</InfoTip>}</p>
       <p className={cn("num mt-1 text-[18px] font-semibold leading-none", muted ? "text-fg-faint" : "text-fg")}>{value}</p>
-      {hint && <p className="mt-1 truncate text-[11px] text-fg-subtle">{hint}</p>}
     </div>
   );
 }

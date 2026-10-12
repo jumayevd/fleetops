@@ -34,7 +34,7 @@ export function LoginForm({ demoAccounts }: { demoAccounts: { role: string; emai
       </form>
 
       {demoAccounts.length > 0 && (
-        <div className="mt-8 rounded-lg border border-dashed border-line-strong p-3">
+        <div className="mt-6 rounded-lg bg-raised p-3 ring-1 ring-inset ring-line">
           <div className="flex items-center justify-between gap-2">
             <p className="eyebrow">Demo mode</p>
             <span className="text-[11px] text-fg-subtle">Password <span className="num text-fg-muted">demo1234</span></span>

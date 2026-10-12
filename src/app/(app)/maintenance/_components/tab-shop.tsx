@@ -2,7 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { WORK_ORDER_CATEGORY_LABELS, humanize } from "@/lib/constants";
 import { date, money } from "@/lib/format";
-import { Badge, Card, Cell, Table } from "@/components/ui";
+import { Badge, Card, Table } from "@/components/ui";
 import { countUnits, daysBetween, shopTone } from "../_lib/data";
 import { workOrderHref, workOrdersHref } from "../_lib/links";
 import { NO_VENDOR, plural } from "../_lib/shared";
@@ -35,9 +35,8 @@ export async function ShopTab({ editable }: { editable: boolean }) {
                 <Badge value={(w.truck ?? w.trailer)?.status ?? "—"} />
               </div>
             </td>
-            <td className="max-w-80">
-              <Cell primary={<Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>}
-                secondary={<span><span className="num">#{w.number}</span> · {WORK_ORDER_CATEGORY_LABELS[w.category] ?? humanize(w.category)}</span>} />
+            <td className="max-w-80 truncate" title={`#${w.number} · ${WORK_ORDER_CATEGORY_LABELS[w.category] ?? humanize(w.category)}`}>
+              <Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>
             </td>
             <td><Priority value={w.priority} /></td>
             <td className="max-w-44 truncate text-fg-muted">{w.vendor ?? <span className="text-fg-faint">{NO_VENDOR}</span>}</td>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Wrench } from "lucide-react";
 import { date, km, money, number } from "@/lib/format";
-import { Badge, Card, Cell, LinkButton, Progress, Stat, Table } from "@/components/ui";
+import { Badge, Card, InfoTip, LinkButton, Progress, Stat, Table } from "@/components/ui";
 import { pmTone, type PmRow } from "../_lib/data";
 import { newWorkOrderHref, truckHref, workOrderHref } from "../_lib/links";
 import { NO_VENDOR } from "../_lib/shared";
@@ -22,7 +22,7 @@ export function PmTab({ rows, editable }: { rows: PmRow[]; editable: boolean }) 
         <Stat label="Tracked trucks" value={rows.length} hint={unknown.length ? `${unknown.length} without a last PM reading` : "every truck has a PM baseline"} />
       </div>
 
-      <Card className="mt-4" flush title="PM schedule" actions={<span className="text-[11px] text-fg-subtle">Sorted by km left · negative is overdue</span>}>
+      <Card className="mt-4" flush title={<span className="flex items-center gap-1.5">PM schedule<InfoTip>Sorted by kilometres left to the next service, overdue first.</InfoTip></span>}>
         <Table head={["Unit", "Group", "Last PM", "Last PM job", "Odometer", "Interval", "Next service", "Km left", ""]} empty={rows.length === 0}
           emptyTitle="No active trucks" emptyDescription="Trucks appear here once they are added to the fleet.">
           {rows.map((r) => {
@@ -31,23 +31,19 @@ export function PmTab({ rows, editable }: { rows: PmRow[]; editable: boolean }) 
             const label = r.kmLeft == null ? "No baseline" : r.kmLeft < 0 ? `${number(-r.kmLeft)} km overdue` : `${number(r.kmLeft)} km`;
             return (
               <tr key={t.id}>
-                <td>
-                  <Cell primary={<Link href={truckHref(t.id)} className="num font-medium text-fg hover:underline">{t.unitNumber}</Link>}
-                    secondary={<span>{t.make} {t.model}{t.status !== "ACTIVE" && <> · <Badge value={t.status} className="ml-0.5 align-middle" /></>}</span>} />
+                <td title={`${t.make} ${t.model}`}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Link href={truckHref(t.id)} className="num font-medium text-fg hover:underline">{t.unitNumber}</Link>
+                    {t.status !== "ACTIVE" && <Badge value={t.status} />}
+                  </span>
                 </td>
                 <td className="text-fg-muted">{t.group ?? <span className="text-fg-faint">—</span>}</td>
-                <td>
-                  <Cell primary={<span className="text-fg-muted">{date(t.lastPmAt)}</span>} secondary={t.lastPmKm != null ? <span className="num">{km(t.lastPmKm)}</span> : "no reading"} />
-                </td>
-                <td className="max-w-48">
+                <td className="whitespace-nowrap text-fg-muted" title={t.lastPmKm != null ? `At ${km(t.lastPmKm)}` : "No odometer reading"}>{date(t.lastPmAt)}</td>
+                <td className="max-w-48 truncate" title={r.lastJob ? r.lastJob.vendor ?? NO_VENDOR : undefined}>
                   {r.lastJob ? (
-                    <Cell
-                      primary={
-                        <Link href={workOrderHref(r.lastJob.id)} className="hover:underline">
-                          <span className="num font-medium">{r.lastJob.cost ? money(r.lastJob.cost) : "No cost"}</span> <span className="num text-fg-subtle">#{r.lastJob.number}</span>
-                        </Link>
-                      }
-                      secondary={r.lastJob.vendor ?? NO_VENDOR} />
+                    <Link href={workOrderHref(r.lastJob.id)} className="hover:underline">
+                      <span className="num font-medium">{r.lastJob.cost ? money(r.lastJob.cost) : "No cost"}</span> <span className="num text-fg-subtle">#{r.lastJob.number}</span>
+                    </Link>
                   ) : <span className="text-fg-faint">—</span>}
                 </td>
                 <td className="num">{km(t.odometerKm)}</td>

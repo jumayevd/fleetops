@@ -16,7 +16,7 @@ import { estimatedArrival, loadProgress, loadRoute, syncSimulatedPositions } fro
 import { setLoadStatus } from "@/app/actions/loads";
 import { invoiceLoad } from "@/app/actions/finance";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Badge, Card, Chip, DL, LinkButton, LiveDot, PageHeader, Progress, STATUS_TONE, StatusDot, buttonClass, cn } from "@/components/ui";
+import { Badge, Card, Chip, DL, Disclosure, InfoTip, LinkButton, LiveDot, PageHeader, Progress, STATUS_TONE, StatusDot, buttonClass, cardClass, cn } from "@/components/ui";
 import { LeafletMap, type MapPoint, type MapTruck } from "@/components/map";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { ChatThread } from "@/components/chat/thread";
@@ -133,9 +133,8 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
               {load.broker && <> via <Link href={`/customers/${load.broker.id}`} className="text-fg hover:underline">{load.broker.name}</Link></>}
             </span>
             {load.customerRef && <span>Ref <span className="num text-fg">{load.customerRef}</span></span>}
-            <span>{load.team ? (load.team.name.toLowerCase().startsWith("team") ? load.team.name : `Team ${load.team.name}`) : "No team"}</span>
-            <span>Booked by {load.dispatcher?.name ?? "—"}</span>
-            <span>Created <span className="num">{dateTime(load.createdAt)}</span> · {ago(load.createdAt)}</span>
+            {load.team && <span>{load.team.name.toLowerCase().startsWith("team") ? load.team.name : `Team ${load.team.name}`}</span>}
+            <InfoTip>Booked by {load.dispatcher?.name ?? "—"} · created {dateTime(load.createdAt)} ({ago(load.createdAt)}){load.team ? "" : " · no team"}</InfoTip>
           </span>
         }
         actions={
@@ -287,9 +286,12 @@ export default async function LoadDetail({ params }: PageProps<"/loads/[id]">) {
             <LoadActivity loadId={id} events={events} canPost />
           </Card>
 
-          <Card title="Thread" flush actions={<Link href={`/chat?room=load:${id}`} className="text-[12px] font-medium text-fg-muted hover:text-fg">Open in chat</Link>}>
-            <ChatThread room={`load:${id}`} compact className="h-80" />
-          </Card>
+          <section className={cardClass}>
+            <Disclosure title="Thread" icon={<MessageSquare />} className="[&>summary]:rounded-lg [&>summary]:py-3"
+              meta={<Link href={`/chat?room=load:${id}`} className="text-[12px] font-medium text-fg-muted hover:text-fg">Open in chat</Link>}>
+              <div className="border-t border-line"><ChatThread room={`load:${id}`} compact className="h-80" /></div>
+            </Disclosure>
+          </section>
         </div>
 
         {/* --------------------------------------------------------- right */}

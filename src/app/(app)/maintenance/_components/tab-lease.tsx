@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Truck } from "@prisma/client";
 import { km, money, money2, number } from "@/lib/format";
-import { Badge, Card, Cell, Progress, Stat, Table } from "@/components/ui";
+import { Badge, Card, InfoTip, Progress, Stat, Table } from "@/components/ui";
 import { leaseRows, leaseTone } from "../_lib/data";
 import { truckHref } from "../_lib/links";
 import { plural } from "../_lib/shared";
@@ -21,16 +21,18 @@ export function LeaseTab({ trucks }: { trucks: Truck[] }) {
         <Stat label="Penalty exposure" value={money(totals.exposure)} tone={totals.exposure ? "danger" : "neutral"} hint="over km × overage rate, today" />
       </div>
 
-      <Card className="mt-4" flush title="Lease mileage" actions={<span className="text-[11px] text-fg-subtle">Hard cap = start + annual limit × (1 + buffer)</span>}>
-        <Table head={["Lessor", "Unit", "Lease start", "Odometer", "Annual limit", "Buffer", "Hard cap", "Remaining", "Overage rate", "Exposure"]} empty={rows.length === 0}
+      <Card className="mt-4" flush title="Lease mileage">
+        <Table head={["Lessor", "Unit", "Lease start", "Odometer", "Annual limit", "Buffer",
+          <span key="cap" className="inline-flex items-center gap-1">Hard cap<InfoTip>Lease start + annual limit × (1 + buffer).</InfoTip></span>,
+          "Remaining", "Overage rate", "Exposure"]} empty={rows.length === 0}
           emptyTitle="No leased trucks" emptyDescription="Set a truck's ownership to Leased and fill in the lease start km, annual limit and overage rate to track its cap here.">
           {rows.map((r) => {
             const tone = leaseTone(r);
             return (
               <tr key={r.truck.id}>
                 <td className="whitespace-nowrap text-fg-muted">{r.truck.lessor ?? <span className="text-fg-faint">—</span>}</td>
-                <td>
-                  <Cell primary={<Link href={truckHref(r.truck.id)} className="num font-medium text-fg hover:underline">{r.truck.unitNumber}</Link>} secondary={`${r.truck.make} ${r.truck.model}`} />
+                <td title={`${r.truck.make} ${r.truck.model}`}>
+                  <Link href={truckHref(r.truck.id)} className="num font-medium text-fg hover:underline">{r.truck.unitNumber}</Link>
                 </td>
                 <td className="num text-fg-muted">{km(r.startKm)}</td>
                 <td className="num">{km(r.truck.odometerKm)}</td>

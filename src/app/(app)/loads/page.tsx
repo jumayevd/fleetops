@@ -91,7 +91,7 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
               { key: "table", href: loadsHref(f, { view: undefined }), label: <><List className="h-3.5 w-3.5" />Table</> },
               { key: "board", href: loadsHref(f, { view: "board", status: undefined }), label: <><LayoutGrid className="h-3.5 w-3.5" />Board</> },
             ]} />
-            <LinkButton href={loadsHref({ ...f, view: "table" }, {}, "/loads/export")} variant="secondary" prefetch={false}><Download className="h-4 w-4" />Export CSV</LinkButton>
+            <LinkButton href={loadsHref({ ...f, view: "table" }, {}, "/loads/export")} variant="secondary" prefetch={false} title="Download these loads as CSV"><Download className="h-4 w-4" />Export</LinkButton>
             {canEdit && <LinkButton href="/loads/new"><Plus className="h-4 w-4" />New load</LinkButton>}
           </>
         }
@@ -106,7 +106,7 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
         {!showMoney && <Stat label="Loaded km" value={number(loaded)} hint={`${number(billable)} loads excl. cancelled`} />}
       </div>
 
-      <div className="mb-3 space-y-2.5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         {/* Keyed on the URL so the search box resets when the filters change underneath it (back button, pills). */}
         <LoadFilterBar key={loadsHref(f)} values={f} teams={teams} customers={customers} brokers={brokers} />
         {!board && (
@@ -127,7 +127,7 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
           <Table dense
             head={[
               "Load", "Status", "Customer", "Route", "Pickup", "Delivery", "Driver / truck",
-              <span key="km" className="block text-right">Km loaded · empty</span>,
+              <span key="km" className="block text-right" title="Loaded km · empty km">Km</span>,
               ...(showMoney ? [<span key="rate" className="block text-right">Rate</span>, <span key="rpk" className="block text-right">$/km</span>] : []),
               "",
             ]}
@@ -148,7 +148,6 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
                       {l.priority !== "NORMAL" && <Chip tone={PRIORITY_TONE[l.priority]}>{humanize(l.priority)}</Chip>}
                       {l.hazmat && <Chip tone="danger">Hazmat</Chip>}
                     </div>
-                    {l.customerRef && <div className="num text-[11px] text-fg-subtle">ref {l.customerRef}</div>}
                   </td>
                   <td>
                     <div className="flex flex-wrap items-center gap-1">
@@ -156,19 +155,18 @@ export default async function LoadsPage({ searchParams }: PageProps<"/loads">) {
                       {l.billingStage !== "NONE" && <Chip tone={STATUS_TONE[l.billingStage] ?? "neutral"}>{BILLING_STAGE_LABELS[l.billingStage as BillingStage]}</Chip>}
                     </div>
                   </td>
-                  <td className="max-w-52"><Cell primary={l.customer.name} secondary={l.broker ? `via ${l.broker.name}` : l.team?.name} /></td>
+                  <td className="max-w-52"><Cell primary={l.customer.name} secondary={l.broker ? `via ${l.broker.name}` : undefined} /></td>
                   <td className="max-w-64">
-                    <Cell
-                      primary={<span className="flex items-center gap-1">{l.originCity}<ArrowRight className="h-3 w-3 shrink-0 text-fg-faint" />{l.destCity}{stops > 2 && <span className="num text-[11px] text-fg-subtle">· {stops} stops</span>}</span>}
-                      secondary={l.commodity}
-                    />
+                    <span className="flex items-center gap-1 truncate" title={l.commodity}>
+                      {l.originCity}<ArrowRight className="h-3 w-3 shrink-0 text-fg-faint" />{l.destCity}
+                      {stops > 2 && <span className="num rounded-full bg-neutral-soft px-1.5 text-[10.5px] leading-4 text-fg-subtle">{stops} stops</span>}
+                    </span>
                   </td>
                   <td className="num whitespace-nowrap text-fg-muted">{dateTime(l.pickupAt)}</td>
                   <td className="whitespace-nowrap">
                     <div className={cn("num", late === "late" ? "text-danger" : "text-fg-muted")}>{dateTime(l.deliveredAt ?? l.deliveryAt)}</div>
                     {late === "late" && <div className="text-[11px] text-danger">Late · due {dateTime(l.deliveryAt)}</div>}
                     {late === "eta-late" && <div className="text-[11px] text-warn">ETA {dateTime(eta)} · late</div>}
-                    {!late && l.deliveredAt && <div className="text-[11px] text-ok">On time</div>}
                   </td>
                   <td className="whitespace-nowrap">
                     {l.truck || l.driver ? (
@@ -208,7 +206,6 @@ function Pager({ f, total, pages, shown }: { f: LoadFilters; total: number; page
     <nav aria-label="Loads pages" className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-[12px] text-fg-muted">
       <p>
         <span className="num text-fg">{number(first)}–{number(last)}</span> of <span className="num text-fg">{number(total)}</span> loads
-        {f.page === pages && <span className="text-fg-subtle"> · narrow the filters to find one faster, or export the full set as CSV</span>}
       </p>
       <div className="flex items-center gap-1.5">
         <span className="num mr-1 text-fg-subtle">Page {f.page} of {pages}</span>

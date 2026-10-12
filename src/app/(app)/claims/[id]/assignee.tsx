@@ -7,7 +7,7 @@ import type { ActionState } from "@/lib/action";
 import { assignClaim } from "@/app/actions/claims";
 import type { PersonOption } from "../shared";
 
-/** Who owns the claim. Editors pick from the staff list; the change saves on select. */
+/** Who owns the claim. Editors pick from the staff list; the change saves on select. The Telegram note sits in the card title. */
 export function AssigneeControl({ claimId, assignedToId, assignees, editable }: {
   claimId: string; assignedToId: string | null; assignees: PersonOption[]; editable: boolean;
 }) {
@@ -36,7 +36,7 @@ export function AssigneeControl({ claimId, assignedToId, assignees, editable }: 
           : <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong text-fg-faint"><UserRound className="h-4 w-4" /></span>}
         <div className="min-w-0">
           <p className={cn("truncate text-[13px] font-medium", current ? "text-fg" : "text-warn")}>{current ? current.label : "Unassigned"}</p>
-          <p className="truncate text-[11px] text-fg-subtle">{current ? current.hint ?? "Staff" : "Nobody owns this claim yet"}</p>
+          {current && <p className="truncate text-[11px] text-fg-subtle">{current.hint ?? "Staff"}</p>}
         </div>
       </div>
       {editable && (
@@ -48,7 +48,6 @@ export function AssigneeControl({ claimId, assignedToId, assignees, editable }: 
           </select>
           {state?.error && <p role="alert" className="mt-1.5 text-[11px] text-danger">{state.error}</p>}
           {state?.ok && !pending && <p role="status" className="mt-1.5 text-[11px] text-ok">{state.ok}</p>}
-          {!state && <p className="mt-1.5 text-[11px] text-fg-subtle">The assignee gets every Telegram update on this claim.</p>}
         </div>
       )}
     </div>

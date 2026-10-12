@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Trailer } from "@prisma/client";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Card, Field, Input, LinkButton, Select, Textarea } from "@/components/ui";
+import { Card, Field, InfoTip, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { EQUIPMENT, EQUIPMENT_LABELS, TRAILER_STATUSES, TRAILER_STATUS_LABELS } from "@/lib/constants";
 import { toDateInput } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
@@ -34,17 +34,21 @@ export function TrailerForm({ action, trailer, trucks, cancelHref }: {
             </div>
           </Card>
 
-          <Card title="Status & pairing">
+          <Card title={
+            <span className="flex items-center gap-1.5">Status &amp; pairing
+              <InfoTip>{trailer ? "Changing the status resets its timer; a trailer on an active load stays In use. " : ""}Leave GPS provider empty if the trailer has no tracker.</InfoTip>
+            </span>
+          }>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Status" hint={trailer ? "Changing it resets the status timer. A trailer on an active load stays In use." : undefined}>
+              <Field label="Status">
                 <Select name="status" value={status} onChange={(e) => setStatus(e.target.value)} options={TRAILER_STATUSES.map((s) => ({ value: s, label: TRAILER_STATUS_LABELS[s] }))} />
               </Field>
-              <Field label="Paired truck" hint={unhooked ? `${TRAILER_STATUS_LABELS[status]} trailers aren't paired. Set In use or Empty to pair a tractor.` : "The tractor currently pulling this trailer."}>
+              <Field label="Paired truck" hint={unhooked ? `${TRAILER_STATUS_LABELS[status]} trailers aren't paired. Set In use or Empty to pair a tractor.` : undefined}>
                 <Select name="truckId" value={unhooked ? "" : truckId} onChange={(e) => setTruckId(e.target.value)} disabled={unhooked}
                   placeholder="Not paired" options={trucks.map((t) => ({ value: t.id, label: t.label }))} />
               </Field>
-              <Field label="Location" hint="Yard, customer site or city."><Input name="locationName" defaultValue={trailer?.locationName ?? ""} placeholder="Tashkent yard" /></Field>
-              <Field label="GPS provider" hint="Leave empty if the trailer has no tracker.">
+              <Field label="Location"><Input name="locationName" defaultValue={trailer?.locationName ?? ""} placeholder="Yard, customer site or city" /></Field>
+              <Field label="GPS provider">
                 <Input name="gpsProvider" list="gps-providers" defaultValue={trailer?.gpsProvider ?? ""} placeholder="Teltonika" />
                 <datalist id="gps-providers">{GPS_PROVIDERS.map((p) => <option key={p} value={p} />)}</datalist>
               </Field>
@@ -53,11 +57,10 @@ export function TrailerForm({ action, trailer, trucks, cancelHref }: {
         </div>
 
         <div className="space-y-4">
-          <Card title="Compliance dates">
+          <Card title={<span className="flex items-center gap-1.5">Compliance dates<InfoTip>Upload the registration, insurance and inspection files on the trailer page.</InfoTip></span>}>
             <div className="space-y-4">
               <Field label="Insurance expiry"><Input name="insuranceExpiry" type="date" defaultValue={toDateInput(trailer?.insuranceExpiry)} /></Field>
               <Field label="Technical inspection expiry"><Input name="inspectionExpiry" type="date" defaultValue={toDateInput(trailer?.inspectionExpiry)} /></Field>
-              <p className="text-[11px] text-fg-subtle">Upload registration, insurance and inspection files on the trailer page.</p>
             </div>
           </Card>
           <Card title="Notes">

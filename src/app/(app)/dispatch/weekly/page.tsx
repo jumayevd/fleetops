@@ -2,7 +2,7 @@ import { Download, Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { money, money2, number } from "@/lib/format";
-import { buttonClass, Card, EmptyState, LinkButton, PageHeader, Stat } from "@/components/ui";
+import { buttonClass, Card, EmptyState, InfoTip, LinkButton, PageHeader, Stat } from "@/components/ui";
 import { WeekPicker } from "./week-picker";
 import { GoalsControl } from "./goals";
 import { WeeklyBoard } from "./weekly-board";
@@ -32,7 +32,13 @@ export default async function WeeklyPage({ searchParams }: PageProps<"/dispatch/
       <PageHeader
         eyebrow="Dispatch"
         title="Weekly production"
-        subtitle={<>Revenue per driver per day for <span className="text-fg">{rangeLabel}</span>{weekYmd === thisWeekYmd && <span className="text-fg-subtle"> · this week, still in progress</span>}. Loads count on their pickup day.</>}
+        subtitle={(
+          <span className="inline-flex items-center gap-1.5">
+            <span className="num">{rangeLabel}</span>
+            {weekYmd === thisWeekYmd && <span className="rounded-full bg-accent-soft px-1.5 text-[11px] font-medium leading-[18px] text-accent-text">This week</span>}
+            <InfoTip>Revenue per driver per day. Loads count on their pickup day{weekYmd === thisWeekYmd ? "; this week is still in progress" : ""}.</InfoTip>
+          </span>
+        )}
         actions={
           <>
             <WeekPicker week={weekYmd} thisWeek={thisWeekYmd} />

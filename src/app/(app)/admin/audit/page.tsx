@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { dateTime, daysAgo, number } from "@/lib/format";
-import { Badge, Card, Cell, FilterPills, LinkButton, PageHeader, Table } from "@/components/ui";
+import { Badge, Card, FilterPills, InfoTip, LinkButton, PageHeader, Table } from "@/components/ui";
 import { AuditFilters } from "./filters";
 import { auditHref, isoDay, type AuditFilterParams } from "./shared";
 import { actionLabel, actionTone, entityHref, entityLabel } from "./links";
@@ -63,7 +63,12 @@ export default async function AuditPage({ searchParams }: PageProps<"/admin/audi
       <PageHeader
         eyebrow="Company"
         title="Audit log"
-        subtitle={<>Every change, who made it and when. Append-only. <span className="num">{number(last24)}</span> entries in the last 24 hours.</>}
+        subtitle={
+          <span className="inline-flex items-center gap-1.5">
+            <span><span className="num">{number(last24)}</span> entries in the last 24 hours</span>
+            <InfoTip>Every change, who made it and when. The log is append-only.</InfoTip>
+          </span>
+        }
         actions={<LinkButton href="/admin/users" variant="secondary">Users &amp; roles</LinkButton>}
       />
 
@@ -75,7 +80,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/admin/audi
         <div className="flex flex-wrap items-center justify-between gap-2">
           <AuditFilters params={params}
             users={users.map((u) => ({ value: u.id, label: u.name }))}
-            actions={actions.map((a) => ({ value: a.action, label: `${actionLabel(a.action)} (${a._count})` }))} />
+            actions={actions.map((a) => ({ value: a.action, label: actionLabel(a.action), count: a._count }))} />
           <p className="text-[11px] text-fg-subtle">
             {total ? <>Showing <span className="num">{first}–{last}</span> of <span className="num">{number(total)}</span></> : "No entries"}{filtered && " · filtered"}
           </p>
@@ -92,10 +97,8 @@ export default async function AuditPage({ searchParams }: PageProps<"/admin/audi
             return (
               <tr key={r.id}>
                 <td className="num whitespace-nowrap text-[12px] text-fg-muted" title={r.createdAt.toISOString()}>{dateTime(r.createdAt)}</td>
-                <td className="min-w-40">
-                  {r.user ? (
-                    <Cell primary={<Link href={`/admin/users/${r.user.id}`} className="hover:underline">{r.user.name}</Link>} secondary={ROLE_LABELS[r.user.role as Role] ?? r.user.role} />
-                  ) : <span className="text-fg-muted">System</span>}
+                <td className="min-w-40" title={r.user ? ROLE_LABELS[r.user.role as Role] ?? r.user.role : "Automatic change"}>
+                  {r.user ? <Link href={`/admin/users/${r.user.id}`} className="hover:underline">{r.user.name}</Link> : <span className="text-fg-muted">System</span>}
                 </td>
                 <td><Badge value={r.action} tone={actionTone(r.action)} label={actionLabel(r.action)} /></td>
                 <td className="whitespace-nowrap">

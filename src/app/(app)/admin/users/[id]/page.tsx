@@ -7,7 +7,7 @@ import { ROLES, ROLE_LABELS, type Role } from "@/lib/constants";
 import { ago, date, dateTime } from "@/lib/format";
 import { updateUser } from "@/app/actions/people";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Avatar, Badge, Card, Checkbox, Chip, DL, Field, Input, LinkButton, PageHeader, Select, Table } from "@/components/ui";
+import { Avatar, Badge, Card, Checkbox, Chip, DL, Field, InfoTip, Input, LinkButton, PageHeader, Select, Table } from "@/components/ui";
 import { ROLE_TONE, TeamLabel } from "../../shared";
 import { actionLabel, actionTone, entityHref, entityLabel } from "../../audit/links";
 
@@ -53,7 +53,7 @@ export default async function EditUser({ params }: PageProps<"/admin/users/[id]"
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4">
-          <Card title="Account">
+          <Card title={<span className="flex items-center gap-1.5">Account<InfoTip>The team groups the dispatch board. A new password needs at least 8 characters.</InfoTip></span>}>
             <ActionForm action={updateUser.bind(null, id)} className="space-y-3">
               <Field label="Name" required><Input name="name" defaultValue={user.name} required /></Field>
               <Field label="Phone"><Input name="phone" type="tel" defaultValue={user.phone ?? ""} placeholder="+998 90 000 00 00" className="num" /></Field>
@@ -61,15 +61,15 @@ export default async function EditUser({ params }: PageProps<"/admin/users/[id]"
                 <Field label="Role" hint={self ? "You can't change your own role." : undefined}>
                   <Select name="role" defaultValue={user.role} options={roleOptions} disabled={self} />
                 </Field>
-                <Field label="Team" hint="Groups the dispatch board.">
+                <Field label="Team">
                   <Select name="teamId" defaultValue={user.teamId ?? ""} placeholder="No team" options={teams.map((t) => ({ value: t.id, label: t.name }))} />
                 </Field>
               </div>
               {self && <input type="hidden" name="role" value={user.role} />}
               <Checkbox name="active" defaultChecked={user.active} disabled={self} label={<span>Account active <span className="text-fg-subtle">— can sign in</span></span>} />
               {self && <input type="hidden" name="active" value="on" />}
-              <Field label="Reset password" hint="Leave empty to keep the current password. At least 8 characters.">
-                <Input name="password" type="password" minLength={8} autoComplete="new-password" />
+              <Field label="Reset password">
+                <Input name="password" type="password" minLength={8} autoComplete="new-password" placeholder="Leave empty to keep the current one" />
               </Field>
               <SubmitButton className="w-full" pendingText="Saving…">Save changes</SubmitButton>
             </ActionForm>
@@ -92,7 +92,13 @@ export default async function EditUser({ params }: PageProps<"/admin/users/[id]"
         </div>
 
         <Card title="Recent activity" className="xl:col-span-2" flush
-          actions={<span className="num text-[11px] text-fg-subtle">{user._count.audits} entries</span>}>
+          actions={
+            <span className="num text-[11px] text-fg-subtle">
+              {user._count.audits > user.audits.length
+                ? <>Latest {user.audits.length} of {user._count.audits} · <Link href={`/admin/audit?user=${user.id}`} className="font-sans font-medium text-fg-muted hover:text-fg hover:underline">See all</Link></>
+                : `${user._count.audits} entries`}
+            </span>
+          }>
           <Table head={["When", "Action", "Entity", "Details"]} empty={user.audits.length === 0}
             emptyTitle="No activity recorded" emptyDescription="Changes this person makes will show up here and in the audit log." dense>
             {user.audits.map((a) => {
@@ -107,11 +113,6 @@ export default async function EditUser({ params }: PageProps<"/admin/users/[id]"
               );
             })}
           </Table>
-          {user._count.audits > user.audits.length && (
-            <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
-              Showing the latest {user.audits.length}. <Link href={`/admin/audit?user=${user.id}`} className="text-fg-muted hover:text-fg hover:underline">See everything in the audit log</Link>.
-            </p>
-          )}
         </Card>
       </div>
     </>

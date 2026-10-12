@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { money, number } from "@/lib/format";
-import { Card, Chip, Progress, Table, cn } from "@/components/ui";
+import { Card, Chip, InfoTip, Progress, Table, cn } from "@/components/ui";
 import { SimpleBar } from "@/components/charts-lazy";
 import type { CustomerAging } from "./data";
 import { AGING_BUCKETS, creditTone, lateTone, type AgingKey } from "./shared";
@@ -15,7 +15,13 @@ export function AgingTab({ aging, rows }: { aging: Record<AgingKey, number>; row
 
   return (
     <div className="grid gap-4 xl:grid-cols-3">
-      <Card title="Receivables by age" actions={<span className="num text-[11px] text-fg-subtle">{money(total)} incl. VAT</span>}>
+      <Card title={<span className="flex items-center gap-1.5">Receivables by age<InfoTip>Sent, unpaid invoices including VAT, by how far past their due date they are.</InfoTip></span>}
+        actions={
+          <span className="num text-[11px] text-fg-subtle">
+            {money(total)}
+            {overdue > 0 && <> · <span className="text-danger" title={`Across ${number(overdueCustomers)} ${overdueCustomers === 1 ? "customer" : "customers"}`}>{money(overdue)} past due</span></>}
+          </span>
+        }>
         <SimpleBar data={chart} dataKey="amount" nameKey="bucket" money tone={overdue > 0 ? "warn" : "info"} height={190} />
         <ul className="mt-3 divide-y divide-line border-t border-line text-[12px]">
           {AGING_BUCKETS.map((b, idx) => {
@@ -32,17 +38,13 @@ export function AgingTab({ aging, rows }: { aging: Record<AgingKey, number>; row
             );
           })}
         </ul>
-        <p className="mt-3 text-[11px] text-fg-subtle">
-          {overdue > 0
-            ? `${money(overdue)} is past due across ${number(overdueCustomers)} ${overdueCustomers === 1 ? "customer" : "customers"}. Start with the oldest balances below.`
-            : "Nothing is past due. Balances listed below are within their payment terms."}
-        </p>
       </Card>
 
       <Card flush className="xl:col-span-2" title="Open balances by customer"
         actions={<span className="num text-[11px] text-fg-subtle">{number(rows.length)} with open invoices</span>}>
         <Table dense
-          head={["Customer", "Terms", <span key="n" className="block text-right">Invoices</span>, <span key="o" className="block text-right">Open</span>, <span key="d" className="block text-right">Overdue</span>, "Oldest", "Credit used"]}
+          head={["Customer", "Terms", <span key="n" className="block text-right">Invoices</span>, <span key="o" className="block text-right">Open</span>, <span key="d" className="block text-right">Overdue</span>, "Oldest",
+            <span key="c" className="inline-flex items-center gap-1">Credit used<InfoTip>Open balance as a share of the customer&apos;s credit limit.</InfoTip></span>]}
           empty={rows.length === 0} emptyTitle="No open receivables" emptyDescription="Sent invoices appear here grouped by the party that owes them.">
           {rows.map((r) => {
             const tone = lateTone(r.oldestDays);
@@ -61,11 +63,8 @@ export function AgingTab({ aging, rows }: { aging: Record<AgingKey, number>; row
                 <td className={cn("num text-right", r.overdue > 0 ? "font-medium text-danger" : "text-fg-faint")}>{r.overdue > 0 ? money(r.overdue) : "—"}</td>
                 <td className="whitespace-nowrap">
                   {r.oldest && (
-                    <Link href={`/finance/invoices/${r.oldest.id}`} className="group/old block hover:underline">
-                      <span className={cn("num text-[12px]", TONE_TEXT[tone])}>
-                        {r.oldestDays > 0 ? `${r.oldestDays} d late` : r.oldestDays === 0 ? "due today" : `due in ${-r.oldestDays} d`}
-                      </span>
-                      <span className="num block text-[11px] text-fg-subtle">{r.oldest.number}</span>
+                    <Link href={`/finance/invoices/${r.oldest.id}`} title={`Oldest open invoice: ${r.oldest.number}`} className={cn("num text-[12px] hover:underline", TONE_TEXT[tone])}>
+                      {r.oldestDays > 0 ? `${r.oldestDays} d late` : r.oldestDays === 0 ? "due today" : `due in ${-r.oldestDays} d`}
                     </Link>
                   )}
                 </td>

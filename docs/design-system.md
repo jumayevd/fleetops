@@ -1,128 +1,119 @@
 # FleetOps design system — "Graphite"
 
-A control-room aesthetic that works in daylight and at night. Cool graphite neutrals, one confident
-**blue accent** for actions, selection, focus and live state, an amber brand mark, semantic status
-colours and tabular numerals. Compact, calm, modern. Every page must look right in **both** themes.
+A calm, modern control room that works in daylight and at night: white cards floating on a soft graphite
+canvas, one confident **accent** (blue by default) for actions, selection, focus and live state, an amber brand
+mark, semantic status colours, a small set of categorical hues for icons and avatars, and tabular numerals.
+Every page must look right in **both** themes.
 
 ## Principles
 
-1. **Signal over decoration.** Colour means something: blue = action/selected/live, green = good,
-   orange = caution, red = problem, cyan = informational, violet = in progress, amber = the brand
-   mark only. Everything else is graphite. Key numbers carry a small tinted icon tile (`TONE_SOFT`).
-2. **Compact.** 13 px tables, 36 px rows, 44 px top bar, 56 px icon rail. Dense but breathable:
-   whitespace comes from alignment, not padding.
-3. **Numbers are first-class.** Metrics, IDs, money, distances use `font-mono tabular-nums`
-   (class `num`). Labels, chips and table headers are sentence case, never ALL CAPS (small labels use `.eyebrow`).
-4. **One filled button per view.** The main action is the blue `primary` button; everything else is
-   `secondary` (white, hairline) or `ghost`.
-5. **Hairlines and a whisper of depth.** 1 px `line` borders plus `shadow-card` on cards and buttons;
-   `shadow-float` only on floating layers (menus, drawers, dialogs). Cards are `rounded-lg` (12 px),
-   controls `rounded-md` (8 px).
-6. **Motion is quick and quiet.** Pages fade up on navigation (`template.tsx`, 240 ms), menus pop in
-   (140 ms), buttons press (`active:scale-[0.97]`), a 2 px accent bar tracks page loads and every route
-   streams behind a skeleton (`loading.tsx` → `PageSkeleton`). All of it is off for reduced motion.
-6. **Tokens only.** Never write `slate-500`, `#fff`, `bg-white`, `text-gray-*`. Use the tokens
-   below so both themes work. ESLint will not catch this — reviewers will.
+1. **Numbers and names first, words on demand.** A screen shows the figure, the name and the status; the
+   explanation of how a number is computed, a second phone number, a plate or an "updated 5 hours ago" waits in a
+   tooltip (`InfoTip`, `Tip`, `title`). Only problems earn a visible line of text (a warn/danger `Stat` hint,
+   "Pickup within 24 h").
+2. **Categorise, then open on click.** Long lists are grouped (alerts by kind, nav by area) and fold open with
+   `Disclosure` (native `<details>`); the worst group starts open. Filters beyond a search box sit behind one
+   "Filters" button (`FilterMenu`) and show as removable chips once applied. Rarely used sections (an empty chat
+   thread, histories, raw details) start folded.
+3. **Signal over decoration.** Status colour means something: accent = action/selected/live, green = good,
+   orange = caution, red = problem, cyan = informational, violet = in progress. Categorical hues (`hue-1…6`) are
+   for identity only — KPI icon tiles, alert categories, avatars — never for status.
+4. **Compact.** 13 px tables, 40 px rows, 56 px top bar. Whitespace comes from alignment, not padding.
+5. **Numbers are first-class.** Metrics, IDs, money and distances use `num` (tabular figures). Labels, chips and
+   table headers are sentence case, never ALL CAPS.
+6. **One filled button per view.** The main action is `primary` (a faint top highlight gives it depth);
+   everything else is `secondary` or `ghost`.
+7. **Soft shapes, a whisper of depth.** Cards `rounded-lg` (14 px) with a 1 px `line` border and `shadow-card`;
+   controls 9 px; chips, badges and counts are pills. `shadow-lift` on hover for clickable tiles, `shadow-float`
+   only for floating layers.
+8. **Motion is quick and quiet.** Pages fade up on navigation (240 ms), menus pop in (140 ms), folds slide
+   (200 ms), buttons press. All of it is off for reduced motion.
+9. **Tokens only.** Never write `slate-500`, `#fff`, `bg-white`, `text-gray-*`. ESLint will not catch this —
+   reviewers will.
 
 ## Tokens (Tailwind utilities)
 
-| Role | Utility | Light (Day) | Dark (Night) |
+| Role | Utility | Day | Night |
 |---|---|---|---|
-| Page background | `bg-canvas` | #F4F5F7 | #0B0D10 |
-| Card / panel | `bg-surface` | #FFFFFF | #12151A |
-| Elevated / hover row | `bg-raised` | #F8F9FB | #171B21 |
-| Inset / table head / input | `bg-sunken` | #EEF0F3 | #0E1115 |
-| Floating layer | `bg-overlay` | #FFFFFF | #1A1F27 |
-| Hairline | `border-line` | #E2E5EA | #232933 |
-| Strong line | `border-line-strong` | #C9CED6 | #343C48 |
-| Text | `text-fg` | #14171C | #E8EBEF |
-| Secondary text | `text-fg-muted` | #4F5866 | #A3ACB9 |
-| Tertiary text | `text-fg-subtle` | #7C8696 | #6F7A89 |
-| Placeholder / disabled | `text-fg-faint` | #A5ADBA | #4C5563 |
-| Accent (fill) | `bg-accent` / `ring-accent` / `border-accent` | #F5A524 | #F5A524 |
-| Accent (text on light surfaces) | `text-accent` | #9A6700 | #F5B742 |
-| Accent wash | `bg-accent-soft` | #FFF4DD | rgba(245,165,36,.14) |
-| Text on accent | `text-on-accent` | #1C1400 | #1C1400 |
-| Primary button | `bg-primary text-on-primary` | #14171C / #FFF | #E8EBEF / #0B0D10 |
-| Good | `text-ok` `bg-ok-soft` `bg-ok` | #15803D / #E7F6EC | #3DD68C / rgba(61,214,140,.14) |
-| Caution | `text-warn` `bg-warn-soft` `bg-warn` | #C2410C / #FFEFE5 | #FB923C / rgba(251,146,60,.14) |
-| Problem | `text-danger` `bg-danger-soft` `bg-danger` | #B91C1C / #FDECEC | #F76B6B / rgba(247,107,107,.14) |
-| Info | `text-info` `bg-info-soft` `bg-info` | #1D4ED8 / #E8EFFD | #60A5FA / rgba(96,165,250,.14) |
-| In progress | `text-progress` `bg-progress-soft` `bg-progress` | #6D28D9 / #F0EAFE | #A78BFA / rgba(167,139,250,.14) |
-| Neutral chip | `bg-neutral-soft` | #EEF0F3 | rgba(255,255,255,.06) |
+| Page background | `bg-canvas` | #F3F4F7 | #0B0D12 |
+| Card / panel | `bg-surface` | #FFFFFF | #12151C |
+| Hover row / table head | `bg-raised` | #F5F6F8 | #1A1E27 |
+| Inset / segmented track | `bg-sunken` | #ECEEF2 | #0E1117 |
+| Floating layer | `bg-overlay` | #FFFFFF | #171B24 |
+| Hairline / strong line | `border-line` / `border-line-strong` | #E7E9EE / #D3D8E0 | #242A35 / #353D4B |
+| Text, secondary, tertiary, faint | `text-fg` `-muted` `-subtle` `-faint` | #101828 … #98A2B3 | #F0F2F5 … #545D6C |
+| Accent | `bg-accent` `text-accent-text` `bg-accent-soft` | follows the accent choice | |
+| Status | `ok` `warn` `danger` `info` `progress` (+ `-soft`) | green, orange, red, cyan, violet | |
+| Categorical hues | `bg-hue-N-soft text-hue-N` (N = 1…6) | blue, violet, teal, amber, pink, green | |
 
-Radii: controls `rounded-md` (6 px), cards `rounded-lg` (10 px), chips `rounded` (4 px). Pills
-only for live status dots.
+Shadows: `shadow-card` (resting), `shadow-lift` (hover), `shadow-float` (menus, drawers).
+Typography: Inter by default (Geist and system optional). Page title 22/600, card title 14/600, body 13–14,
+table 13, table header 12/500 `text-fg-subtle`, chips 11/500.
 
-Typography: Geist Sans (UI) + Geist Mono (`num`, IDs, codes). Sizes: page title 18/600,
-section title 13/600, body 13–14, table 13, table header 12/500 `text-fg-muted`, eyebrow 12/400 `text-fg-muted`,
-chips 11/500.
+## Components
 
-## Components (`src/components/ui.tsx`)
+`src/components/ui.tsx`:
 
-`PageHeader` (title, eyebrow/breadcrumb, actions) · `Card` (title, actions, `bodyClassName`,
-`flush`) · `Stat` (label, value, delta, spark) · `Badge` (status map → tone) · `Chip` (quiet flag,
-e.g. HOLD, NO RC) · `Button`/`LinkButton` (`primary | accent | secondary | ghost | danger`,
-`sm | md`) · `Input`/`Select`/`Textarea`/`Field` · `Table` (sticky head, `dense`, zebra off,
-row hover `bg-raised`) · `EmptyState` · `DL` · `Progress` · `Tabs` · `SegmentedControl` ·
-`Kbd` · `LiveDot` · `ExpiryBadge` · `Drawer` (right side panel) · `Menu` (row actions).
+- Layout: `PageHeader` (title, short subtitle, actions; the old `eyebrow` prop is ignored — the breadcrumb says
+  where you are) · `Card` (title, actions, optional `icon`, `flush`) · `cardClass` for custom panels.
+- Numbers: `Stat` (icon tile on the right, hint inline only for warn/danger, else a hover tip) · `IconTile`.
+- Status: `Badge` (status → tone via `STATUS_TONE`, pill) · `Chip` (quiet flag pill) · `StatusDot` · `LiveDot`
+  · `ExpiryBadge`.
+- Disclosure: `InfoTip` (ⓘ with tooltip) · `Tip` (tooltip on anything) · `Disclosure` (row that opens on click;
+  share a `name` for accordion behaviour).
+- Navigation and filters: `Tabs` (underline + count pill) · `Segmented` and `FilterPills` (track and raised thumb;
+  `segmentedTrack`/`segmentedThumb` for client-side variants).
+- Data: `Table` (sticky tinted head, hover rows) · `Cell` · `DL` · `Progress` · `Avatar` (initials on a hue picked
+  from the name) · `EmptyState`.
+- Forms and buttons: `Button`/`LinkButton` (`primary | accent | secondary | ghost | danger | success`, `sm | md`)
+  · `Input`/`Select`/`Textarea`/`Field`/`Checkbox` · `Kbd`.
 
-Status → tone map lives in one place (`STATUS_TONE` in ui.tsx). Add new statuses there, never
-inline.
+`src/components/filter-menu.tsx`: `FilterMenu` (button with applied count, popover, "Clear all") ·
+`FilterField` · `FilterChip`.
+
+Status → tone map lives in one place (`STATUS_TONE`). Add new statuses there, never inline.
 
 ## Shell
 
-- **Sidebar** (240 px, labelled) with grouped sections, open by default; collapses to a 56 px icon rail
-  that expands on hover (`nav` cookie, so the first paint has the right width). The active item is a
-  blue tint (`bg-accent-soft text-accent-text`). Nav counts and the alert bell stream in after the
-  shell renders, so they never hold up a page.
-- **Top bar** (48 px): breadcrumb, global search `⌘K`, theme toggle (Day / Night / Auto),
-  alerts, user menu. Sticky, `bg-canvas/80 backdrop-blur`, hairline bottom.
-- **Command palette**: navigation + entity search (loads, drivers, trucks, trailers, customers,
-  invoices) + quick actions ("New load"). Keyboard: `⌘K`, `↑↓`, `↵`, `esc`; `g d` → dashboard,
-  `g l` → loads, `g b` → board.
-- Content is fluid (no max-width) with 20 px padding; dense pages (boards, tables) use the full
-  width.
+- **Sidebar** (240 px) on the canvas, no border. Overview is a plain link; everything else sits in six
+  categories (Dispatch, Fleet, People, Money, Team, Settings) that fold open on click. The category you are in
+  opens by itself; a folded category shows the sum of its counts. The active page is a white pill with an accent
+  bar on the guide line. Collapses to a 64 px icon rail (one icon per category) that expands on hover (`nav`
+  cookie). Categories with a single item for the role (a driver's My trips) show as a plain link.
+- **Top bar** (56 px): breadcrumb, search `⌘K`, appearance, alerts, user menu. Sticky, `bg-canvas/80` blur.
+- **Command palette**: navigation + entity search + quick actions. `⌘K`, `↑↓`, `↵`, `esc`; `g` + letter jumps.
 
 ## Theme mechanics
 
-`<html data-theme="light|dark">` set server-side from the `theme` cookie. **Day is the default** when no cookie
-is set; Night and Auto are opt-in from the toggle, and "auto" is resolved by an inline script before paint from
-`prefers-color-scheme`. Tailwind `dark:` variant =
-`[data-theme=dark]`. Leaflet tiles are inverted/desaturated in dark mode via CSS filter.
-Charts read tokens at runtime (`useChartTheme()` in `charts.tsx`).
+`<html data-theme="light|dark">` set server-side from the `theme` cookie. **Day is the default**; Night and Auto
+are opt-in, and "auto" is resolved by an inline script before paint. Tailwind `dark:` = `[data-theme=dark]`.
+Leaflet tiles are muted (Day) or inverted (Night) with a CSS filter. Charts read tokens at runtime.
 
 ## Copy
 
-Sentence case everywhere. No exclamation marks in system copy. Buttons are verb-first.
-Empty states say what to do next. Errors say what happened and how to fix it.
+Sentence case everywhere. No exclamation marks in system copy. Buttons are verb-first. Empty states say what to
+do next. Errors say what happened and how to fix it. If a sentence explains a number, it belongs in an `InfoTip`.
 
 ## Overview layout
 
-The overview is the calmest page in the app and the template for new summary pages:
+The template for summary pages:
 
-1. Greeting and one summary line (date · trucks moving · items to review), one primary action.
-2. One strip of six key numbers (`KpiStrip`): label, value, one short line. Colour only the words that need a
-   look (`Flag`), never the whole line, and no sparklines.
-3. "Needs attention" (top six, critical first, a filter chip per kind, "View all") beside a tabbed "Today" card
-   (pickups, recent activity).
-4. Live fleet map beside billing and this week's production; roles without the map get the three cards in a row.
-5. One performance card: a chart plus a short metric list (`MetricList`).
-
-Rules of thumb: show the top items and link to the full list; in long lists one severity dot replaces badges;
-secondary forms and hints (recover to another unit, keyboard shortcuts) start collapsed.
+1. Greeting and one summary line, one primary action (plus Customize).
+2. Six number tiles (`KpiStrip`): coloured icon tile, big number, label; a context line only when something
+   needs a look, otherwise it is the hover tip. Revenue carries a change pill.
+3. Two independent columns. Left: "Today" (pickups / activity tabs) over the live fleet map. Right (first on a
+   phone): "Needs attention" grouped by kind as an accordion (worst first, five items each, "All N in …"), over
+   one tabbed card for billing and this week's production.
+4. One performance card: a chart plus a short metric list; the chart's explanation is an `InfoTip`.
 
 ## Personal appearance
 
 Everyone can tune the look from the palette icon in the top bar (also on My account). Choices live in cookies
 (`theme`, `accent`, `density`, `font`, `nav`), so the server renders the first paint with them: no flash.
 
-- **Accent**: blue (default), indigo, violet, teal, green, amber, graphite. Palettes in `globals.css`
-  (`:root[data-accent=…]`, plus a Night variant each); every accent-tinted element follows, including charts
-  and map markers.
-- **Density**: compact (13 px root), default (14 px), roomy (15.5 px). Only rem-based spacing and control
-  heights scale; text sizes stay put.
-- **Font**: Inter (default), Geist, or the system UI font. Numbers use the same face with tabular figures.
+- **Accent**: blue (default), indigo, violet, teal, green, amber, graphite (`:root[data-accent=…]` in
+  `globals.css`, with a Night variant each).
+- **Density**: compact (13 px root), default (14 px), roomy (15.5 px). Rem-based spacing and control heights
+  scale; text sizes and corner radii stay put.
+- **Font**: Inter (default), Geist, or the system UI font.
 - **Overview**: "Customize" shows or hides each section (`overview` cookie); hidden sections are not queried.
-
-Keep new UI on tokens (`accent`, `accent-soft`, `primary`…) so it follows every accent and density.

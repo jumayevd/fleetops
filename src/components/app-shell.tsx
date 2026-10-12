@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Suspense, use, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   LayoutDashboard, Rows3, Package, Map, CalendarRange, Navigation, Truck, Container, Wrench, ClipboardList, Users, Building2,
-  Receipt, BarChart3, ShieldAlert, MessageSquare, Megaphone, Landmark, ShieldCheck, Send, ScrollText,
+  Receipt, BarChart3, ShieldAlert, MessageSquare, Megaphone, Landmark, ShieldCheck, Send, ScrollText, Wallet, Settings,
   Bell, Search, Menu, X, LogOut, UserCircle, PanelLeftClose, PanelLeftOpen, ChevronRight, Palette, type LucideIcon,
 } from "lucide-react";
 import { cn, Avatar, Kbd, StatusDot } from "./ui";
@@ -17,7 +17,7 @@ const AppearanceControls = dynamic(() => import("./appearance").then((m) => m.Ap
   loading: () => <div className="h-72" aria-busy="true" />,
 });
 import { NavProgress } from "./nav-progress";
-import { NAV, NAV_COOKIE, SEGMENT_LABELS, allNavItems, findNavItem } from "@/lib/nav";
+import { NAV, NAV_COOKIE, SEGMENT_LABELS, allNavItems, findNavItem, findNavSection } from "@/lib/nav";
 import { can } from "@/lib/permissions";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { logout } from "@/app/actions/auth";
@@ -25,7 +25,7 @@ import type { Alert } from "@/lib/alerts";
 
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Rows3, Package, Map, CalendarRange, Navigation, Truck, Container, Wrench, ClipboardList, Users, Building2,
-  Receipt, BarChart3, ShieldAlert, MessageSquare, Megaphone, Landmark, ShieldCheck, Send, ScrollText,
+  Receipt, BarChart3, ShieldAlert, MessageSquare, Megaphone, Landmark, ShieldCheck, Send, ScrollText, Wallet, Settings,
 };
 
 type ShellUser = { name: string; email: string; role: string };
@@ -76,8 +76,8 @@ export function AppShell({ user, data, navOpen, children }: {
     <div className="min-h-screen">
       <Suspense fallback={null}><NavProgress /></Suspense>
       {/* Desktop sidebar: labelled by default; collapses to a 56px rail that expands on hover. */}
-      <aside className={cn("group/rail fixed inset-y-0 left-0 z-40 hidden border-r border-line bg-surface transition-[width,box-shadow] duration-200 ease-out lg:block print:hidden",
-        pinned ? "w-60" : "w-14 hover:w-60 hover:shadow-float")}>
+      <aside className={cn("group/rail fixed inset-y-0 left-0 z-40 hidden bg-canvas transition-[width,box-shadow] duration-200 ease-out lg:block print:hidden",
+        pinned ? "w-60" : "w-16 border-r border-line hover:w-60 hover:shadow-float")}>
         <div className={cn(pinned ? "block" : "hidden group-hover/rail:block", "h-full")}>
           <SideNav user={user} path={path} data={data} expanded pinned={pinned} onTogglePin={togglePinned} />
         </div>
@@ -88,10 +88,10 @@ export function AppShell({ user, data, navOpen, children }: {
         )}
       </aside>
 
-      <div className={cn("transition-[padding] duration-200 ease-out", pinned ? "lg:pl-60" : "lg:pl-14", "print:pl-0")}>
+      <div className={cn("transition-[padding] duration-200 ease-out", pinned ? "lg:pl-60" : "lg:pl-16", "print:pl-0")}>
         {/* Keyed by path so popovers and the mobile drawer close on navigation without effects. */}
         <TopBar key={path} user={user} path={path} data={data} pinned={pinned} onSidebar={setSidebar} openSearch={() => setCmd(true)} />
-        <main className="mx-auto w-full max-w-[1680px] p-4 lg:px-6 lg:py-5">{children}</main>
+        <main className="mx-auto w-full max-w-[1680px] px-4 pb-8 pt-2 lg:px-6">{children}</main>
       </div>
       {cmd && <CommandPalette onClose={() => setCmd(false)} role={user.role} />}
     </div>
@@ -102,42 +102,77 @@ function SideNav({ user, path, data, expanded, pinned, onTogglePin, onNavigate }
   user: ShellUser; path: string; data: Promise<ShellData>; expanded: boolean; pinned: boolean; onTogglePin: () => void; onNavigate?: () => void;
 }) {
   const activeHref = findNavItem(path)?.href;
+  const activeSection = findNavSection(path)?.section;
+  // Categories fold: the one you are in opens by itself; others open on click and stay as you left them.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const groups = NAV.map((g) => ({ ...g, items: g.items.filter((i) => can(user.role, i.perm)) })).filter((g) => g.items.length);
   return (
     <nav className="flex h-full flex-col" aria-label="Main">
-      <div className={cn("flex h-12 shrink-0 items-center", expanded ? "px-4" : "justify-center")}>
+      <div className={cn("flex h-14 shrink-0 items-center", expanded ? "px-4" : "justify-center")}>
         <Link href="/" className="flex items-center gap-2.5 text-fg" aria-label="FleetOps home">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-mark text-on-mark shadow-card"><Truck className="h-4 w-4" /></span>
-          {expanded && <span className="text-[15px] font-semibold tracking-tight">FleetOps</span>}
+          <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-mark bg-linear-to-br from-white/25 to-white/0 text-on-mark shadow-card"><Truck className="h-4 w-4" /></span>
+          {expanded && <span className="text-[15px] font-semibold tracking-[-0.01em]">FleetOps</span>}
         </Link>
       </div>
-      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-2">
-        {NAV.map((g) => {
-          const items = g.items.filter((i) => can(user.role, i.perm));
-          if (!items.length) return null;
+      <div className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-2 pb-3 pt-1">
+        {groups.map((g) => {
+          const here = g.section === activeSection;
+          const single = g.items.length === 1;
+          // One item for this role (Overview, a driver's My trips), or the icon rail: a plain link, no fold.
+          if (single || !expanded) {
+            const item = single ? g.items[0] : (g.items.find((i) => i.href === activeHref) ?? g.items[0]);
+            const Icon = ICONS[single ? item.icon : g.icon] ?? Package;
+            const label = single ? item.label : g.section;
+            return (
+              <Link key={g.section} href={item.href} title={expanded ? undefined : label} onClick={onNavigate} aria-current={here && single ? "page" : undefined}
+                className={cn("group relative flex h-9 items-center gap-2.5 rounded-[9px] text-[13px] font-medium transition-[color,background-color,box-shadow] duration-150",
+                  expanded ? "px-2.5" : "justify-center",
+                  here ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:bg-surface/60 hover:text-fg")}>
+                <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", here ? "text-accent" : "text-fg-subtle group-hover:text-fg-muted")} />
+                {expanded && <span className="truncate">{label}</span>}
+                <Suspense fallback={null}><NavBadge data={data} hrefs={g.items.map((i) => i.href)} expanded={expanded} /></Suspense>
+              </Link>
+            );
+          }
+          const open = toggled[g.section] ?? here;
+          const Icon = ICONS[g.icon] ?? Package;
           return (
-            <div key={g.section} className="mt-2">
-              {expanded ? <p className="px-5 pb-1 pt-2 text-[11px] font-medium text-fg-subtle">{g.section}</p> : <div className="mx-4 my-2 border-t border-line" />}
-              {items.map((i) => {
-                const Icon = ICONS[i.icon] ?? Package;
-                const active = activeHref === i.href;
-                return (
-                  <Link key={i.href} href={i.href} title={expanded ? undefined : i.label} onClick={onNavigate} aria-current={active ? "page" : undefined}
-                    className={cn("group relative mx-2 flex h-8 items-center gap-2.5 rounded-md text-[13px] transition-[color,background-color] duration-150",
-                      expanded ? "px-2.5" : "justify-center",
-                      active ? "bg-accent-soft font-medium text-accent-text" : "text-fg-muted hover:bg-raised hover:text-fg")}>
-                    <Icon className={cn("h-4 w-4 shrink-0 transition-colors", active ? "text-accent" : "text-fg-subtle group-hover:text-fg-muted")} />
-                    {expanded && <span className="truncate">{i.label}</span>}
-                    <Suspense fallback={null}><NavBadge data={data} href={i.href} expanded={expanded} /></Suspense>
-                  </Link>
-                );
-              })}
+            <div key={g.section}>
+              <button type="button" aria-expanded={open} onClick={() => setToggled((t) => ({ ...t, [g.section]: !open }))}
+                className={cn("group flex h-9 w-full items-center gap-2.5 rounded-[9px] px-2.5 text-[13px] font-medium transition-colors duration-150",
+                  here ? "text-fg" : "text-fg-muted hover:bg-surface/60 hover:text-fg")}>
+                <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", here ? "text-accent" : "text-fg-subtle group-hover:text-fg-muted")} />
+                <span className="flex-1 truncate text-left">{g.section}</span>
+                {!open && <Suspense fallback={null}><NavBadge data={data} hrefs={g.items.map((i) => i.href)} expanded /></Suspense>}
+                <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-fg-faint transition-transform duration-200", open && "rotate-90")} />
+              </button>
+              <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+                <div className="min-h-0 overflow-hidden" inert={!open}>
+                  <ul className="ml-[19px] space-y-0.5 border-l border-line py-1 pl-2">
+                    {g.items.map((i) => {
+                      const active = activeHref === i.href;
+                      return (
+                        <li key={i.href} className="relative">
+                          {active && <span aria-hidden className="absolute -left-[9px] bottom-2 top-2 w-[2px] rounded-full bg-accent" />}
+                          <Link href={i.href} onClick={onNavigate} aria-current={active ? "page" : undefined}
+                            className={cn("group flex h-8 items-center gap-2 rounded-[8px] px-2.5 text-[13px] transition-[color,background-color,box-shadow] duration-150",
+                              active ? "bg-surface font-medium text-fg shadow-card" : "text-fg-muted hover:bg-surface/60 hover:text-fg")}>
+                            <span className="truncate">{i.label}</span>
+                            <Suspense fallback={null}><NavBadge data={data} hrefs={[i.href]} expanded /></Suspense>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
             </div>
           );
         })}
       </div>
-      <div className="border-t border-line p-2">
+      <div className="p-2">
         <button type="button" onClick={onTogglePin} title={pinned ? "Collapse sidebar" : "Keep sidebar open"}
-          className={cn("hidden h-8 w-full items-center gap-2.5 rounded-md text-[12px] text-fg-subtle transition-colors hover:bg-raised hover:text-fg lg:flex", expanded ? "px-2.5" : "justify-center")}>
+          className={cn("hidden h-8 w-full items-center gap-2.5 rounded-[9px] text-[12px] text-fg-subtle transition-colors hover:bg-surface/60 hover:text-fg lg:flex", expanded ? "px-2.5" : "justify-center")}>
           {pinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           {expanded && <span>{pinned ? "Collapse" : "Keep open"}</span>}
         </button>
@@ -146,12 +181,13 @@ function SideNav({ user, path, data, expanded, pinned, onTogglePin, onNavigate }
   );
 }
 
-/** Count chip on a nav item (open claims, unassigned loads, pinned announcements). */
-function NavBadge({ data, href, expanded }: { data: Promise<ShellData>; href: string; expanded: boolean }) {
-  const n = use(data).badges[href];
+/** Count chip on a nav item or a folded category (open claims, unassigned loads, pinned announcements). */
+function NavBadge({ data, hrefs, expanded }: { data: Promise<ShellData>; hrefs: string[]; expanded: boolean }) {
+  const { badges } = use(data);
+  const n = hrefs.reduce((a, h) => a + (badges[h] ?? 0), 0);
   if (!n) return null;
   return expanded
-    ? <span className="num fade-in ml-auto rounded-full bg-neutral-soft px-1.5 text-[11px] font-medium text-fg-muted group-aria-[current=page]:bg-surface">{n}</span>
+    ? <span className="num fade-in ml-auto rounded-full bg-accent-soft px-1.5 text-[11px] font-semibold leading-[18px] text-accent-text">{n}</span>
     : <span className="fade-in absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />;
 }
 
@@ -170,12 +206,12 @@ function TopBar({ user, path, data, pinned, onSidebar, openSearch }: {
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="fade-in absolute inset-0 bg-scrim" onClick={() => setMobileOpen(false)} />
-          <aside className="drawer-in absolute inset-y-0 left-0 w-64 border-r border-line bg-surface shadow-float">
+          <aside className="drawer-in absolute inset-y-0 left-0 w-64 border-r border-line bg-canvas shadow-float">
             <SideNav user={user} path={path} data={data} expanded pinned={pinned} onTogglePin={() => {}} onNavigate={() => setMobileOpen(false)} />
           </aside>
         </div>
       )}
-      <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-line bg-canvas/85 px-3 backdrop-blur-md print:hidden lg:px-6">
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-2 bg-canvas/80 px-3 backdrop-blur-md print:hidden lg:px-6">
         <button className="rounded-md p-1.5 text-fg-muted transition-colors hover:bg-raised lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
           {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
         </button>
@@ -190,7 +226,7 @@ function TopBar({ user, path, data, pinned, onSidebar, openSearch }: {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={openSearch} className="hidden h-8 w-56 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-[13px] text-fg-subtle shadow-card transition-colors hover:border-line-strong hover:text-fg-muted sm:flex" aria-label="Search">
+          <button onClick={openSearch} className="hidden h-9 w-64 items-center gap-2 rounded-[10px] border border-line bg-surface px-3 text-[13px] text-fg-subtle shadow-card transition-colors hover:border-line-strong hover:text-fg-muted sm:flex" aria-label="Search">
             <Search className="h-3.5 w-3.5" /><span className="flex-1 text-left">Search…</span><Kbd>⌘K</Kbd>
           </button>
           <button onClick={openSearch} className="rounded-md p-1.5 text-fg-muted transition-colors hover:bg-raised sm:hidden" aria-label="Search"><Search className="h-4 w-4" /></button>

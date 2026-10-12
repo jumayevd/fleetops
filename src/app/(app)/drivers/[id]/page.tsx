@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { addWeeks, format, startOfWeek, subWeeks } from "date-fns";
-import { Pencil, Phone, Mail, Star, Smartphone, Truck as TruckIcon } from "lucide-react";
+import { ChevronRight, Pencil, Phone, Mail, Star, Smartphone, Truck as TruckIcon } from "lucide-react";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
@@ -11,7 +11,7 @@ import { ago, date, dateTime, daysAgo, daysUntil, km, money, money2, number } fr
 import { estimatedArrival, loadProgress } from "@/lib/telemetry";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { Spark } from "@/components/charts-lite";
-import { Badge, Card, Cell, Chip, DL, EmptyState, ExpiryBadge, LinkButton, PageHeader, Progress, STATUS_TONE, Stat, StatusDot, TONE_DOT, Table, Tabs, cn, type Tone } from "@/components/ui";
+import { Badge, Card, Cell, Chip, DL, EmptyState, ExpiryBadge, InfoTip, LinkButton, PageHeader, Progress, STATUS_TONE, Stat, StatusDot, TONE_DOT, Table, Tabs, cn, type Tone } from "@/components/ui";
 import { TeamDot } from "../team-control";
 import { HoldControl } from "./hold-control";
 import { EmploymentMenu } from "./employment-menu";
@@ -143,7 +143,7 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
                     <li key={i}>
                       {a.href ? (
                         <Link href={a.href} className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg hover:bg-raised">
-                          <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><span className="text-[11px] text-fg-subtle">Open →</span>
+                          <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><ChevronRight className="h-3.5 w-3.5 text-fg-faint" />
                         </Link>
                       ) : (
                         <p className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg"><StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span></p>
@@ -262,11 +262,15 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
       {tab === "documents" && (
         <div className="grid gap-4 xl:grid-cols-3">
           <div className="xl:col-span-2">
-            <DocumentsPanel user={user} target={{ type: "driver", id }} path={`/drivers/${id}`} withExpiry required={[...REQUIRED_DRIVER_DOCS]}
-              description="Licence and medical certificate scans must be on file for every driver. Set an expiry when you upload so renewals surface as alerts and on the roster." />
+            <DocumentsPanel user={user} target={{ type: "driver", id }} path={`/drivers/${id}`} withExpiry required={[...REQUIRED_DRIVER_DOCS]} />
           </div>
-          <Card title="Required paperwork" flush>
-            <Table dense stickyHead={false} head={["Document", "On file", "Expires"]}>
+          <Card title={
+            <span className="flex items-center gap-1.5">Required paperwork
+              <InfoTip>Licence and medical certificate scans must be on file for every driver. Set an expiry when you upload so renewals surface as alerts and on the roster.</InfoTip>
+            </span>
+          } flush>
+            <Table dense stickyHead={false} head={["Document", "On file",
+              <span key="exp" className="inline-flex items-center gap-1">Expires<InfoTip>Recorded dates come from the driver record; document dates from the uploaded file. Edit the record to change recorded dates.</InfoTip></span>]}>
               {REQUIRED_DRIVER_DOCS.map((kind) => {
                 const doc = docRows.find((d) => d.kind === kind);
                 const recorded = driver[DOC_FIELD[kind]];
@@ -288,7 +292,6 @@ export default async function DriverDetail({ params, searchParams }: PageProps<"
                 );
               })}
             </Table>
-            <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Recorded dates come from the driver record; document dates from the uploaded file. Edit the record to change recorded dates.</p>
           </Card>
         </div>
       )}
@@ -369,7 +372,11 @@ function PerformanceTab({ recentLoads, lifetime, recent, score, rating, payPerKm
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <Card title="Lifetime vs last 90 days" flush className="xl:col-span-2">
+        <Card flush className="xl:col-span-2" title={
+          <span className="flex items-center gap-1.5">Lifetime vs last 90 days
+            <InfoTip>Delivered and invoiced loads, counted by delivery date. On time = delivered within the appointment window.{showEarnings && " Earnings are driver pay recorded on each load."}</InfoTip>
+          </span>
+        }>
           <Table dense stickyHead={false} head={["Metric", "Lifetime", "Last 90 days", "Change"]}>
             {rows.map((r) => (
               <tr key={r.label}>
@@ -381,10 +388,9 @@ function PerformanceTab({ recentLoads, lifetime, recent, score, rating, payPerKm
             ))}
           </Table>
           {lifetime.loads === 0 && <EmptyState title="No completed loads yet" description="Performance figures appear once this driver delivers their first load." />}
-          <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Delivered and invoiced loads, counted by delivery date. On time = delivered within the appointment window.{showEarnings && " Earnings are driver pay recorded on each load."}</p>
         </Card>
 
-        <Card title={`Weekly revenue · last ${WEEKS} weeks`} flush actions={<Link href={`/dispatch/weekly`} className="text-[11px] font-medium text-fg-muted hover:text-fg">Weekly board →</Link>}>
+        <Card title={<span className="flex items-center gap-1.5">Weekly revenue · last {WEEKS} weeks<InfoTip>Weeks start on Monday. The weekly board has goals and the team view.</InfoTip></span>} flush actions={<Link href={`/dispatch/weekly`} className="text-[11px] font-medium text-fg-muted hover:text-fg">Weekly board →</Link>}>
           <Table dense stickyHead={false} head={["Week", "Loads", "km", "Revenue", ...(showEarnings ? ["Pay"] : [])]}>
             {[...weeks].reverse().map((w, i) => (
               <tr key={w.start.toISOString()} className={i === 0 ? "bg-raised/60" : undefined}>
@@ -396,7 +402,6 @@ function PerformanceTab({ recentLoads, lifetime, recent, score, rating, payPerKm
               </tr>
             ))}
           </Table>
-          <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Weeks start on Monday. Open the weekly board for goals and the team view.</p>
         </Card>
       </div>
     </>
@@ -415,8 +420,10 @@ async function LoadsTab({ driverId, showEarnings }: { driverId: string; showEarn
   const delivered = loads.filter((l) => l.deliveredAt);
   const late = delivered.filter((l) => l.deliveredAt! > l.deliveryAt).length;
   return (
-    <Card title="Load history" flush actions={<span className="text-[11px] text-fg-subtle"><span className="num">{loads.length}</span> loads · <span className="num">{late}</span> late deliveries{loads.length === 100 && " · showing the latest 100"}</span>}>
-      <Table head={["Load", "Status", "Route", "Customer", "Pickup", "Delivered", "Distance", "Rate", ...(showEarnings ? ["Pay"] : []), "Truck"]}>
+    <Card title="Load history" flush actions={<span className="text-[11px] text-fg-subtle" title="Active loads are listed first, then the newest."><span className="num">{loads.length}</span> loads · <span className="num">{late}</span> late deliveries{loads.length === 100 && " · showing the latest 100"}</span>}>
+      <Table head={["Load", "Status", "Route", "Customer", "Pickup", "Delivered",
+        <span key="km" className="inline-flex items-center gap-1">Distance<InfoTip>Loaded km, plus empty repositioning km where recorded.</InfoTip></span>,
+        "Rate", ...(showEarnings ? ["Pay"] : []), "Truck"]}>
         {activeFirst.map((l) => {
           const isLate = l.deliveredAt && l.deliveredAt > l.deliveryAt;
           return (
@@ -438,7 +445,6 @@ async function LoadsTab({ driverId, showEarnings }: { driverId: string; showEarn
         })}
       </Table>
       {loads.length === 0 && <EmptyState title="No loads yet" description="Loads assigned to this driver appear here, newest first." />}
-      {loads.length > 0 && <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Distance shows loaded km, plus empty repositioning km where recorded. Active loads are listed first.</p>}
     </Card>
   );
 }
@@ -480,7 +486,15 @@ async function HistoryTab({ driverId, current }: { driverId: string; current: { 
 
   return (
     <div className="grid gap-4 xl:grid-cols-3">
-      <Card title="Status timeline" flush className="xl:col-span-2"
+      <Card flush className="xl:col-span-2"
+        title={
+          <span className="flex items-center gap-1.5">Status timeline
+            <InfoTip>
+              Changes are logged automatically from loads and when a dispatcher overrides the board.
+              {skipped > 0 && ` ${skipped} later log ${skipped === 1 ? "entry doesn't" : "entries don't"} match the board status and ${skipped === 1 ? "is" : "are"} left out of the timings.`}
+            </InfoTip>
+          </span>
+        }
         actions={<span className="text-[11px] text-fg-subtle"><span className="num">{rows.length}</span> {rows.length === 1 ? "change" : "changes"} · <span className="num">{manual}</span> manual{events.length === HISTORY_LIMIT && ` · latest ${HISTORY_LIMIT}`}</span>}>
         <ol className="divide-y divide-line">
           {rows.map((r, i) => {
@@ -509,17 +523,12 @@ async function HistoryTab({ driverId, current }: { driverId: string; current: { 
             );
           })}
         </ol>
-        {events.length === 0 ? (
-          <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Nothing logged yet. Changes are logged automatically from loads and when a dispatcher overrides the board.</p>
-        ) : skipped > 0 && (
-          <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
-            <span className="num">{skipped}</span> later log {skipped === 1 ? "entry doesn't" : "entries don't"} match the board status and {skipped === 1 ? "is" : "are"} left out of the timings.
-          </p>
-        )}
+        {events.length === 0 && <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Nothing logged yet.</p>}
       </Card>
 
       <div className="space-y-4">
-        <Card title="Time in each status" actions={span && <span className="text-[11px] text-fg-subtle">since {date(span)}</span>}>
+        <Card title={<span className="flex items-center gap-1.5">Time in each status<InfoTip>Share of the recorded history. Ready time with no load is the gap dispatch can close.</InfoTip></span>}
+          actions={span && <span className="text-[11px] text-fg-subtle">since {date(span)}</span>}>
           {share.length === 0 ? <p className="text-[12px] text-fg-muted">Nothing to summarise yet.</p> : (
             <ul className="space-y-2">
               {share.map((s) => {
@@ -537,7 +546,6 @@ async function HistoryTab({ driverId, current }: { driverId: string; current: { 
               })}
             </ul>
           )}
-          <p className="mt-3 text-[11px] text-fg-subtle">Share of the recorded history. Ready time with no load is the gap dispatch can close.</p>
         </Card>
         <Card title="Right now">
           <DL cols={1} items={[

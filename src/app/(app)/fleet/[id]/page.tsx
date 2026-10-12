@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { format, startOfMonth, subMonths } from "date-fns";
-import { Pencil, Wrench, Gauge, Fuel, Power, Compass, Radio, MapPin, Phone } from "lucide-react";
+import { ChevronRight, Pencil, Wrench, Gauge, Fuel, Power, Compass, Radio, MapPin, Phone } from "lucide-react";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
@@ -11,7 +11,7 @@ import { money, money2, number, date, dateTime, ago, daysUntil, km, toDateInput,
 import { estimatedArrival, loadProgress, loadRoute, syncSimulatedPositions } from "@/lib/telemetry";
 import { saveMaintenance, addFuelLog, addTruckNote } from "@/app/actions/fleet";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Badge, Card, Chip, DL, EmptyState, ExpiryBadge, Field, Input, LinkButton, PageHeader, Progress, Select, Stat, StatusDot, Table, Tabs, Textarea, cn, type Tone } from "@/components/ui";
+import { Badge, Card, Chip, DL, EmptyState, ExpiryBadge, Field, InfoTip, Input, LinkButton, PageHeader, Progress, Select, Stat, StatusDot, Table, Tabs, Textarea, cn, type Tone } from "@/components/ui";
 import { Spark } from "@/components/charts-lite";
 import { LeafletMap } from "@/components/map";
 import { DocumentsPanel } from "@/components/documents/panel";
@@ -104,8 +104,7 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
             <Badge value={truck.status} label={TRUCK_STATUS_LABELS[truck.status]} dot />
             <Chip tone={OWNERSHIP_TONE[truck.ownership]} className="normal-case tracking-normal">{OWNERSHIP_LABELS[truck.ownership] ?? truck.ownership}</Chip>
             <span>Plate <span className="num text-fg">{truck.plate}</span></span>
-            <span>VIN <span className="num text-fg">{truck.vin ?? "—"}</span></span>
-            {truck.group && <span>{truck.group} group</span>}
+            <InfoTip>VIN {truck.vin ?? "—"}{truck.group ? ` · ${truck.group} group` : ""}</InfoTip>
           </span>
         }
         actions={editable && (
@@ -130,7 +129,7 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
                   {attention.map((a, i) => (
                     <li key={i}>
                       <Link href={a.href} className="flex items-center gap-3 px-4 py-2 text-[13px] text-fg hover:bg-raised">
-                        <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><span className="text-[11px] text-fg-subtle">Open →</span>
+                        <StatusDot tone={a.tone} /><span className="flex-1">{a.text}</span><ChevronRight className="h-3.5 w-3.5 text-fg-faint" />
                       </Link>
                     </li>
                   ))}
@@ -164,7 +163,7 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
               </div>
             </Card>
 
-            <Card title="Notes" flush actions={<span className="text-[11px] text-fg-subtle">Newest first</span>}>
+            <Card title="Notes" flush>
               {editable && (
                 <ActionForm action={addTruckNote.bind(null, id)} resetOnSuccess className="border-b border-line p-3">
                   <div className="flex items-start gap-2">
@@ -289,11 +288,15 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
       {tab === "compliance" && (
         <div className="grid gap-4 xl:grid-cols-3">
           <div className="xl:col-span-2">
-            <DocumentsPanel user={user} target={{ type: "truck", id }} path={`/fleet/${id}`} withExpiry required={[...REQUIRED_UNIT_DOCS]}
-              description="Registration, insurance and technical inspection must be on file for every unit. Set an expiry when you upload so renewals surface as alerts." />
+            <DocumentsPanel user={user} target={{ type: "truck", id }} path={`/fleet/${id}`} withExpiry required={[...REQUIRED_UNIT_DOCS]} />
           </div>
-          <Card title="Required paperwork" flush>
-            <Table dense stickyHead={false} head={["Document", "On file", "Expires"]}>
+          <Card title={
+            <span className="flex items-center gap-1.5">Required paperwork
+              <InfoTip>Registration, insurance and technical inspection must be on file for every unit. Set an expiry when you upload so renewals surface as alerts.</InfoTip>
+            </span>
+          } flush>
+            <Table dense stickyHead={false} head={["Document", "On file",
+              <span key="exp" className="inline-flex items-center gap-1">Expires<InfoTip>The earlier of the date on the truck record and the newest uploaded file, so a stale record never hides an expired paper. Edit the record to change recorded dates.</InfoTip></span>]}>
               {REQUIRED_UNIT_DOCS.map((kind) => {
                 const doc = docRows.find((d) => d.kind === kind);
                 const recorded = truck[DOC_FIELD[kind]];
@@ -316,7 +319,6 @@ export default async function TruckDetail({ params, searchParams }: PageProps<"/
                 );
               })}
             </Table>
-            <p className="border-t border-line px-4 py-2 text-[11px] text-fg-subtle">Expiry is the earlier of the date on the truck record and the newest uploaded file, so a stale record never hides an expired paper. Edit the record to change recorded dates.</p>
           </Card>
         </div>
       )}
@@ -379,7 +381,7 @@ async function MaintenanceTab({ truck, editable }: { truck: { id: string; odomet
               return (
                 <tr key={w.id} className={w.status === "CANCELLED" ? "opacity-60" : undefined}>
                   <td><Link href={`/maintenance/work-orders/${w.id}`} className="num font-medium hover:underline">#{w.number}</Link></td>
-                  <td className="max-w-64"><div className="truncate text-fg" title={w.title}>{w.title}</div>{w.odometerKm != null && <div className="num text-[11px] text-fg-subtle">at {km(w.odometerKm)}</div>}</td>
+                  <td className="max-w-64 truncate text-fg" title={w.odometerKm != null ? `${w.title} · at ${km(w.odometerKm)}` : w.title}>{w.title}</td>
                   <td className="whitespace-nowrap text-fg-muted">{WORK_ORDER_CATEGORY_LABELS[w.category] ?? w.category}</td>
                   <td>{w.priority !== "MEDIUM" ? <Badge value={w.priority} /> : <span className="text-fg-subtle">Medium</span>}</td>
                   <td className="max-w-36 truncate text-fg-muted">{w.vendor ?? "—"}</td>
@@ -397,7 +399,7 @@ async function MaintenanceTab({ truck, editable }: { truck: { id: string; odomet
       </div>
 
       <div className="space-y-4">
-        <Card title="PM schedule">
+        <Card title={<span className="flex items-center gap-1.5">PM schedule<InfoTip>Completing a PM work order resets the last PM and schedules the next one automatically.</InfoTip></span>}>
           <div className="mb-3 flex items-end justify-between gap-2">
             <div>
               <p className="eyebrow">{pm.state === "overdue" ? "Overdue by" : "Kilometres left"}</p>
@@ -415,11 +417,11 @@ async function MaintenanceTab({ truck, editable }: { truck: { id: string; odomet
             ["Next service", pm.next != null ? <span key="n" className="num">{km(pm.next)}</span> : "—"],
             ["Odometer", <span key="o" className="num">{km(truck.odometerKm)}</span>],
           ]} />
-          <p className="mt-3 text-[11px] text-fg-subtle">Completing a PM work order resets last PM and schedules the next one automatically.</p>
         </Card>
 
         {editable && (
-          <Card id="new-work-order" title="New work order" className="scroll-mt-20" bodyClassName="p-4">
+          <Card id="new-work-order" className="scroll-mt-20"
+            title={<span className="flex items-center gap-1.5">New work order<InfoTip>Starting it now moves the truck to In shop; Done records work that is already completed.</InfoTip></span>}>
             <ActionForm action={saveMaintenance} resetOnSuccess className="space-y-3">
               <input type="hidden" name="truckId" value={truck.id} />
               <Field label="Category"><Select name="type" options={WORK_ORDER_CATEGORIES.map((c) => ({ value: c, label: WORK_ORDER_CATEGORY_LABELS[c] }))} /></Field>
@@ -430,7 +432,7 @@ async function MaintenanceTab({ truck, editable }: { truck: { id: string; odomet
                 <Field label="Odometer (km)"><Input name="odometerKm" type="number" min={0} defaultValue={truck.odometerKm} className="num" /></Field>
                 <Field label="Vendor"><Input name="vendor" placeholder="UzTruck Service" /></Field>
               </div>
-              <Field label="Start as" hint="Starting now moves the truck to In shop; Done records it as completed.">
+              <Field label="Start as">
                 <Select name="status" options={[{ value: "OPEN", label: "Open — scheduled" }, { value: "IN_PROGRESS", label: "In progress — unit is in the shop" }, { value: "DONE", label: "Done — already completed" }]} />
               </Field>
               <SubmitButton className="w-full" pendingText="Creating…">Create work order</SubmitButton>
@@ -494,7 +496,7 @@ async function FinancialTab({ truck, editable, showRevenue }: {
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
-          <Card title="Last 6 months" flush actions={<span className="text-[11px] text-fg-subtle">Delivered loads by month · costs by completion date</span>}>
+          <Card title={<span className="flex items-center gap-1.5">Last 6 months<InfoTip>Delivered loads by delivery month; fuel and work orders by the date they were logged or completed.</InfoTip></span>} flush>
             <Table dense stickyHead={false} head={["Month", "Loads", "Distance", ...(showRevenue ? ["Revenue", "Driver pay"] : []), "Fuel", "Work orders", ...(showRevenue ? ["Margin", "Rev/km"] : ["Cost/km"])]}>
               {rows.map((r) => {
                 const m = r.revenue - r.pay - r.fuel - r.wo;
@@ -540,7 +542,7 @@ async function FinancialTab({ truck, editable, showRevenue }: {
                 </tr>
               ))}
             </Table>
-            {fuelLogs.length === 0 && <EmptyState title="No fuel logged" description="Drivers log fills from the portal; you can add one on the right." />}
+            {fuelLogs.length === 0 && <EmptyState title="No fuel logged" description={editable ? "Drivers log fills from the portal; you can add one on the right." : "Drivers log fills from the portal."} />}
           </Card>
         </div>
 
@@ -573,12 +575,12 @@ async function FinancialTab({ truck, editable, showRevenue }: {
           )}
 
           {editable && (
-            <Card title="Log fuel">
+            <Card title={<span className="flex items-center gap-1.5">Log fuel<InfoTip>An odometer reading higher than the truck&apos;s updates it.</InfoTip></span>}>
               <ActionForm action={addFuelLog.bind(null, truck.id)} resetOnSuccess className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Liters" required><Input name="liters" type="number" step="0.1" min={0} required className="num" /></Field>
                   <Field label="Cost (USD)" required><Input name="cost" type="number" step="0.01" min={0} required className="num" /></Field>
-                  <Field label="Odometer (km)" hint="Updates the truck when higher."><Input name="odometerKm" type="number" min={0} placeholder={String(truck.odometerKm)} className="num" /></Field>
+                  <Field label="Odometer (km)"><Input name="odometerKm" type="number" min={0} placeholder={String(truck.odometerKm)} className="num" /></Field>
                   <Field label="Station"><Input name="station" placeholder="UNG Tashkent ring road" /></Field>
                 </div>
                 <SubmitButton variant="secondary" className="w-full" pendingText="Logging…">Add fuel entry</SubmitButton>
@@ -604,7 +606,9 @@ async function LoadsTab({ truckId, showRevenue }: { truckId: string; showRevenue
         <span className="num">{loads.length}</span> loads{delivered.length > 0 && <> · <span className="num">{Math.round((onTime / delivered.length) * 100)}%</span> on time</>}
       </span>
     }>
-      <Table head={["Load", "Status", "Route", "Customer", "Driver", "Trailer", "Pickup", "Delivered", "Distance", ...(showRevenue ? ["Rate", "Rate/km"] : [])]}>
+      <Table head={["Load", "Status", "Route", "Customer", "Driver", "Trailer", "Pickup", "Delivered",
+        <span key="km" className="inline-flex items-center gap-1">Distance<InfoTip>Loaded km, plus empty repositioning km where recorded.</InfoTip></span>,
+        ...(showRevenue ? ["Rate", "Rate/km"] : [])]}>
         {loads.map((l) => (
           <tr key={l.id}>
             <td><Link href={`/loads/${l.id}`} className="num font-medium hover:underline">{l.reference}</Link></td>

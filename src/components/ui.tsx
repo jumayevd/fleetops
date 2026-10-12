@@ -2,6 +2,7 @@ import Link from "next/link";
 import clsxBase, { type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { ComponentProps, ReactNode } from "react";
+import { ChevronDown, Info } from "lucide-react";
 import { humanize } from "@/lib/constants";
 
 /** clsx + tailwind-merge: later classes override earlier conflicting ones. */
@@ -12,15 +13,15 @@ const clsx = cn;
 /* Layout                                                              */
 /* ------------------------------------------------------------------ */
 
-export function PageHeader({ title, eyebrow, subtitle, actions, children }: {
+export function PageHeader({ title, subtitle, actions, children }: {
+  /** `eyebrow` is accepted for older pages but no longer shown: the breadcrumb in the top bar already says where you are. */
   title: ReactNode; eyebrow?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
-        {eyebrow && <p className="eyebrow mb-1">{eyebrow}</p>}
-        <h1 className="truncate text-[20px] font-semibold leading-7 tracking-tight text-fg">{title}</h1>
-        {subtitle && <div className="mt-0.5 text-[13px] text-fg-muted">{subtitle}</div>}
+        <h1 className="truncate text-[22px] font-semibold leading-8 tracking-[-0.015em] text-fg">{title}</h1>
+        {subtitle && <div className="text-[13px] text-fg-subtle">{subtitle}</div>}
         {children}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -28,19 +29,28 @@ export function PageHeader({ title, eyebrow, subtitle, actions, children }: {
   );
 }
 
-export function Card({ title, actions, children, className, bodyClassName, flush, id }: {
+/** Card shell shared by Card and the custom panels, so every surface has the same corners, border and shadow. */
+export const cardClass = "rounded-lg border border-line bg-surface shadow-card";
+
+export function Card({ title, actions, children, className, bodyClassName, flush, id, icon }: {
   title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; bodyClassName?: string; id?: string;
   /** No body padding (tables, lists, maps). */
   flush?: boolean;
+  /** Small tinted tile before the title. */
+  icon?: ReactNode;
 }) {
   const header = Boolean(title || actions);
   // No divider under the title: whitespace separates header and body, so cards read as one calm block.
   return (
-    <section id={id} className={clsx("rounded-lg border border-line bg-surface shadow-card", className)}>
+    <section id={id} className={clsx(cardClass, className)}>
       {header && (
-        <header className="flex min-h-11 items-center justify-between gap-2 px-4 pb-1 pt-3">
-          <h2 className="text-[14px] font-semibold text-fg">{title}</h2>
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+        <header className="flex min-h-12 items-center justify-between gap-2 px-4 pb-1 pt-3">
+          <h2 className="flex min-w-0 items-center gap-2 text-[14px] font-semibold tracking-[-0.005em] text-fg">
+            {icon && <IconTile size="sm">{icon}</IconTile>}
+            {/* Only plain text truncates: a composed title (with an InfoTip) must not clip its tooltip. */}
+            {typeof title === "string" ? <span className="truncate">{title}</span> : title}
+          </h2>
+          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </header>
       )}
       <div className={clsx(flush ? "" : header ? "px-4 pb-4 pt-2" : "p-4", bodyClassName)}>{children}</div>
@@ -63,30 +73,96 @@ export const TONE_DOT: Record<Tone, string> = {
   neutral: "bg-fg-faint", accent: "bg-accent", ok: "bg-ok", warn: "bg-warn", danger: "bg-danger", info: "bg-info", progress: "bg-progress",
 };
 
+export type Hue = "hue-1" | "hue-2" | "hue-3" | "hue-4" | "hue-5" | "hue-6";
+const HUES: Hue[] = ["hue-1", "hue-2", "hue-3", "hue-4", "hue-5", "hue-6"];
+const isHue = (t: string): t is Hue => t.startsWith("hue-");
+export const HUE_SOFT: Record<Hue, string> = {
+  "hue-1": "bg-hue-1-soft text-hue-1", "hue-2": "bg-hue-2-soft text-hue-2", "hue-3": "bg-hue-3-soft text-hue-3",
+  "hue-4": "bg-hue-4-soft text-hue-4", "hue-5": "bg-hue-5-soft text-hue-5", "hue-6": "bg-hue-6-soft text-hue-6",
+};
+/** Stable hue for a name (avatars): the same person always gets the same colour. */
+export function hueFor(name: string): Hue {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return HUES[h % HUES.length];
+}
+
 // Legacy palette names from the first version of the kit; prefer Tone names in new code.
 const LEGACY_TONE: Record<string, Tone> = { slate: "neutral", blue: "info", green: "ok", amber: "warn", red: "danger", violet: "progress" };
 type ToneLike = Tone | keyof typeof LEGACY_TONE;
 const toTone = (t: ToneLike | undefined): Tone => (t ? (LEGACY_TONE[t] ?? (t as Tone)) : "neutral");
 
-/** KPI tile. `delta` like "+12%" / "-3 pts" is coloured by sign unless `deltaTone` is given. */
+/** Hover/focus tooltip for short explanations (CSS only, so it works in server components). */
+export function Tip({ content, children, className, side = "bottom" }: { content: ReactNode; children: ReactNode; className?: string; side?: "top" | "bottom" }) {
+  return (
+    <span tabIndex={0} className={clsx("group/tip relative inline-flex focus:outline-none", className)}>
+      {children}
+      <span role="tooltip"
+        className={clsx("pointer-events-none absolute left-1/2 z-50 w-max max-w-64 -translate-x-1/2 whitespace-normal rounded-md bg-fg px-2 py-1 text-left text-[11px] font-normal leading-4 text-surface opacity-0 shadow-float transition-opacity duration-150 group-hover/tip:opacity-100 group-focus/tip:opacity-100",
+          side === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5")}>
+        {content}
+      </span>
+    </span>
+  );
+}
+
+/** Small "i" that explains a figure or a rule on hover, instead of a paragraph of fine print. */
+export function InfoTip({ children, className, side }: { children: ReactNode; className?: string; side?: "top" | "bottom" }) {
+  return (
+    <Tip content={children} className={className} side={side}>
+      <Info aria-label="More information" className="h-3.5 w-3.5 cursor-help text-fg-faint transition-colors hover:text-fg-muted" />
+    </Tip>
+  );
+}
+
+/** Tinted icon tile: the coloured square used by KPI tiles, card titles and category rows. */
+export function IconTile({ children, tone = "accent", size = "md", className }: {
+  children: ReactNode; tone?: Tone | Hue; size?: "sm" | "md" | "lg"; className?: string;
+}) {
+  return (
+    <span className={clsx("flex shrink-0 items-center justify-center",
+      size === "sm" ? "h-6 w-6 rounded-md [&_svg]:h-3.5 [&_svg]:w-3.5" : size === "lg" ? "h-10 w-10 rounded-[11px] [&_svg]:h-5 [&_svg]:w-5" : "h-8 w-8 rounded-[9px] [&_svg]:h-4 [&_svg]:w-4",
+      isHue(tone) ? HUE_SOFT[tone] : TONE_SOFT[tone], className)}>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * KPI tile: label, one big number, and colour only where it needs a look. The `hint` shows inline when the tile
+ * is in a warning or danger tone (it explains the problem); otherwise it waits in a tooltip, so a row of tiles
+ * reads as numbers, not sentences. `delta` like "+12%" / "-3 pts" is coloured by sign unless `deltaTone` is given.
+ */
 export function Stat({ label, value, hint, tone: toneIn = "neutral", icon, delta, deltaTone, spark, className }: {
   label: ReactNode; value: ReactNode; hint?: ReactNode; tone?: ToneLike; icon?: ReactNode;
   delta?: string; deltaTone?: Tone; spark?: ReactNode; className?: string;
 }) {
   const tone = toTone(toneIn);
   const dTone: Tone = deltaTone ?? (delta?.trim().startsWith("-") || delta?.trim().startsWith("▼") ? "danger" : "ok");
+  const alert = tone === "warn" || tone === "danger";
   return (
-    <div className={clsx("rounded-lg border border-line bg-surface px-4 py-3 shadow-card", className)}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="eyebrow truncate">{label}</p>
-        {icon && <span className={clsx("shrink-0 [&_svg]:h-3.5 [&_svg]:w-3.5", TONE_TEXT[tone])}>{icon}</span>}
-      </div>
-      <div className="mt-1.5 flex items-end justify-between gap-3">
-        <p className="num text-[22px] font-semibold leading-none text-fg">{value}</p>
-        {delta && <span className={clsx("num text-[11px] font-medium", TONE_TEXT[dTone])}>{delta}</span>}
+    <div className={clsx("group/stat relative px-4 py-3.5", cardClass, className)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 truncate text-[12px] font-medium text-fg-muted">
+            {!icon && tone !== "neutral" && <span className={clsx("h-1.5 w-1.5 shrink-0 rounded-full", TONE_DOT[tone])} />}
+            {label}
+          </p>
+          <div className="mt-1 flex items-baseline gap-2">
+            <p className="num truncate text-[22px] font-semibold leading-7 tracking-[-0.02em] text-fg">{value}</p>
+            {delta && <span className={clsx("num text-[11px] font-medium", TONE_TEXT[dTone])}>{delta}</span>}
+          </div>
+        </div>
+        {icon && <IconTile tone={tone === "neutral" ? "accent" : tone}>{icon}</IconTile>}
       </div>
       {spark && <div className="mt-2">{spark}</div>}
-      {hint && <p className="mt-1.5 truncate text-[11px] text-fg-subtle">{hint}</p>}
+      {hint && (alert
+        ? <p className={clsx("mt-1 truncate text-[11px] font-medium", TONE_TEXT[tone])}>{hint}</p>
+        : (
+          <span role="tooltip" className="pointer-events-none absolute left-3 top-full z-30 mt-1 w-max max-w-[calc(100%-1.5rem)] rounded-md bg-fg px-2 py-1 text-[11px] leading-4 text-surface opacity-0 shadow-float transition-opacity duration-150 group-hover/stat:opacity-100">
+            {hint}
+          </span>
+        ))}
     </div>
   );
 }
@@ -125,7 +201,7 @@ export function Badge({ value, label, tone, className, dot }: {
 }) {
   const t = tone ?? STATUS_TONE[value] ?? "neutral";
   return (
-    <span className={clsx("inline-flex items-center gap-1.5 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium leading-4", TONE_SOFT[t], className)}>
+    <span className={clsx("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium leading-4", TONE_SOFT[t], className)}>
       {dot && <span className={clsx("h-1.5 w-1.5 rounded-full", TONE_DOT[t])} />}
       {label ?? humanize(value)}
     </span>
@@ -135,7 +211,7 @@ export function Badge({ value, label, tone, className, dot }: {
 /** Quiet flag chip in sentence case: Hold, No RC, Hazmat… */
 export function Chip({ children, tone = "neutral", className, title }: { children: ReactNode; tone?: Tone; className?: string; title?: string }) {
   return (
-    <span title={title} className={clsx("inline-flex items-center whitespace-nowrap rounded border px-1.5 text-[11px] font-medium leading-4",
+    <span title={title} className={clsx("inline-flex items-center whitespace-nowrap rounded-full border px-1.5 text-[11px] font-medium leading-4",
       tone === "neutral" ? "border-line text-fg-muted" : clsx(TONE_SOFT[tone], "border-transparent"), className)}>
       {children}
     </span>
@@ -171,8 +247,9 @@ export function ExpiryBadge({ days }: { days: number | null }) {
 /* ------------------------------------------------------------------ */
 
 const BTN = {
-  primary: "bg-primary text-on-primary shadow-card hover:bg-primary-hover",
-  accent: "bg-accent text-on-accent shadow-card hover:bg-accent-hover",
+  // A faint top highlight gives the filled buttons a little depth without a loud gradient.
+  primary: "bg-primary bg-linear-to-b from-white/12 to-white/0 text-on-primary shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(16_24_40/0.14)] hover:bg-primary-hover",
+  accent: "bg-accent bg-linear-to-b from-white/12 to-white/0 text-on-accent shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(16_24_40/0.14)] hover:bg-accent-hover",
   secondary: "border border-line bg-surface text-fg shadow-card hover:border-line-strong hover:bg-raised",
   ghost: "text-fg-muted hover:bg-raised hover:text-fg",
   danger: "bg-danger text-white hover:opacity-90",
@@ -181,7 +258,7 @@ const BTN = {
 export type ButtonVariant = keyof typeof BTN;
 export const buttonClass = (variant: ButtonVariant = "primary", size: "sm" | "md" = "md") =>
   clsx(
-    "inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0",
+    "inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-[9px] font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0",
     size === "sm" ? "h-7 px-2.5 text-[12px] [&_svg]:h-3.5 [&_svg]:w-3.5" : "h-8 px-3 text-[13px] [&_svg]:h-4 [&_svg]:w-4",
     BTN[variant],
   );
@@ -212,7 +289,7 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
 /* ------------------------------------------------------------------ */
 
 export const inputClass =
-  "block h-8 w-full rounded-md border border-line bg-surface px-2.5 text-[13px] text-fg placeholder:text-fg-faint hover:border-line-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50";
+  "block h-8 w-full rounded-[9px] border border-line bg-surface px-2.5 text-[13px] text-fg placeholder:text-fg-faint hover:border-line-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50";
 
 export function Field({ label, children, hint, className, required }: {
   label: string; children: ReactNode; hint?: ReactNode; className?: string; required?: boolean;
@@ -268,11 +345,11 @@ export function Table({ head, children, empty, emptyTitle, emptyDescription, den
     <div className={clsx("overflow-auto", className)}>
       <table className="w-full min-w-max text-[13px]">
         <thead className={clsx(stickyHead && "sticky top-0 z-10")}>
-          <tr className="bg-surface text-left text-[12px] text-fg-muted">
-            {head.map((h, i) => <th key={i} className={clsx("whitespace-nowrap border-b border-line px-3 font-medium", dense ? "py-1.5" : "py-2")}>{h}</th>)}
+          <tr className="bg-raised text-left text-[12px] text-fg-subtle">
+            {head.map((h, i) => <th key={i} className={clsx("whitespace-nowrap border-b border-line px-3 font-medium first:pl-4 last:pr-4", dense ? "py-2" : "py-2.5")}>{h}</th>)}
           </tr>
         </thead>
-        <tbody className={clsx("divide-y divide-line [&_td]:px-3 [&_tr:hover]:bg-raised", dense ? "[&_td]:py-1.5" : "[&_td]:py-2")}>{children}</tbody>
+        <tbody className={clsx("divide-y divide-line [&_td]:px-3 [&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_tr]:transition-colors [&_tr:hover]:bg-raised", dense ? "[&_td]:py-2" : "[&_td]:py-2.5")}>{children}</tbody>
       </table>
       {empty && <EmptyState title={emptyTitle ?? "Nothing here yet"} description={emptyDescription} />}
     </div>
@@ -282,7 +359,7 @@ export function Table({ head, children, empty, emptyTitle, emptyDescription, den
 export function EmptyState({ title, description, action, icon }: { title: string; description?: string; action?: ReactNode; icon?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-      {icon && <div className="text-fg-faint [&_svg]:h-6 [&_svg]:w-6">{icon}</div>}
+      {icon && <IconTile tone="neutral" size="lg" className="mb-1">{icon}</IconTile>}
       <p className="text-[13px] font-medium text-fg">{title}</p>
       {description && <p className="max-w-sm text-[12px] text-fg-muted">{description}</p>}
       {action && <div className="mt-1">{action}</div>}
@@ -314,54 +391,79 @@ export function Progress({ value, className, tone = "progress", marker }: { valu
 
 export function Tabs({ tabs, active, className }: { tabs: { href: string; label: ReactNode; key: string; count?: number }[]; active: string; className?: string }) {
   return (
-    <div className={clsx("mb-4 flex gap-0.5 border-b border-line", className)}>
+    <div className={clsx("mb-4 flex gap-1 overflow-x-auto border-b border-line", className)}>
       {tabs.map((t) => (
         <Link key={t.key} href={t.href}
-          className={clsx("-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition-colors",
+          className={clsx("-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2.5 text-[13px] font-medium transition-colors",
             t.key === active ? "border-accent text-fg" : "border-transparent text-fg-muted hover:text-fg")}>
           {t.label}
-          {t.count != null && <span className="num rounded bg-neutral-soft px-1 text-[10px] text-fg-subtle">{t.count}</span>}
+          {t.count != null && <span className={clsx("num rounded-full px-1.5 text-[10.5px] leading-4", t.key === active ? "bg-accent-soft text-accent-text" : "bg-neutral-soft text-fg-subtle")}>{t.count}</span>}
         </Link>
       ))}
     </div>
   );
 }
 
-/** Link-based segmented control (filters that live in the URL). */
+/** Track + thumb, like an iOS segmented control: the choice reads as a raised tile, not a filled block of colour. */
+export const segmentedTrack = "inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[10px] bg-sunken p-[3px]";
+export const segmentedThumb = (on: boolean) =>
+  clsx("inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium transition-[color,background-color,box-shadow] duration-150",
+    on ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg");
+const countClass = (on: boolean) => clsx("num text-[10.5px]", on ? "text-fg-subtle" : "text-fg-faint");
+
+/** Link-based segmented control (views and filters that live in the URL). */
 export function Segmented({ items, active, className }: { items: { href: string; label: ReactNode; key: string; count?: number }[]; active: string; className?: string }) {
   return (
-    <div className={clsx("inline-flex rounded-md border border-line bg-surface p-0.5", className)}>
+    <div className={clsx(segmentedTrack, className)}>
       {items.map((i) => (
-        <Link key={i.key} href={i.href}
-          className={clsx("inline-flex h-6 items-center gap-1 rounded px-2 text-[12px] font-medium transition-colors",
-            i.key === active ? "bg-primary text-on-primary" : "text-fg-muted hover:text-fg")}>
-          {i.label}{i.count != null && <span className={clsx("num text-[10px]", i.key === active ? "opacity-70" : "text-fg-subtle")}>{i.count}</span>}
+        <Link key={i.key} href={i.href} aria-current={i.key === active ? "true" : undefined} className={segmentedThumb(i.key === active)}>
+          {i.label}{i.count != null && <span className={countClass(i.key === active)}>{i.count}</span>}
         </Link>
       ))}
     </div>
   );
 }
 
-/** Pill-style filter links (status filters above tables). */
-export function FilterPills({ items, active }: { items: { href: string; label: ReactNode; key: string; count?: number }[]; active: string }) {
+/** Status filters above tables: the same track as Segmented, scrolling sideways on narrow screens. */
+export function FilterPills({ items, active, className }: { items: { href: string; label: ReactNode; key: string; count?: number }[]; active: string; className?: string }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <nav aria-label="Filter" className={clsx(segmentedTrack, className)}>
       {items.map((i) => (
-        <Link key={i.key} href={i.href}
-          className={clsx("inline-flex h-6 items-center gap-1 rounded-full border px-2.5 text-[12px] font-medium transition-colors",
-            i.key === active ? "border-primary bg-primary text-on-primary" : "border-line bg-surface text-fg-muted hover:border-line-strong hover:text-fg")}>
-          {i.label}{i.count != null && <span className={clsx("num text-[10px]", i.key === active ? "opacity-70" : "text-fg-subtle")}>{i.count}</span>}
+        <Link key={i.key} href={i.href} aria-current={i.key === active ? "true" : undefined} className={segmentedThumb(i.key === active)}>
+          {i.label}{i.count != null && <span className={countClass(i.key === active)}>{i.count}</span>}
         </Link>
       ))}
-    </div>
+    </nav>
   );
 }
 
 export function Avatar({ name, size = 28, className }: { name: string; size?: number; className?: string }) {
   const initials = name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
   return (
-    <span className={clsx("inline-flex shrink-0 items-center justify-center rounded-full bg-neutral-soft font-medium text-fg-muted", className)}
+    <span className={clsx("inline-flex shrink-0 items-center justify-center rounded-full font-semibold", HUE_SOFT[hueFor(name)], className)}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }}>{initials}</span>
+  );
+}
+
+/**
+ * A section that opens on click (native <details>: no JavaScript, keyboard and screen-reader friendly).
+ * Rows that share a `name` behave as an accordion: opening one closes the others.
+ */
+export function Disclosure({ title, icon, tone = "accent", count, meta, children, open, name, className, bodyClassName }: {
+  title: ReactNode; icon?: ReactNode; tone?: Tone | Hue; count?: ReactNode; meta?: ReactNode; children: ReactNode;
+  open?: boolean; name?: string; className?: string; bodyClassName?: string;
+}) {
+  return (
+    <details name={name} open={open} className={clsx("group/disc", className)}>
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-2.5 transition-colors hover:bg-raised [&::-webkit-details-marker]:hidden">
+        {icon && <IconTile tone={tone} size="sm">{icon}</IconTile>}
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{title}</span>
+        {meta}
+        {count != null && <span className="num rounded-full bg-neutral-soft px-1.5 text-[11px] font-medium leading-5 text-fg-muted">{count}</span>}
+        <ChevronDown aria-hidden className="h-4 w-4 shrink-0 text-fg-faint transition-transform duration-200 group-open/disc:rotate-180" />
+      </summary>
+      <div className={clsx("fade-in", bodyClassName)}>{children}</div>
+    </details>
   );
 }
 

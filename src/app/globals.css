@@ -6,14 +6,14 @@
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
-  /* Neutrals: cool graphite, white cards on a soft canvas */
-  --canvas: #f5f6f8;
+  /* Neutrals: cool graphite, white cards floating on a soft canvas */
+  --canvas: #f3f4f7;
   --surface: #ffffff;
-  --raised: #f2f4f7;
-  --sunken: #eef1f5;
+  --raised: #f5f6f8;
+  --sunken: #eceef2;
   --overlay: #ffffff;
-  --line: #eaecf0;
-  --line-strong: #d0d5dd;
+  --line: #e7e9ee;
+  --line-strong: #d3d8e0;
   --fg: #101828;
   --fg-muted: #475467;
   --fg-subtle: #667085;
@@ -41,8 +41,16 @@
   --info-soft: #ecfcff;
   --progress: #6938ef;
   --progress-soft: #f4f3ff;
-  --neutral-soft: #f2f4f7;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --neutral-soft: #f0f2f5;
+  /* Categorical hues: avatars, team marks, KPI icon tiles. Never status. */
+  --hue-1: #2563eb; --hue-1-soft: #eaf1ff;
+  --hue-2: #7c3aed; --hue-2-soft: #f3efff;
+  --hue-3: #0d9488; --hue-3-soft: #e6f7f4;
+  --hue-4: #d97706; --hue-4-soft: #fff5e1;
+  --hue-5: #db2777; --hue-5-soft: #fdeef6;
+  --hue-6: #16a34a; --hue-6-soft: #e9f8ef;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.04);
+  --shadow-lift: 0 2px 4px -1px rgba(16, 24, 40, 0.05), 0 8px 16px -4px rgba(16, 24, 40, 0.08);
   --shadow-float: 0 12px 24px -4px rgba(16, 24, 40, 0.14), 0 4px 8px -2px rgba(16, 24, 40, 0.06);
   --scrim: rgba(16, 24, 40, 0.4);
   /* Muted basemap so routes and trucks carry the colour */
@@ -83,7 +91,14 @@
   --progress: #9b8afb;
   --progress-soft: rgba(155, 138, 251, 0.16);
   --neutral-soft: rgba(255, 255, 255, 0.06);
+  --hue-1: #7aa7ff; --hue-1-soft: rgba(96, 145, 255, 0.16);
+  --hue-2: #b69cff; --hue-2-soft: rgba(155, 120, 255, 0.16);
+  --hue-3: #4fd1c0; --hue-3-soft: rgba(45, 212, 191, 0.14);
+  --hue-4: #fbbf4d; --hue-4-soft: rgba(251, 191, 36, 0.14);
+  --hue-5: #f77fb8; --hue-5-soft: rgba(244, 114, 182, 0.15);
+  --hue-6: #5ee08f; --hue-6-soft: rgba(74, 222, 128, 0.14);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.3), 0 10px 20px -6px rgba(0, 0, 0, 0.5);
   --shadow-float: 0 16px 32px -8px rgba(0, 0, 0, 0.6), 0 4px 8px -2px rgba(0, 0, 0, 0.4);
   --scrim: rgba(0, 0, 0, 0.6);
   --map-filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.55);
@@ -192,10 +207,26 @@
   /* Backdrop behind drawers and dialogs. */
   --color-scrim: var(--scrim);
 
+  --color-hue-1: var(--hue-1);
+  --color-hue-1-soft: var(--hue-1-soft);
+  --color-hue-2: var(--hue-2);
+  --color-hue-2-soft: var(--hue-2-soft);
+  --color-hue-3: var(--hue-3);
+  --color-hue-3-soft: var(--hue-3-soft);
+  --color-hue-4: var(--hue-4);
+  --color-hue-4-soft: var(--hue-4-soft);
+  --color-hue-5: var(--hue-5);
+  --color-hue-5-soft: var(--hue-5-soft);
+  --color-hue-6: var(--hue-6);
+  --color-hue-6-soft: var(--hue-6-soft);
+
   --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
   --shadow-float: var(--shadow-float);
+  /* Fixed px (not rem) so density changes spacing, not corner shapes. */
   --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
 }
 
 body {

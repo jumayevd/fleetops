@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { FilterPills, LinkButton, PageHeader, Segmented } from "@/components/ui";
+import { FilterPills, InfoTip, LinkButton, PageHeader, Segmented } from "@/components/ui";
 import { DateNav } from "./date-nav";
 import { DispatchBoard } from "./board";
 import { PrebookView } from "./prebook";
@@ -45,7 +45,9 @@ export default async function DispatchPage({ searchParams }: PageProps<"/dispatc
       <PageHeader
         eyebrow="Dispatch"
         title={view === "prebook" ? "Prebook board" : "Daily board"}
-        subtitle={view === "prebook" ? "Loads with a pickup more than 24 hours out, by team. Drivers reserved here stay ready on today's board until the pickup is inside 24 hours." : <>{dayLabel} <span className="text-fg-subtle">· {dayHint}</span></>}
+        subtitle={view === "prebook"
+          ? <span className="inline-flex items-center gap-1.5">Pickups more than 24 hours out<InfoTip>Drivers reserved here stay ready on today&apos;s board until the pickup is inside 24 hours.</InfoTip></span>
+          : <span className="inline-flex items-center gap-1.5">{dayLabel}{date === today ? <span className="rounded-full bg-accent-soft px-1.5 text-[11px] font-medium leading-[18px] text-accent-text">Today</span> : <InfoTip>{dayHint}</InfoTip>}</span>}
         actions={
           <>
             {view !== "prebook" && <DateNav date={date} today={today} />}
@@ -59,21 +61,18 @@ export default async function DispatchPage({ searchParams }: PageProps<"/dispatc
         }
       />
 
-      {view !== "prebook" && (
-        <div className="mb-3">
-          <FilterPills active={team ?? "all"} items={[
-            { key: "all", label: "All teams", href: qs({ team: undefined }) },
-            ...teams.map((t) => ({
-              key: t.id, href: qs({ team: t.id }), count: t._count.drivers,
-              label: <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full" style={{ background: t.color ?? "var(--fg-faint)" }} />{t.name}</span>,
-            })),
-            { key: "none", label: "No team", href: qs({ team: "none" }) },
-          ]} />
-        </div>
-      )}
-
       {board && (
-        <DispatchBoard key={`${date}:${team ?? ""}:${view}`} initial={board} view={view === "flat" ? "flat" : "teams"} canEdit={canEdit} team={team} initialQ={q} focusDriverId={focusDriver} />
+        <DispatchBoard key={`${date}:${team ?? ""}:${view}`} initial={board} view={view === "flat" ? "flat" : "teams"} canEdit={canEdit} team={team} initialQ={q} focusDriverId={focusDriver}
+          teamFilter={(
+            <FilterPills active={team ?? "all"} items={[
+              { key: "all", label: "All teams", href: qs({ team: undefined }) },
+              ...teams.map((t) => ({
+                key: t.id, href: qs({ team: t.id }), count: t._count.drivers,
+                label: <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full" style={{ background: t.color ?? "var(--fg-faint)" }} />{t.name}</span>,
+              })),
+              { key: "none", label: "No team", href: qs({ team: "none" }) },
+            ]} />
+          )} />
       )}
       {prebook && <PrebookView loads={prebook.loads} total={prebook.total} limit={prebook.limit} now={prebook.at} teams={teams} canAssign={can(user.role, "loads.edit")} showMoney={can(user.role, "finance.view") || can(user.role, "loads.edit")} />}
     </>

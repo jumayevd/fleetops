@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { DOC_KIND_LABELS, REQUIRED_UNIT_DOCS } from "@/lib/documents";
 import { date } from "@/lib/format";
-import { Badge, Card, Cell, Stat, Table } from "@/components/ui";
+import { Badge, Card, InfoTip, Stat, Table } from "@/components/ui";
 import { DOC_STATE_LABEL, DOC_STATE_TONE, type ComplianceRow, type UnitDoc, type unitCompliance } from "../_lib/data";
 import { UnitLink } from "./unit-link";
 
@@ -14,7 +14,7 @@ function DocCell({ d }: { d: UnitDoc }) {
   return (
     <div className="flex flex-col items-start gap-0.5">
       <Badge value={d.state} tone={DOC_STATE_TONE[d.state]} label={label} className="num" />
-      {!d.onFile && d.state !== "missing" && <span className="text-[10px] text-fg-subtle" title="The date comes from the unit record; no file has been uploaded.">no file · date from record</span>}
+      {!d.onFile && d.state !== "missing" && <span className="text-[10px] text-fg-subtle" title="The date comes from the unit record; no file has been uploaded.">no file</span>}
     </div>
   );
 }
@@ -41,18 +41,17 @@ export function ComplianceTab({ data }: { data: Data }) {
         <Stat label="Complete" value={units.ok} tone="ok" hint={`of ${rows.length} active units`} />
       </div>
 
-      <Card className="mt-4" flush title="Unit paperwork" actions={<span className="text-[11px] text-fg-subtle">Triage order: expired → expiring → missing</span>}>
+      <Card className="mt-4" flush title={<span className="flex items-center gap-1.5">Unit paperwork<InfoTip>Triage order: expired, then expiring, then missing.</InfoTip></span>}>
         <Table head={["Unit", ...REQUIRED_UNIT_DOCS.map((k) => DOC_KIND_LABELS[k] ?? k), "Next step", ""]} empty={rows.length === 0}
           emptyTitle="No active units" emptyDescription="Trucks and trailers appear here with the state of their registration, insurance and inspection documents.">
           {rows.map((r) => (
             <tr key={`${r.type}:${r.id}`} className={r.worst === "ok" ? "text-fg-muted" : undefined}>
-              <td>
-                <UnitLink truck={r.type === "truck" ? { id: r.id, unitNumber: r.unitNumber } : null} trailer={r.type === "trailer" ? { id: r.id, unitNumber: r.unitNumber } : null} secondary={r.detail} />
+              <td title={r.detail}>
+                <UnitLink truck={r.type === "truck" ? { id: r.id, unitNumber: r.unitNumber } : null} trailer={r.type === "trailer" ? { id: r.id, unitNumber: r.unitNumber } : null} />
               </td>
               {r.docs.map((d) => <td key={d.kind} className="whitespace-nowrap"><DocCell d={d} /></td>)}
-              <td className="max-w-72">
-                <Cell primary={<span className={r.worst === "ok" ? "text-fg-subtle" : "text-fg"}>{nextStep(r)}</span>}
-                  secondary={r.worst !== "ok" ? DOC_STATE_LABEL[r.worst] : undefined} />
+              <td className="max-w-72 truncate" title={r.worst !== "ok" ? DOC_STATE_LABEL[r.worst] : undefined}>
+                <span className={r.worst === "ok" ? "text-fg-subtle" : "text-fg"}>{nextStep(r)}</span>
               </td>
               <td className="text-right">
                 <Link href={r.href} className="inline-flex items-center gap-0.5 whitespace-nowrap text-[12px] font-medium text-fg-muted hover:text-fg">

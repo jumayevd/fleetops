@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Check, LogIn, Pencil, Send, ShieldCheck, UserCheck, Users } from "lucide-react";
+import { Check, KeyRound, LogIn, Pencil, Send, ShieldCheck, UserCheck, Users } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ROLES, ROLE_LABELS, type Role } from "@/lib/constants";
@@ -7,7 +7,7 @@ import { PERMISSIONS, type Permission } from "@/lib/permissions";
 import { ago, daysAgo } from "@/lib/format";
 import { createUser } from "@/app/actions/people";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Badge, Card, Cell, Chip, Field, FilterPills, Input, LinkButton, PageHeader, Select, Stat, Table, cn } from "@/components/ui";
+import { Badge, Card, Chip, Disclosure, Field, FilterPills, InfoTip, Input, LinkButton, PageHeader, Select, Stat, Table, cardClass, cn } from "@/components/ui";
 import { ROLE_TONE, TeamLabel } from "../shared";
 
 export const metadata = { title: "Users & roles" };
@@ -78,12 +78,11 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <PageHeader
         eyebrow="Company"
         title="Users & roles"
-        subtitle={`${staff.length} staff accounts · ${active.length - staff.length} driver logins · ${admins} with admin rights`}
         actions={<LinkButton href="/admin/company" variant="secondary"><Users />Teams</LinkButton>}
       />
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Active accounts" value={active.length} hint={disabled ? `${disabled} disabled` : "none disabled"} icon={<UserCheck />} tone="ok" />
+        <Stat label="Active accounts" value={active.length} hint={`${staff.length} staff · ${active.length - staff.length} driver logins · ${disabled ? `${disabled} disabled` : "none disabled"}`} icon={<UserCheck />} tone="ok" />
         <Stat label="Signed in this week" value={recent} hint={never ? `${never} never signed in` : "everyone has signed in at least once"} icon={<LogIn />} tone={never ? "warn" : "neutral"} />
         <Stat label="Telegram linked" value={`${linked}/${active.length}`} hint={linked < active.length ? "ask the rest to connect under My account" : "everyone gets alerts"} icon={<Send />} tone={linked ? "info" : "neutral"} />
         <Stat label="Admin rights" value={admins} hint="owner and administrator accounts" icon={<ShieldCheck />} tone={admins > 3 ? "warn" : "neutral"} />
@@ -110,14 +109,12 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
                 const canEdit = u.role !== "OWNER" || me.role === "OWNER";
                 return (
                   <tr key={u.id} className={cn(!u.active && "text-fg-muted")}>
-                    <td className="min-w-52">
-                      <Cell
-                        primary={<span className="inline-flex items-center gap-1.5">
-                          {canEdit ? <Link href={`/admin/users/${u.id}`} className="font-medium hover:underline">{u.name}</Link> : <span className="font-medium">{u.name}</span>}
-                          {u.id === me.id && <Chip>You</Chip>}
-                          {u.driver && <Chip tone="info" title="Linked to a driver profile">Driver</Chip>}
-                        </span>}
-                        secondary={<>{u.email}{u.phone && <> · <span className="num">{u.phone}</span></>}</>} />
+                    <td className="min-w-52" title={[u.email, u.phone].filter(Boolean).join(" · ")}>
+                      <span className="inline-flex items-center gap-1.5">
+                        {canEdit ? <Link href={`/admin/users/${u.id}`} className="font-medium hover:underline">{u.name}</Link> : <span className="font-medium">{u.name}</span>}
+                        {u.id === me.id && <Chip>You</Chip>}
+                        {u.driver && <Chip tone="info" title="Linked to a driver profile">Driver</Chip>}
+                      </span>
                     </td>
                     <td><Badge value={u.role} tone={ROLE_TONE[u.role as Role] ?? "neutral"} label={ROLE_LABELS[u.role as Role] ?? u.role} /></td>
                     <td className="text-[12px]"><TeamLabel team={u.team} /></td>
@@ -139,37 +136,44 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
             </Table>
           </Card>
 
-          <Card title="What each role can do" flush
-            actions={<span className="text-[11px] text-fg-subtle">Defined in code · ask engineering to change</span>}>
-            <div className="overflow-auto">
-              <table className="w-full min-w-max text-[12px]">
-                <thead>
-                  <tr className="bg-surface text-left text-[12px] font-medium text-fg-muted">
-                    <th className="border-b border-line px-4 py-2 font-medium">Permission</th>
-                    {ROLES.map((r) => <th key={r} className="border-b border-line px-2 py-2 text-center font-medium">{ROLE_LABELS[r]}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {areas.map((area) => (
-                    <AreaRows key={area} area={area} perms={perms.filter((p) => p.area === area).map((p) => p.key)} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          {/* Reference, not daily work: closed until asked for. */}
+          <section className={cardClass}>
+            <Disclosure title="What each role can do" icon={<KeyRound />} className="[&>summary]:rounded-lg [&>summary]:py-3"
+              meta={<InfoTip>Defined in code; ask engineering to change a role.</InfoTip>}>
+              <div className="overflow-auto border-t border-line">
+                <table className="w-full min-w-max text-[12px]">
+                  <thead>
+                    <tr className="bg-surface text-left text-[12px] font-medium text-fg-muted">
+                      <th className="border-b border-line px-4 py-2 font-medium">Permission</th>
+                      {ROLES.map((r) => <th key={r} className="border-b border-line px-2 py-2 text-center font-medium">{ROLE_LABELS[r]}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {areas.map((area) => (
+                      <AreaRows key={area} area={area} perms={perms.filter((p) => p.area === area).map((p) => p.key)} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Disclosure>
+          </section>
         </div>
 
-        <Card title="Add a team member" className="h-fit">
+        <Card className="h-fit" title={
+          <span className="flex items-center gap-1.5">Add a team member
+            <InfoTip>They sign in with this email. The team groups dispatchers on the board. Ask them to change the temporary password after the first sign-in.</InfoTip>
+          </span>
+        }>
           <ActionForm action={createUser} resetOnSuccess className="space-y-3">
             <Field label="Full name" required><Input name="name" required placeholder="As it should appear on the board" /></Field>
-            <Field label="Email" required hint="Used to sign in."><Input name="email" type="email" required placeholder="name@company.uz" /></Field>
+            <Field label="Email" required><Input name="email" type="email" required placeholder="name@company.uz" /></Field>
             <Field label="Phone"><Input name="phone" type="tel" placeholder="+998 90 000 00 00" className="num" /></Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Role" required><Select name="role" required defaultValue="DISPATCHER" options={roleOptions} /></Field>
-              <Field label="Team" hint="Used to group dispatchers on the board."><Select name="teamId" placeholder="No team" options={teams.map((t) => ({ value: t.id, label: t.name }))} /></Field>
+              <Field label="Team"><Select name="teamId" placeholder="No team" options={teams.map((t) => ({ value: t.id, label: t.name }))} /></Field>
             </div>
-            <Field label="Temporary password" required hint="At least 8 characters. Ask them to change it after the first sign-in.">
-              <Input name="password" type="password" minLength={8} required autoComplete="new-password" />
+            <Field label="Temporary password" required>
+              <Input name="password" type="password" minLength={8} required autoComplete="new-password" placeholder="At least 8 characters" />
             </Field>
             <SubmitButton className="w-full" pendingText="Creating…">Create account</SubmitButton>
             <p className="text-[11px] text-fg-subtle">

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil, Phone } from "lucide-react";
+import { History, Pencil, Phone } from "lucide-react";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
@@ -8,7 +8,7 @@ import { EQUIPMENT_LABELS, LOAD_STATUS_LABELS, TRAILER_STATUS_LABELS, WORK_ORDER
 import { REQUIRED_UNIT_DOCS, DOC_KIND_LABELS } from "@/lib/documents";
 import { kg, km, money, date, dateTime, ago, daysUntil } from "@/lib/format";
 import { syncSimulatedPositions } from "@/lib/telemetry";
-import { Badge, Card, DL, EmptyState, ExpiryBadge, LinkButton, PageHeader, Stat, Table, cn } from "@/components/ui";
+import { Badge, Card, DL, Disclosure, EmptyState, ExpiryBadge, LinkButton, PageHeader, Stat, Table, cardClass, cn } from "@/components/ui";
 import { LeafletMap } from "@/components/map";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { WorkOrderActions } from "../../work-order-actions";
@@ -58,7 +58,6 @@ export default async function TrailerDetail({ params }: PageProps<"/fleet/traile
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <TrailerStatusControl id={id} status={trailer.status} locationName={trailer.locationName} editable={editable} since={`${sinceShort(trailer.statusSince)} · since ${date(trailer.statusSince)}`} />
             {trailer.plate && <span>Plate <span className="num text-fg">{trailer.plate}</span></span>}
-            <span>Capacity <span className="num text-fg">{kg(trailer.capacityKg)}</span></span>
           </span>
         }
         actions={editable && <LinkButton href={`/fleet/trailers/${id}/edit`} variant="secondary"><Pencil />Edit</LinkButton>}
@@ -95,24 +94,29 @@ export default async function TrailerDetail({ params }: PageProps<"/fleet/traile
             {trailer.workOrders.length === 0 && <EmptyState title="No work orders" description="Repairs and inspections for this trailer are created from Maintenance → Work orders." />}
           </Card>
 
-          <Card title="Load history" flush actions={<span className="text-[11px] text-fg-subtle">Last <span className="num">{trailer.loads.length}</span></span>}>
-            <Table head={["Load", "Status", "Route", "Customer", "Truck", "Pickup", "Delivered", "Distance", ...(showRevenue ? ["Rate"] : [])]}>
-              {trailer.loads.map((l) => (
-                <tr key={l.id}>
-                  <td><Link href={`/loads/${l.id}`} className="num font-medium hover:underline">{l.reference}</Link></td>
-                  <td><Badge value={l.status} label={LOAD_STATUS_LABELS[l.status as LoadStatus]} /></td>
-                  <td className="whitespace-nowrap">{l.originCity} → {l.destCity}</td>
-                  <td className="max-w-40 truncate text-fg-muted">{l.customer.name}</td>
-                  <td>{l.truck ? <Link href={`/fleet/${l.truck.id}`} className="num hover:underline">{l.truck.unitNumber}</Link> : <span className="text-fg-faint">—</span>}</td>
-                  <td className="whitespace-nowrap text-fg-muted">{dateTime(l.pickupAt)}</td>
-                  <td className={cn("whitespace-nowrap", l.deliveredAt && l.deliveredAt > l.deliveryAt ? "text-danger" : "text-fg-muted")}>{l.deliveredAt ? dateTime(l.deliveredAt) : "—"}</td>
-                  <td className="num whitespace-nowrap">{km(l.distanceKm)}</td>
-                  {showRevenue && <td className="num">{money(l.rate)}</td>}
-                </tr>
-              ))}
-            </Table>
-            {trailer.loads.length === 0 && <EmptyState title="No loads yet" description="Pick this trailer on a load and its history will build up here." />}
-          </Card>
+          {/* The long tail: closed until asked for, so the work orders and pairing stay on screen. */}
+          <section className={cardClass}>
+            <Disclosure title="Load history" icon={<History />} count={trailer.loads.length} className="[&>summary]:rounded-lg [&>summary]:py-3">
+              <div className="border-t border-line">
+                <Table head={["Load", "Status", "Route", "Customer", "Truck", "Pickup", "Delivered", "Distance", ...(showRevenue ? ["Rate"] : [])]}>
+                  {trailer.loads.map((l) => (
+                    <tr key={l.id}>
+                      <td><Link href={`/loads/${l.id}`} className="num font-medium hover:underline">{l.reference}</Link></td>
+                      <td><Badge value={l.status} label={LOAD_STATUS_LABELS[l.status as LoadStatus]} /></td>
+                      <td className="whitespace-nowrap">{l.originCity} → {l.destCity}</td>
+                      <td className="max-w-40 truncate text-fg-muted">{l.customer.name}</td>
+                      <td>{l.truck ? <Link href={`/fleet/${l.truck.id}`} className="num hover:underline">{l.truck.unitNumber}</Link> : <span className="text-fg-faint">—</span>}</td>
+                      <td className="whitespace-nowrap text-fg-muted">{dateTime(l.pickupAt)}</td>
+                      <td className={cn("whitespace-nowrap", l.deliveredAt && l.deliveredAt > l.deliveryAt ? "text-danger" : "text-fg-muted")}>{l.deliveredAt ? dateTime(l.deliveredAt) : "—"}</td>
+                      <td className="num whitespace-nowrap">{km(l.distanceKm)}</td>
+                      {showRevenue && <td className="num">{money(l.rate)}</td>}
+                    </tr>
+                  ))}
+                </Table>
+                {trailer.loads.length === 0 && <EmptyState title="No loads yet" description="Pick this trailer on a load and its history will build up here." />}
+              </div>
+            </Disclosure>
+          </section>
         </div>
 
         <div className="space-y-4">

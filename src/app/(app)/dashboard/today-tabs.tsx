@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
-import { cn } from "@/components/ui";
+import { cardClass, cn, segmentedThumb, segmentedTrack } from "@/components/ui";
 
-export type CardTab = { key: string; label: string; hint?: string; count?: number; more?: { href: string; label: string }; content: ReactNode };
+export type CardTab = { key: string; label: string; count?: number; more?: { href: string; label: string }; content: ReactNode };
 
 /**
  * One card, one list at a time (pickups, activity). The panels are rendered on the server; switching tabs only
@@ -23,19 +23,16 @@ export function TabbedCard({ tabs, label, className }: { tabs: CardTab[]; label:
   };
   if (!current) return null;
   return (
-    <section className={cn("flex min-w-0 flex-col rounded-lg border border-line bg-surface shadow-card", className)}>
-      <header className="flex min-h-11 items-center justify-between gap-2 border-b border-line pl-2 pr-4">
-        <div role="tablist" aria-label={label} className="flex min-w-0 items-center">
+    <section className={cn(cardClass, "flex min-w-0 flex-col", className)}>
+      <header className="flex min-h-12 items-center justify-between gap-2 px-3 pb-2 pt-3">
+        <div role="tablist" aria-label={label} className={segmentedTrack}>
           {tabs.map((t, i) => {
             const on = t.key === current.key;
             return (
               <button key={t.key} id={`${id}-tab-${t.key}`} type="button" role="tab" aria-selected={on} aria-controls={`${id}-panel-${t.key}`}
-                tabIndex={on ? 0 : -1} onClick={() => setActive(t.key)} onKeyDown={(e) => onKey(e, i)}
-                className={cn("-mb-px flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40",
-                  on ? "border-accent text-fg" : "border-transparent text-fg-muted hover:border-line-strong hover:text-fg")}>
+                tabIndex={on ? 0 : -1} onClick={() => setActive(t.key)} onKeyDown={(e) => onKey(e, i)} className={segmentedThumb(on)}>
                 {t.label}
-                {t.hint && <span className="hidden font-normal text-fg-subtle sm:inline">· {t.hint}</span>}
-                {t.count != null && <span className="num text-[12px] font-normal text-fg-subtle">{t.count}</span>}
+                {t.count != null && <span className={cn("num text-[10.5px]", on ? "text-fg-subtle" : "text-fg-faint")}>{t.count}</span>}
               </button>
             );
           })}
@@ -45,7 +42,7 @@ export function TabbedCard({ tabs, label, className }: { tabs: CardTab[]; label:
         )}
       </header>
       {tabs.map((t) => (
-        <div key={t.key} id={`${id}-panel-${t.key}`} role="tabpanel" aria-labelledby={`${id}-tab-${t.key}`} hidden={t.key !== current.key} className="fade-in min-w-0 flex-1">
+        <div key={t.key} id={`${id}-panel-${t.key}`} role="tabpanel" aria-labelledby={`${id}-tab-${t.key}`} hidden={t.key !== current.key} className="fade-in min-w-0 flex-1 border-t border-line">
           {t.content}
         </div>
       ))}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Navigation, NavigationOff, Satellite } from "lucide-react";
-import { LiveDot, buttonClass, cn } from "@/components/ui";
+import { InfoTip, LiveDot, buttonClass, cn } from "@/components/ui";
 import { clearFix, setFix } from "./geo-store";
 
 const SEND_EVERY_MS = 20_000;
@@ -69,6 +69,7 @@ export function GpsShare({ unitNumber }: { unitNumber: string }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="text-[13px] font-semibold text-fg">Live location</p>
+            <InfoTip>Sends {unitNumber}&apos;s position every 20 s while this page is open. Dispatch and the live map use it instead of the estimated route.</InfoTip>
             {state.mode === "live" && <LiveDot />}
           </div>
           <p className={cn("line-clamp-2 text-[12px] leading-4", state.mode === "error" ? "text-danger" : "text-fg-muted")} role="status">{state.text}</p>
@@ -78,9 +79,6 @@ export function GpsShare({ unitNumber }: { unitNumber: string }) {
           {on ? <><NavigationOff />Stop</> : <><Navigation />Share</>}
         </button>
       </div>
-      <p className="mt-2 text-[11px] leading-4 text-fg-subtle">
-        Sends <span className="num">{unitNumber}</span>&apos;s position every 20 s while this page is open. Dispatch and the live map use it instead of the estimated route.
-      </p>
     </section>
   );
 }

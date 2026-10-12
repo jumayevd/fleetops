@@ -5,7 +5,7 @@ import { getCurrentUser, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { EQUIPMENT_LABELS } from "@/lib/constants";
 import { date, kg, km, money2 } from "@/lib/format";
-import { Badge, LinkButton, cn } from "@/components/ui";
+import { Badge, LinkButton, Tip, cn } from "@/components/ui";
 import { getLetterhead, invoiceDetail } from "../../data";
 import { daysLate, financeHref, hasBankDetails, invoiceBadge, invoiceTotal, isOverdue, wasTonu } from "../../shared";
 import { InvoiceActions } from "../../invoice-actions";
@@ -70,8 +70,9 @@ export default async function InvoicePage({ params }: PageProps<"/finance/invoic
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex flex-wrap items-center gap-2">
           <LinkButton href={financeHref({ tab: "invoices" })} variant="ghost" size="sm"><ArrowLeft />Invoices</LinkButton>
-          <Badge value={invoiceBadge(inv, now)} dot />
-          <span className={cn("text-[12px]", overdue ? "text-danger" : "text-fg-muted")}>{statusLine}</span>
+          {/* The full status line is on the sheet just below; the toolbar keeps the badge, with the line on hover. Overdue stays spelled out. */}
+          <Tip content={statusLine}><Badge value={invoiceBadge(inv, now)} dot /></Tip>
+          {overdue && <span className="text-[12px] text-danger">{statusLine}</span>}
         </div>
         <InvoiceActions id={inv.id} number={inv.number} status={inv.status} loadRef={load?.reference} readOnly={!can(user.role, "finance.edit")} />
       </div>

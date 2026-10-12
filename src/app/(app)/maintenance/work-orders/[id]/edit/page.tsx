@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toDateInput, toLocalInput } from "@/lib/format";
-import { Badge, PageHeader } from "@/components/ui";
+import { Badge, InfoTip, PageHeader } from "@/components/ui";
 import { saveWorkOrderChecked } from "../../../_lib/actions";
 import { workOrderFormOptions } from "../../../_lib/data";
 import { workOrderHref } from "../../../_lib/links";
@@ -34,7 +34,7 @@ export default async function EditWorkOrder({ params }: PageProps<"/maintenance/
       <PageHeader
         eyebrow={<>Work order <span className="num">#{wo.number}</span></>}
         title={`Edit · ${wo.title}`}
-        subtitle={<span className="inline-flex flex-wrap items-center gap-2"><Badge value={wo.status} dot />{unit && <span className="num">{unit}</span>}<span>{effects}</span></span>}
+        subtitle={<span className="inline-flex flex-wrap items-center gap-2"><Badge value={wo.status} dot />{unit && <span className="num">{unit}</span>}<InfoTip>{effects}</InfoTip></span>}
       />
       <WorkOrderForm
         action={saveWorkOrderChecked.bind(null, id)}

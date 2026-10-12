@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { AlertTriangle, Banknote, ClipboardList, PackageCheck, Paperclip, Sun, Wrench } from "lucide-react";
+import { AlertTriangle, Banknote, BellRing, ClipboardList, ListChecks, PackageCheck, Paperclip, Sun, Terminal, Wrench } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
@@ -8,7 +8,7 @@ import { getBot, getWebhookInfo, telegramConfigured } from "@/lib/telegram";
 import { SETTING_GROUP_CHAT, SETTING_GROUP_CODE } from "@/lib/notify";
 import { disconnectGroup, newGroupCode, registerWebhook, sendDigestNow } from "@/app/actions/telegram";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Badge, Card, PageHeader, Table, buttonClass, cn, type Tone } from "@/components/ui";
+import { Badge, Card, Disclosure, InfoTip, PageHeader, Table, buttonClass, cardClass, cn, type Tone } from "@/components/ui";
 import { ROLE_TONE } from "../shared";
 import { ConfirmSubmit } from "../confirm-submit";
 
@@ -65,6 +65,9 @@ export default async function TelegramAdmin() {
   const group = settings.find((s) => s.key === SETTING_GROUP_CHAT)?.value;
   const groupCode = settings.find((s) => s.key === SETTING_GROUP_CODE)?.value;
   const paused = linked.filter((u) => !u.telegramAlerts).length;
+  // The group chat is optional, so setup counts as done once the bot, the webhook and one person are connected.
+  const setupDone = [Boolean(bot), Boolean(hook?.url), linked.length > 0];
+  const setupComplete = setupDone.every(Boolean);
 
   const botTile = !configured ? { tone: "neutral" as Tone, value: "Not configured", hint: "Set TELEGRAM_BOT_TOKEN" }
     : bot ? { tone: "ok" as Tone, value: `@${bot.username}`, hint: "Token valid, bot reachable" }
@@ -94,54 +97,59 @@ export default async function TelegramAdmin() {
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
-          <Card title="Setup">
-            <ol className="space-y-5">
-              <Step n={1} title="Create the bot" done={Boolean(bot)}>
-                <p>In Telegram, message <b className="font-medium text-fg">@BotFather</b> and send <Code>/newbot</Code>. Put the token in the <Code>TELEGRAM_BOT_TOKEN</Code> environment variable and redeploy.</p>
-                <div>{configured
-                  ? bot ? <Badge value="ACTIVE" tone="ok" label={`Connected as @${bot.username}`} dot /> : <Badge value="CANCELLED" tone="danger" label="Token set but bot unreachable" />
-                  : <Badge value="PLANNED" label="Not configured" />}</div>
-              </Step>
-
-              <Step n={2} title="Connect the webhook" done={Boolean(hook?.url)}>
-                <p>Lets the bot receive <Code>/start</Code> links and commands. Run this from the deployed site, not from localhost.</p>
-                {configured && (
-                  <div className="space-y-2">
-                    {hook?.url
-                      ? <p className="num break-all text-[11px] text-ok">{hook.url}</p>
-                      : <p className="text-[11px] text-warn">Not connected yet</p>}
-                    {hook?.last_error_message && <p className="text-[11px] text-danger">Last error: {hook.last_error_message}</p>}
-                    <ActionForm action={registerWebhook}><SubmitButton size="sm" variant="secondary" pendingText="Connecting…">{hook?.url ? "Reconnect webhook" : "Connect webhook"}</SubmitButton></ActionForm>
-                  </div>
-                )}
-              </Step>
-
-              <Step n={3} title="Each person links their account" done={linked.length > 0}>
-                <p>Everyone opens <Link href="/account" className="font-medium text-fg hover:underline">My account → Connect Telegram</Link>. They then get alerts for their role: drivers get new trips, dispatchers get issues and status changes, accountants get PODs and payments.</p>
-              </Step>
-
-              <Step n={4} title="Optional: company group chat" done={Boolean(group)}>
-                <p>Add <Code>@{bot?.username ?? "your_bot"}</Code> to a group, then send the command below in that group. The group receives all operations alerts and the daily brief.</p>
-                <div className="space-y-2">
-                  {group ? (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Badge value="ACTIVE" tone="ok" label="Group connected" dot />
-                      <form action={disconnectGroup}>
-                        <ConfirmSubmit confirm="Disconnect the group chat? It stops getting alerts until someone sends a new connect code there." className={cn(buttonClass("ghost", "sm"), "text-danger hover:bg-danger-soft hover:text-danger")}>Disconnect</ConfirmSubmit>
-                      </form>
+          {/* Open until the essentials work; afterwards the steps fold away but stay one click from the controls. */}
+          <section className={cardClass}>
+            <Disclosure title="Setup" icon={<ListChecks />} tone={setupComplete ? "ok" : "accent"} open={!setupComplete}
+              className="[&>summary]:rounded-lg [&>summary]:py-3"
+              meta={<span className="num text-[12px] text-fg-subtle">{setupDone.filter(Boolean).length} of {setupDone.length} done{group ? " · group on" : ""}</span>}>
+              <ol className="space-y-5 border-t border-line px-4 py-4">
+                <Step n={1} title="Create the bot" done={Boolean(bot)}>
+                  <p>In Telegram, message <b className="font-medium text-fg">@BotFather</b> and send <Code>/newbot</Code>. Put the token in the <Code>TELEGRAM_BOT_TOKEN</Code> environment variable and redeploy.</p>
+                  <div>{configured
+                    ? bot ? <Badge value="ACTIVE" tone="ok" label={`Connected as @${bot.username}`} dot /> : <Badge value="CANCELLED" tone="danger" label="Token set but bot unreachable" />
+                    : <Badge value="PLANNED" label="Not configured" />}</div>
+                </Step>
+  
+                <Step n={2} title="Connect the webhook" done={Boolean(hook?.url)}>
+                  <p>Lets the bot receive <Code>/start</Code> links and commands. Run this from the deployed site, not from localhost.</p>
+                  {configured && (
+                    <div className="space-y-2">
+                      {hook?.url
+                        ? <p className="num break-all text-[11px] text-ok">{hook.url}</p>
+                        : <p className="text-[11px] text-warn">Not connected yet</p>}
+                      {hook?.last_error_message && <p className="text-[11px] text-danger">Last error: {hook.last_error_message}</p>}
+                      <ActionForm action={registerWebhook}><SubmitButton size="sm" variant="secondary" pendingText="Connecting…">{hook?.url ? "Reconnect webhook" : "Connect webhook"}</SubmitButton></ActionForm>
                     </div>
-                  ) : groupCode ? (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <code className="num block rounded-md border border-line bg-sunken px-3 py-1.5 text-[13px] text-fg">/connect {groupCode}</code>
-                      <form action={newGroupCode}><button className={buttonClass("ghost", "sm")}>New code</button></form>
-                    </div>
-                  ) : (
-                    <form action={newGroupCode}><button className={buttonClass("secondary", "sm")} disabled={!configured}>Generate connect code</button></form>
                   )}
-                </div>
-              </Step>
-            </ol>
-          </Card>
+                </Step>
+  
+                <Step n={3} title="Each person links their account" done={linked.length > 0}>
+                  <p>Everyone opens <Link href="/account" className="font-medium text-fg hover:underline">My account → Connect Telegram</Link>. They then get alerts for their role: drivers get new trips, dispatchers get issues and status changes, accountants get PODs and payments.</p>
+                </Step>
+  
+                <Step n={4} title="Optional: company group chat" done={Boolean(group)}>
+                  <p>Add <Code>@{bot?.username ?? "your_bot"}</Code> to a group, then send the command below in that group. The group receives all operations alerts and the daily brief.</p>
+                  <div className="space-y-2">
+                    {group ? (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Badge value="ACTIVE" tone="ok" label="Group connected" dot />
+                        <form action={disconnectGroup}>
+                          <ConfirmSubmit confirm="Disconnect the group chat? It stops getting alerts until someone sends a new connect code there." className={cn(buttonClass("ghost", "sm"), "text-danger hover:bg-danger-soft hover:text-danger")}>Disconnect</ConfirmSubmit>
+                        </form>
+                      </div>
+                    ) : groupCode ? (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <code className="num block rounded-md border border-line bg-sunken px-3 py-1.5 text-[13px] text-fg">/connect {groupCode}</code>
+                        <form action={newGroupCode}><button className={buttonClass("ghost", "sm")}>New code</button></form>
+                      </div>
+                    ) : (
+                      <form action={newGroupCode}><button className={buttonClass("secondary", "sm")} disabled={!configured}>Generate connect code</button></form>
+                    )}
+                  </div>
+                </Step>
+              </ol>
+            </Disclosure>
+          </section>
 
           <Card title="Linked people" flush actions={<span className="num rounded bg-neutral-soft px-1.5 text-[11px] leading-5 text-fg-subtle">{linked.length}</span>}>
             <Table head={["Name", "Role", "Alerts"]} dense empty={linked.length === 0}
@@ -158,32 +166,33 @@ export default async function TelegramAdmin() {
         </div>
 
         <div className="space-y-4">
-          <Card title="What gets sent" flush>
-            <ul className="divide-y divide-line">
-              {SENT.map((s) => (
-                <li key={s.what} className="flex items-start gap-3 px-4 py-2">
-                  <span className="mt-0.5 shrink-0 text-fg-subtle [&_svg]:h-3.5 [&_svg]:w-3.5">{s.icon}</span>
-                  <div className="min-w-0 text-[12px]">
-                    <p className="text-fg">{s.what}</p>
-                    <p className="text-fg-subtle">→ {s.who}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          <Card title="Daily brief">
-            <p className="mb-3 text-[12px] text-fg-muted">Runs automatically each morning via Vercel Cron. Send one now to check the wiring.</p>
+          <Card title={<span className="flex items-center gap-1.5">Daily brief<InfoTip>Runs automatically each morning via Vercel Cron. Send one now to check the wiring.</InfoTip></span>}>
             <ActionForm action={sendDigestNow}><SubmitButton variant="secondary" size="sm" pendingText="Sending…">Send brief now</SubmitButton></ActionForm>
           </Card>
 
-          <Card title="Bot commands">
-            <ul className="space-y-1.5 text-[12px] text-fg-muted">
-              <li><Code>/status</Code> live fleet summary (staff only)</li>
-              <li><Code>/stop</Code> mute this chat</li>
-              <li><Code>/help</Code> list commands</li>
-            </ul>
-          </Card>
+          {/* Reference lists: one open at a time. */}
+          <section className={cn(cardClass, "divide-y divide-line [&>details:first-child>summary]:rounded-t-lg [&>details:last-child:not([open])>summary]:rounded-b-lg")}>
+            <Disclosure name="telegram-reference" title="What gets sent" icon={<BellRing />} count={SENT.length}>
+              <ul className="divide-y divide-line border-t border-line">
+                {SENT.map((s) => (
+                  <li key={s.what} className="flex items-start gap-3 px-4 py-2">
+                    <span className="mt-0.5 shrink-0 text-fg-subtle [&_svg]:h-3.5 [&_svg]:w-3.5">{s.icon}</span>
+                    <div className="min-w-0 text-[12px]">
+                      <p className="text-fg">{s.what}</p>
+                      <p className="text-fg-subtle">→ {s.who}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Disclosure>
+            <Disclosure name="telegram-reference" title="Bot commands" icon={<Terminal />} tone="neutral" count={3}>
+              <ul className="space-y-1.5 border-t border-line px-4 py-3 text-[12px] text-fg-muted">
+                <li><Code>/status</Code> live fleet summary (staff only)</li>
+                <li><Code>/stop</Code> mute this chat</li>
+                <li><Code>/help</Code> list commands</li>
+              </ul>
+            </Disclosure>
+          </section>
         </div>
       </div>
     </>

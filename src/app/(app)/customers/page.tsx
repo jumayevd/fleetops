@@ -6,7 +6,7 @@ import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { CUSTOMER_KIND_LABELS } from "@/lib/constants";
 import { daysAgo, money, number } from "@/lib/format";
-import { Card, Cell, Chip, EmptyState, LinkButton, PageHeader, Progress, Segmented, Stat, Table, cn } from "@/components/ui";
+import { Card, Cell, Chip, EmptyState, InfoTip, LinkButton, PageHeader, Progress, Segmented, Stat, Table, cn } from "@/components/ui";
 import { LinkRow } from "../drivers/link-row";
 import { CustomerSearch } from "./filters";
 import { ACTIVE_LOAD_STATUSES, BROKER_KINDS, COMPLETED_LOAD_STATUSES, KIND_FILTERS, KIND_SHORT, KIND_TONE, SHIPPER_KINDS, creditTone, grossInvoice, type KindFilter } from "./shared";
@@ -96,14 +96,12 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
 
   const href = (k: KindFilter) => { const p = new URLSearchParams(); if (k !== "ALL") p.set("kind", k); if (q) p.set("q", q); const s = p.toString(); return `/customers${s ? `?${s}` : ""}`; };
   const filtered = kind !== "ALL" || Boolean(q);
-  const showBrokerSplit = customers.some((c) => (stats.get(c.id)?.revBroker ?? 0) > 0);
 
   return (
     <>
       <PageHeader
         eyebrow="People & partners"
         title="Customers & brokers"
-        subtitle={`${shippers} shippers · ${brokers} brokers · ${number(loads90)} loads delivered in the last 90 days`}
         actions={editable && <LinkButton href="/customers/new"><Plus />Add customer</LinkButton>}
       />
 
@@ -114,7 +112,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
         <Link href={href("BROKER")} className="group block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
           <Stat className="h-full transition-colors group-hover:border-line-strong" label="Brokers" value={brokers} hint={brokered90 ? `${money(brokered90)} brokered in 90d` : "no brokered loads in 90d"} icon={<Handshake />} />
         </Link>
-        <Stat label="Revenue (90d)" value={money(revenue90)} hint={loads90 ? `${money(Math.round(revenue90 / loads90))} per load` : "no deliveries yet"} icon={<BadgeDollarSign />} />
+        <Stat label="Revenue (90d)" value={money(revenue90)} hint={loads90 ? `${number(loads90)} loads delivered · ${money(Math.round(revenue90 / loads90))} per load` : "no deliveries yet"} icon={<BadgeDollarSign />} />
         <Stat label="Open A/R" value={money(openAr)} hint={`${openCount} invoices sent, unpaid${overLimit ? ` · ${overLimit} near credit limit` : ""}`} tone={overLimit ? "warn" : "neutral"} icon={<Receipt />} />
         <Stat label="Overdue" value={money(overdue)} hint={overdue ? `${overdueCount} past due date` : "nothing past due"} tone={overdue ? "danger" : "ok"} icon={<AlertTriangle />} />
       </div>
@@ -128,15 +126,17 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
           ]} />
           <CustomerSearch q={q} kind={kind} />
         </div>
-        <p className="text-[11px] text-fg-subtle">
-          {matched > customers.length
-            ? <>Showing the first <span className="num">{customers.length}</span> of <span className="num">{number(matched)}</span> matches</>
-            : <>Showing <span className="num">{customers.length}</span> of <span className="num">{number(total)}</span></>}
+        <p className="num text-[12px] text-fg-subtle">
+          {matched > customers.length ? <>First {customers.length} of {number(matched)}</> : <>{customers.length} of {number(total)}</>}
         </p>
       </div>
 
       <Card flush>
-        <Table head={["Name", "Contact", "City", "Active loads", "Loads (90d)", "Revenue (90d)", "Open A/R", "Credit used", "Terms"]}>
+        <Table head={["Name", "Contact", "City", "Active loads", "Loads (90d)",
+          <span key="rev" className="inline-flex items-center gap-1">Revenue (90d)<InfoTip>Delivered loads by delivery date. A broker is credited for the loads it tendered; hover a figure for the broker share.</InfoTip></span>,
+          <span key="ar" className="inline-flex items-center gap-1">Open A/R<InfoTip>Sent, unpaid invoices including tax.</InfoTip></span>,
+          <span key="cr" className="inline-flex items-center gap-1">Credit used<InfoTip>Open A/R as a share of the credit limit; hover for the limit.</InfoTip></span>,
+          "Terms"]}>
           {customers.map((c) => {
             const s = stats.get(c.id);
             const ar = arBy.get(c.id);
@@ -148,22 +148,21 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
               <LinkRow key={c.id} href={`/customers/${c.id}`}>
                 <td className="min-w-56">
                   <div className="flex items-center gap-1.5">
-                    <Link href={`/customers/${c.id}`} className="truncate font-medium text-fg hover:underline">{c.name}</Link>
+                    <Link href={`/customers/${c.id}`} title={c.taxId ? `INN ${c.taxId}` : undefined} className="truncate font-medium text-fg hover:underline">{c.name}</Link>
                     <Chip tone={KIND_TONE[c.kind]} title={CUSTOMER_KIND_LABELS[c.kind] ?? c.kind} className="normal-case tracking-normal">{KIND_SHORT[c.kind] ?? c.kind}</Chip>
                   </div>
-                  {c.taxId && <div className="num mt-0.5 truncate text-[11px] text-fg-subtle">INN {c.taxId}</div>}
                 </td>
                 <td className="max-w-48">
                   {c.contactName || c.phone
-                    ? <Cell primary={c.contactName ?? <span className="text-fg-faint">—</span>} secondary={c.phone ? <a href={`tel:${c.phone}`} className="num hover:underline">{c.phone}</a> : c.email} />
+                    ? <Cell primary={<span title={c.email ?? undefined}>{c.contactName ?? <span className="text-fg-faint">—</span>}</span>} secondary={c.phone ? <a href={`tel:${c.phone}`} className="num hover:underline">{c.phone}</a> : undefined} />
                     : <span className="text-fg-faint">—</span>}
                 </td>
-                <td className="whitespace-nowrap">{c.city ? <Cell primary={c.city} secondary={c.country ?? undefined} /> : <span className="text-fg-faint">—</span>}</td>
+                <td className="whitespace-nowrap">{c.city ? <span title={c.country ?? undefined}>{c.city}</span> : <span className="text-fg-faint">—</span>}</td>
                 <td className="num">{s?.active ? s.active : <span className="text-fg-faint">—</span>}</td>
                 <td className="num">{s?.loads90 ? s.loads90 : <span className="text-fg-faint">—</span>}</td>
                 <td>
                   {rev
-                    ? <Cell mono primary={money(rev)} secondary={showBrokerSplit && s?.revBroker ? `${money(s.revBroker)} as broker` : undefined} />
+                    ? <span className="num" title={s?.revBroker ? `${money(s.revBroker)} as broker` : undefined}>{money(rev)}</span>
                     : <span className="text-fg-faint">—</span>}
                 </td>
                 <td>
@@ -172,11 +171,10 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                     : <span className="text-fg-faint">—</span>}
                 </td>
                 <td className="min-w-28">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2" title={`${money(ar?.amount ?? 0)} of ${money(c.creditLimit)}`}>
                     <Progress value={ratio} tone={tone} className="w-14" />
                     <span className={cn("num text-[12px]", tone === "danger" ? "font-medium text-danger" : tone === "warn" ? "text-warn" : "text-fg-muted")}>{Math.round(ratio * 100)}%</span>
                   </div>
-                  <div className="num mt-0.5 text-[11px] text-fg-subtle">of {money(c.creditLimit)}</div>
                 </td>
                 <td className="num whitespace-nowrap text-fg-muted">Net {c.paymentTerms}</td>
               </LinkRow>
@@ -194,11 +192,6 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
           </p>
         )}
       </Card>
-      {customers.length > 0 && (
-        <p className="mt-2 text-[11px] text-fg-subtle">
-          Revenue counts delivered loads by delivery date; a broker is credited for loads it tendered. Open A/R is sent, unpaid invoices including tax. Credit used compares open A/R with the credit limit.
-        </p>
-      )}
     </>
   );
 }

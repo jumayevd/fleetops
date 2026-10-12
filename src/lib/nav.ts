@@ -5,13 +5,21 @@ import type { Permission } from "./permissions";
  * Keep routes here even before their page exists so the shell stays the single source of truth.
  */
 export type NavItem = { href: string; label: string; icon: string; perm: Permission; shortcut?: string; description?: string };
-export type NavSection = { section: string; items: NavItem[] };
+/** A sidebar category. It folds open on click; a category with one item for this role shows as a plain link. */
+export type NavSection = { section: string; icon: string; items: NavItem[] };
 
 export const NAV: NavSection[] = [
   {
-    section: "Dispatch",
+    section: "Overview",
+    icon: "LayoutDashboard",
     items: [
       { href: "/dashboard", label: "Overview", icon: "LayoutDashboard", perm: "dashboard.view", shortcut: "g o", description: "KPIs, exceptions, live fleet" },
+    ],
+  },
+  {
+    section: "Dispatch",
+    icon: "Rows3",
+    items: [
       { href: "/dispatch", label: "Board", icon: "Rows3", perm: "loads.view", shortcut: "g b", description: "Daily dispatch board by team" },
       { href: "/loads", label: "Loads", icon: "Package", perm: "loads.view", shortcut: "g l", description: "All shipments" },
       { href: "/tracking", label: "Live map", icon: "Map", perm: "tracking.view", shortcut: "g m", description: "Every truck, route and ETA" },
@@ -21,6 +29,7 @@ export const NAV: NavSection[] = [
   },
   {
     section: "Fleet",
+    icon: "Truck",
     items: [
       { href: "/fleet", label: "Trucks", icon: "Truck", perm: "fleet.view", shortcut: "g t" },
       { href: "/fleet/trailers", label: "Trailers", icon: "Container", perm: "fleet.view" },
@@ -29,14 +38,16 @@ export const NAV: NavSection[] = [
     ],
   },
   {
-    section: "People & partners",
+    section: "People",
+    icon: "Users",
     items: [
       { href: "/drivers", label: "Drivers", icon: "Users", perm: "drivers.view", shortcut: "g d" },
       { href: "/customers", label: "Customers & brokers", icon: "Building2", perm: "customers.view", shortcut: "g c" },
     ],
   },
   {
-    section: "Money & safety",
+    section: "Money",
+    icon: "Wallet",
     items: [
       { href: "/finance", label: "Finance", icon: "Receipt", perm: "finance.view", shortcut: "g f", description: "Invoices, receivables, billing queue" },
       { href: "/reports", label: "Reports", icon: "BarChart3", perm: "reports.view", shortcut: "g r" },
@@ -45,13 +56,15 @@ export const NAV: NavSection[] = [
   },
   {
     section: "Team",
+    icon: "MessageSquare",
     items: [
       { href: "/chat", label: "Chat", icon: "MessageSquare", perm: "chat.view", description: "Company room and load threads" },
       { href: "/announcements", label: "Announcements", icon: "Megaphone", perm: "chat.view" },
     ],
   },
   {
-    section: "Company",
+    section: "Settings",
+    icon: "Settings",
     items: [
       { href: "/admin/company", label: "Company profile", icon: "Landmark", perm: "company.manage" },
       { href: "/admin/users", label: "Users & roles", icon: "ShieldCheck", perm: "users.manage" },
@@ -70,6 +83,11 @@ export const SEGMENT_LABELS: Record<string, string> = {
 
 export function allNavItems() {
   return NAV.flatMap((s) => s.items);
+}
+
+export function findNavSection(path: string) {
+  const item = findNavItem(path);
+  return item ? NAV.find((s) => s.items.includes(item)) : undefined;
 }
 
 export function findNavItem(path: string) {

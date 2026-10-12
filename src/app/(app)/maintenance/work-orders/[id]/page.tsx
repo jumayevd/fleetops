@@ -7,7 +7,7 @@ import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { WORK_ORDER_CATEGORY_LABELS, humanize } from "@/lib/constants";
 import { ago, date, dateTime, km, money, number } from "@/lib/format";
-import { Badge, Card, Chip, DL, LinkButton, PageHeader, Table, cn } from "@/components/ui";
+import { Badge, Card, Chip, DL, InfoTip, LinkButton, PageHeader, Table, cn } from "@/components/ui";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { activeLoadsByUnit, daysBetween, pmNextService, shopTone } from "../../_lib/data";
 import { loadHref, maintenanceHref, trailerHref, truckHref, workOrderHref } from "../../_lib/links";
@@ -179,7 +179,9 @@ export default async function WorkOrderDetail({ params }: PageProps<"/maintenanc
             {wo.cost === 0 && <p className="mt-3 text-[12px] text-fg-muted">No costs recorded yet. {editable ? "Add labour and parts from Edit once the vendor invoice arrives." : ""}</p>}
           </Card>
 
-          <Card title="Timeline">
+          <Card title={wo.truck && wo.category === "PM" && wo.status !== "DONE" && wo.status !== "CANCELLED"
+            ? <span className="flex items-center gap-1.5">Timeline<InfoTip>Completing this PM sets the truck&apos;s next service to the odometer here plus its {number(wo.truck.pmIntervalKm)} km interval.</InfoTip></span>
+            : "Timeline"}>
             <ol className="space-y-3">
               {steps.map((s, i) => {
                 const done = s.done ?? Boolean(s.at);
@@ -198,11 +200,6 @@ export default async function WorkOrderDetail({ params }: PageProps<"/maintenanc
                 );
               })}
             </ol>
-            {wo.truck && wo.category === "PM" && wo.status !== "DONE" && wo.status !== "CANCELLED" && (
-              <p className="mt-3 border-t border-line pt-3 text-[12px] text-fg-muted">
-                Completing this PM sets the truck&apos;s next service to the odometer here plus its {number(wo.truck.pmIntervalKm)} km interval.
-              </p>
-            )}
           </Card>
 
           <DocumentsPanel user={user} target={{ type: "workOrder", id }} path={path} description="Estimates, vendor invoices and photos for this job." />

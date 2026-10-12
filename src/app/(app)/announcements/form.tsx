@@ -17,7 +17,7 @@ export function AnnouncementForm({ a, onSaved, onCancel }: { a?: AnnouncementDTO
           placeholder="Details. Line breaks are kept; load references like LD-10102 and links become clickable." />
       </Field>
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-        <Field label="Expires" className="min-w-52 flex-1" hint="Optional — hidden from the list after this time.">
+        <Field label="Expires (optional)" className="min-w-52 flex-1">
           <Input name="expiresAt" type="datetime-local" defaultValue={a?.expiresInput} />
         </Field>
         <Checkbox name="pinned" label="Pin to the top" defaultChecked={a?.pinned} className="h-8" />

@@ -7,7 +7,7 @@ import { can } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { WORK_ORDER_CATEGORIES, WORK_ORDER_CATEGORY_LABELS, WORK_ORDER_PRIORITIES, WORK_ORDER_STATUSES, humanize } from "@/lib/constants";
 import { date, money, number } from "@/lib/format";
-import { Badge, Card, Cell, FilterPills, LinkButton, PageHeader, Stat, Table } from "@/components/ui";
+import { Badge, Card, FilterPills, InfoTip, LinkButton, PageHeader, Stat, Table } from "@/components/ui";
 import { activeLoadsByUnit, daysBetween, str, unitsInShopCount, type ActiveLoad } from "../_lib/data";
 import { newWorkOrderHref, workOrderHref, workOrdersHref } from "../_lib/links";
 import { NO_VENDOR, onLoadReason, plural } from "../_lib/shared";
@@ -23,7 +23,8 @@ const STATUS_RANK: Record<string, number> = { IN_PROGRESS: 0, OPEN: 1, DRAFT: 2 
 const PRIORITY_RANK: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 /** "All" groups rows: open work, then completed, then cancelled (each group keeps the query's newest-first order). */
 const ALL_GROUP: Record<string, number> = { DRAFT: 0, OPEN: 0, IN_PROGRESS: 0, DONE: 1, CANCELLED: 2 };
-const FOOTER: Record<string, string> = {
+/** How each status view is sorted, shown behind the (i) next to the pills. */
+const SORT_NOTE: Record<string, string> = {
   active: "In progress first, then open and drafts; urgent work at the top of each group.",
   DONE: "Most recently completed first.",
   CANCELLED: "Most recently scheduled first.",
@@ -89,7 +90,6 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
       <PageHeader
         eyebrow="Fleet · Maintenance"
         title="Work orders"
-        subtitle="Shop work from request to completion. Starting one puts the unit in the shop; completing it releases the unit."
         actions={
           <>
             <LinkButton href="/maintenance" variant="secondary">Maintenance overview</LinkButton>
@@ -106,13 +106,16 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
       </div>
 
       <Card className="mt-4" flush>
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line px-4 py-3">
-          <FilterPills active={status} items={[
-            { key: "active", label: "Active", href: pill("active"), count: open + inProgress },
-            ...WORK_ORDER_STATUSES.map((s) => ({ key: s, label: humanize(s), href: pill(s), count: countOf(s) })),
-            { key: "all", label: "All", href: pill("all"), count: total },
-          ]} />
-          <FilterBar keep={["status"]} filters={[
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterPills active={status} items={[
+              { key: "active", label: "Active", href: pill("active"), count: open + inProgress },
+              ...WORK_ORDER_STATUSES.map((s) => ({ key: s, label: humanize(s), href: pill(s), count: countOf(s) })),
+              { key: "all", label: "All", href: pill("all"), count: total },
+            ]} />
+            <InfoTip>{SORT_NOTE[status] ?? "Urgent work first, then the earliest scheduled."}</InfoTip>
+          </div>
+          <FilterBar align="right" keep={["status"]} filters={[
             { name: "priority", label: "Priority", value: validPriority ?? "", options: WORK_ORDER_PRIORITIES.map((p) => ({ value: p, label: humanize(p) })) },
             { name: "category", label: "Category", value: validCategory ?? "", options: WORK_ORDER_CATEGORIES.map((c) => ({ value: c, label: WORK_ORDER_CATEGORY_LABELS[c] ?? humanize(c) })) },
             { name: "unit", label: "Unit", value: unit ?? "", options: [
@@ -121,7 +124,9 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
             ] },
           ]} />
         </div>
-        <Table head={["#", "Unit", "Work", "Category", "Priority", "Status", "Vendor", "Scheduled", "In / out", "Cost", ""]} empty={rows.length === 0}
+        <Table head={["#", "Unit", "Work", "Category", "Priority",
+          <span key="status" className="inline-flex items-center gap-1">Status<InfoTip>Starting a work order puts its unit in the shop; completing or cancelling it releases the unit.</InfoTip></span>,
+          "Vendor", "Scheduled", "In / out", "Cost", ""]} empty={rows.length === 0}
           emptyTitle={status === "active" && !filtered ? "No open work orders" : "Nothing matches these filters"}
           emptyDescription={status === "active" && !filtered
             ? (editable ? "Create a work order for a repair, inspection or PM service, or start one from the PM schedule." : "Open work orders will appear here.")
@@ -135,17 +140,17 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
               <tr key={w.id}>
                 <td><Link href={workOrderHref(w.id)} className="num font-medium text-fg hover:underline">#{w.number}</Link></td>
                 <td><UnitLink truck={w.truck} trailer={w.trailer} secondary={load ? <span className="text-warn">on <span className="num">{load.reference}</span></span> : undefined} /></td>
-                <td className="max-w-80">
-                  <Cell primary={<Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>} secondary={w.description ?? undefined} />
+                <td className="max-w-80 truncate" title={w.description ?? undefined}>
+                  <Link href={workOrderHref(w.id)} className="font-medium hover:underline">{w.title}</Link>
                 </td>
                 <td className="whitespace-nowrap text-fg-muted">{WORK_ORDER_CATEGORY_LABELS[w.category] ?? humanize(w.category)}</td>
                 <td><Priority value={w.priority} /></td>
                 <td><Badge value={w.status} dot /></td>
                 <td className="max-w-44 truncate text-fg-muted">{w.vendor ?? <span className="text-fg-faint">{NO_VENDOR}</span>}</td>
                 <td className="whitespace-nowrap text-fg-muted">{date(w.scheduledAt)}</td>
-                <td className="whitespace-nowrap">
+                <td className="whitespace-nowrap" title={shopDays != null ? `${number(shopDays)}d in the shop` : undefined}>
                   {w.inAt
-                    ? <Cell primary={<span className="num text-fg-muted">{date(w.inAt)} → {w.outAt ? date(w.outAt) : <span className="text-warn">in shop</span>}</span>} secondary={shopDays != null ? `${number(shopDays)}d` : undefined} />
+                    ? <span className="num text-fg-muted">{date(w.inAt)} → {w.outAt ? date(w.outAt) : <span className="text-warn">in shop</span>}</span>
                     : <span className="text-fg-faint">—</span>}
                 </td>
                 <td className="num font-medium">{w.cost ? money(w.cost) : <span className="font-normal text-fg-faint">—</span>}</td>
@@ -156,11 +161,8 @@ export default async function WorkOrdersPage({ searchParams }: PageProps<"/maint
             );
           })}
         </Table>
-        {rows.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-[11px] text-fg-subtle">
-            <span>{FOOTER[status] ?? "Urgent work first, then the earliest scheduled."}</span>
-            {rows.length >= PAGE && <span>Showing the first {PAGE}. Narrow the filters to see the rest.</span>}
-          </div>
+        {rows.length >= PAGE && (
+          <p className="border-t border-line bg-info-soft px-4 py-2 text-[12px] text-info">Showing the first {PAGE}. Narrow the filters to see the rest.</p>
         )}
       </Card>
     </>

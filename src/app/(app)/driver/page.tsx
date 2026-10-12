@@ -9,7 +9,7 @@ import { driverUpdateLoad } from "@/app/actions/driver";
 import { addLoadEvent } from "@/app/actions/loads";
 import { addFuelLog } from "@/app/actions/fleet";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { Badge, Card, Chip, EmptyState, Field, Input, LinkButton, Progress, Stat, buttonClass, cn } from "@/components/ui";
+import { Badge, Card, Chip, EmptyState, Field, InfoTip, Input, LinkButton, Progress, Stat, buttonClass, cn } from "@/components/ui";
 import { LeafletMap, type MapPoint, type MapTruck } from "@/components/map";
 import { DocumentsPanel } from "@/components/documents/panel";
 import { AnnouncementBanner } from "./announcement-banner";
@@ -241,12 +241,12 @@ export default async function DriverPortal() {
               <p className="text-[13px] text-fg-muted">
                 Pickup <span className="num font-medium text-fg">{dateTime(active.pickupAt)}</span> at {active.originName} <span className="text-fg-subtle">· {ago(active.pickupAt)}</span>
               </p>
-              <ActionForm action={driverUpdateLoad.bind(null, active.id)} className="mt-2.5" confirm="Loaded and leaving the pickup? This starts the trip.">
+              <ActionForm action={driverUpdateLoad.bind(null, active.id)} className="mt-2.5"
+                confirm="Loaded and leaving the pickup? This marks the pickup done and puts you en route on the dispatch board.">
                 <input type="hidden" name="status" value="IN_TRANSIT" />
                 <GeoFields />
                 <SubmitButton variant="accent" className="h-12 w-full text-[15px]" pendingText="Starting trip…"><Navigation />Start trip</SubmitButton>
               </ActionForm>
-              <p className="mt-1.5 text-center text-[11px] text-fg-subtle">Marks the pickup done and puts you en route on the dispatch board.</p>
             </div>
           )}
 
@@ -339,8 +339,9 @@ export default async function DriverPortal() {
 
           {/* Trip documents */}
           <div className="border-t border-line px-4 py-3">
-            <h3 className="text-[13px] font-semibold text-fg">Trip documents</h3>
-            <p className="mb-3 mt-0.5 text-[12px] leading-4 text-fg-muted">Photograph the signed POD, CMR or BOL — dispatch and billing see it straight away.</p>
+            <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold text-fg">
+              Trip documents<InfoTip>Photograph the signed POD, CMR or BOL: dispatch and billing see it straight away.</InfoTip>
+            </h3>
             {/* The POD is the driver's share of the billing checklist (the rate confirmation is the office's); it only applies once the trip is under way. */}
             <DocumentsPanel user={user} target={{ type: "load", id: active.id }} path="/driver" camera plain defaultKind={inTransit ? "POD" : "BOL"}
               required={inTransit ? ["POD"] : undefined} />
@@ -423,15 +424,18 @@ export default async function DriverPortal() {
       <section aria-label="My production">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="text-[13px] font-semibold text-fg">This week</h2>
-          <p className="num text-[11px] text-fg-subtle">from {date(weekStart)} · month totals below</p>
+          <p className="num text-[11px] text-fg-subtle">from {date(weekStart)}</p>
         </div>
         {/* Two tiles a row on a phone (22px values need ~140px each), earnings full width; three across from sm up. */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <Stat label="Loads" value={week._count} hint={`${month._count} this month`} />
-          <Stat label="Distance" value={km(week._sum.distanceKm)} hint={`${km(month._sum.distanceKm)} this month`} />
-          <Stat label="Earnings" value={money(week._sum.driverPay)} tone="ok" className="col-span-2 sm:col-span-1"
-            hint={`${money(month._sum.driverPay)} this month · $${driver.payPerKm.toFixed(2)}/km`} />
+          <Stat label="Loads" value={week._count} />
+          <Stat label="Distance" value={km(week._sum.distanceKm)} />
+          <Stat label="Earnings" value={money(week._sum.driverPay)} tone="ok" className="col-span-2 sm:col-span-1" />
         </div>
+        {/* Month totals stay on screen: tile hints only show on hover, and this page is used on a phone. */}
+        <p className="num mt-2 px-1 text-[12px] text-fg-muted">
+          <span className="font-sans font-medium text-fg">This month</span> · {month._count} loads · {km(month._sum.distanceKm)} · {money(month._sum.driverPay)} · ${driver.payPerKm.toFixed(2)}/km
+        </p>
       </section>
 
       {/* Fuel -------------------------------------------------------------- */}

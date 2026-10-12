@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import {
   Bed, ChevronDown, ChevronRight, CircleCheck, ClockFading, Copy, Ellipsis, Eraser, House, Keyboard, OctagonPause, Package, Phone, Search, TreePalm, Undo2, Users, X,
 } from "lucide-react";
-import { Badge, Button, Chip, cn, EmptyState, IconButton, Kbd, LiveDot, Progress, STATUS_TONE, StatusDot, TONE_DOT, inputClass, type Tone } from "@/components/ui";
+import { Badge, Button, Chip, cn, EmptyState, IconButton, Kbd, LiveDot, Progress, STATUS_TONE, StatusDot, TONE_DOT, inputClass, segmentedThumb, segmentedTrack, type Tone } from "@/components/ui";
 import { BOARD_STATUS_LABELS, BOARD_STATUS_ORDER, DRIVER_TYPE_LABELS, DRIVER_TYPE_SHORT, EQUIPMENT_LABELS, MANUAL_BOARD_STATUSES, type BoardStatus } from "@/lib/constants";
 import { ago, number } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
@@ -76,8 +76,10 @@ const flagOf = (r: BoardRow, flag: string) =>
 /* Board                                                               */
 /* ------------------------------------------------------------------ */
 
-export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDriverId }: {
+export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDriverId, teamFilter }: {
   initial: BoardPayload; view: "teams" | "flat"; canEdit: boolean; team: string | null; initialQ: string; focusDriverId: string | null;
+  /** The page's team switcher (links), shown at the start of the toolbar. */
+  teamFilter?: ReactNode;
 }) {
   const router = useRouter();
   const now = useNow();
@@ -257,43 +259,15 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
 
   return (
     <div className="space-y-3">
-      {/* Summary strip */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <SummaryPill active={!filter} onClick={() => setFilter(null)} label="All" count={data.rows.length} />
-        {summary.statuses.map(([s, n]) => (
-          <SummaryPill key={s} tone={STATUS_TONE[s] ?? "neutral"} label={BOARD_STATUS_LABELS[s as BoardStatus] ?? s} count={n}
-            active={filter?.kind === "status" && filter.value === s} onClick={() => setFilter(filter?.kind === "status" && filter.value === s ? null : { kind: "status", value: s })} />
-        ))}
-        {summary.flags.length > 0 && <span className="mx-1 h-4 border-l border-line" />}
-        {summary.flags.map(([f, n]) => (
-          <SummaryPill key={f} tone={f === "late" ? "danger" : f === "norc" || f === "hold" ? "warn" : "accent"} count={n}
-            label={f === "late" ? "Running late" : f === "norc" ? "No RC" : f === "hold" ? "On hold" : "Manual status"}
-            active={filter?.kind === "flag" && filter.value === f} onClick={() => setFilter(filter?.kind === "flag" && filter.value === f ? null : { kind: "flag", value: f })} />
-        ))}
-      </div>
-
-      {/* Toolbar */}
+      {/* Toolbar: team and search on one line, the day's statuses on the next. */}
       <div className="flex flex-wrap items-center gap-2">
+        {teamFilter}
         <label className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-fg-faint" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Driver, truck, load, city…" aria-label="Filter board"
-            className={cn(inputClass, "h-8 w-72 pl-8 pr-7")} />
-          {q && <button type="button" onClick={() => setQ("")} aria-label="Clear" className="absolute right-1.5 top-1.5 rounded p-0.5 text-fg-subtle hover:bg-raised hover:text-fg"><X className="h-3.5 w-3.5" /></button>}
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-faint" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the board…" title="Driver, truck, load or city" aria-label="Filter board"
+            className={cn(inputClass, "w-60 pl-8 pr-7")} />
+          {q && <button type="button" onClick={() => setQ("")} aria-label="Clear" className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-fg-subtle hover:bg-raised hover:text-fg"><X className="h-3.5 w-3.5" /></button>}
         </label>
-        {/* Shortcuts live behind one quiet button instead of a permanent line of hints. */}
-        <details className="relative hidden xl:block">
-          <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-muted transition-colors hover:bg-raised hover:text-fg [&::-webkit-details-marker]:hidden">
-            <Keyboard className="h-3.5 w-3.5" /> Shortcuts
-          </summary>
-          <ul className="absolute left-0 top-9 z-30 w-72 space-y-2 rounded-lg border border-line bg-overlay p-3 text-[12px] text-fg-muted shadow-float">
-            <li className="flex items-center justify-between gap-3">Move between drivers <span className="flex gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd></span></li>
-            <li className="flex items-center justify-between gap-3">Open driver details <Kbd>↵</Kbd></li>
-            {canEdit && <li className="flex items-center justify-between gap-3">Row colour <Kbd>c</Kbd></li>}
-            {canEdit && <li className="flex items-center justify-between gap-3">Notes <Kbd>n</Kbd></li>}
-            <li className="flex items-center justify-between gap-3">Status history <Kbd>h</Kbd></li>
-            <li className="flex items-center justify-between gap-3">Copy a column (click its header) <span className="flex gap-1"><Kbd>Ctrl</Kbd><Kbd>C</Kbd></span></li>
-          </ul>
-        </details>
         <div className="ml-auto flex items-center gap-3 text-[11px] text-fg-subtle">
           {selectedCol && (
             <button type="button" onClick={() => void copyColumn(selectedCol)} className="inline-flex items-center gap-1 rounded-md border border-accent/40 bg-accent-soft px-2 py-1 text-[11px] font-medium text-accent-text hover:border-accent">
@@ -302,21 +276,55 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
           )}
           <span className="num">{visible.length} of {data.rows.length} drivers</span>
           {live ? <LiveDot label={updatedAt ? `Live · ${fmtHms(updatedAt)}` : "Live"} /> : <span>{data.rows[0]?.statusMode === "history" ? "Status as of end of day" : "Planned · statuses are today's"}</span>}
+          {/* Shortcuts live behind one quiet icon instead of a permanent line of hints. */}
+          <details className="relative hidden xl:block">
+            <summary title="Keyboard shortcuts" aria-label="Keyboard shortcuts"
+              className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-raised hover:text-fg [&::-webkit-details-marker]:hidden">
+              <Keyboard className="h-4 w-4" />
+            </summary>
+            <ul className="pop-in absolute right-0 top-9 z-30 w-72 space-y-2 rounded-lg border border-line bg-overlay p-3 text-[12px] text-fg-muted shadow-float">
+              <li className="flex items-center justify-between gap-3">Move between drivers <span className="flex gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd></span></li>
+              <li className="flex items-center justify-between gap-3">Open driver details <Kbd>↵</Kbd></li>
+              {canEdit && <li className="flex items-center justify-between gap-3">Row colour <Kbd>c</Kbd></li>}
+              {canEdit && <li className="flex items-center justify-between gap-3">Notes <Kbd>n</Kbd></li>}
+              <li className="flex items-center justify-between gap-3">Status history <Kbd>h</Kbd></li>
+              <li className="flex items-center justify-between gap-3">Copy a column (click its header) <span className="flex gap-1"><Kbd>Ctrl</Kbd><Kbd>C</Kbd></span></li>
+            </ul>
+          </details>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className={segmentedTrack} role="group" aria-label="Filter by status">
+          <SummaryPill active={!filter} onClick={() => setFilter(null)} label="All" count={data.rows.length} />
+          {summary.statuses.map(([s, n]) => (
+            <SummaryPill key={s} tone={STATUS_TONE[s] ?? "neutral"} label={BOARD_STATUS_LABELS[s as BoardStatus] ?? s} count={n}
+              active={filter?.kind === "status" && filter.value === s} onClick={() => setFilter(filter?.kind === "status" && filter.value === s ? null : { kind: "status", value: s })} />
+          ))}
+        </div>
+        {summary.flags.length > 0 && (
+          <div className={segmentedTrack} role="group" aria-label="Filter by flag">
+            {summary.flags.map(([f, n]) => (
+              <SummaryPill key={f} tone={f === "late" ? "danger" : f === "norc" || f === "hold" ? "warn" : "accent"} count={n}
+                label={f === "late" ? "Running late" : f === "norc" ? "No RC" : f === "hold" ? "On hold" : "Manual status"}
+                active={filter?.kind === "flag" && filter.value === f} onClick={() => setFilter(filter?.kind === "flag" && filter.value === f ? null : { kind: "flag", value: f })} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Grid */}
       <div ref={gridRef} tabIndex={0} onKeyDown={onGridKey} aria-label="Dispatch board"
-        className="relative max-h-[calc(100vh-268px)] min-h-[240px] overflow-auto rounded-lg border border-line bg-surface outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+        className="relative max-h-[calc(100vh-252px)] min-h-[240px] overflow-auto rounded-lg border border-line bg-surface shadow-card outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
         <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
           <thead className="sticky top-0 z-20">
-            <tr className="text-left text-[12px] font-medium text-fg-muted">
+            <tr className="text-left text-[12px] font-medium text-fg-subtle">
               {COLUMNS.map((c, i) => {
                 const sticky = i === 0 ? { left: 0, width: STICKY_LOAD } : i === 1 ? { left: STICKY_LOAD, width: STICKY_DRIVER } : null;
                 const active = selectedCol === c.key;
                 return (
                   <th key={c.key} scope="col" style={sticky ? { left: sticky.left, width: sticky.width, minWidth: sticky.width, maxWidth: sticky.width } : undefined}
-                    className={cn("h-8 whitespace-nowrap border-b border-line bg-sunken px-3 font-medium", sticky && "sticky z-30", i === 1 && "border-r border-line")}>
+                    className={cn("h-9 whitespace-nowrap border-b border-line bg-raised px-3 font-medium", sticky && "sticky z-30", i === 1 && "border-r border-line")}>
                     <button type="button" onClick={() => setSelectedCol(active ? null : c.key)} aria-pressed={active} title={active ? "Click to deselect" : "Select column (Ctrl+C copies it)"}
                       className={cn("-mx-1.5 inline-flex h-6 items-center gap-1 rounded px-1.5 transition-colors hover:text-fg", active && "bg-accent-soft text-accent-text")}>
                       {c.label}<span className="sr-only">, select column for copying</span>{active && <Copy className="h-3 w-3" />}
@@ -324,7 +332,7 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
                   </th>
                 );
               })}
-              <th className="h-8 w-10 border-b border-line bg-sunken" />
+              <th className="h-9 w-10 border-b border-line bg-raised" />
             </tr>
           </thead>
           {groups.map((g) => {
@@ -341,8 +349,12 @@ export function DispatchBoard({ initial, view, canEdit, team, initialQ, focusDri
                         <span className="h-2 w-2 rounded-full ring-1 ring-line" style={{ background: g.color ?? "var(--fg-faint)" }} />
                         <span className="font-semibold">{g.name}</span>
                         <span className="num text-fg-subtle">{g.rows.length}</span>
-                        <span className="hidden truncate text-fg-subtle sm:inline">
-                          {counts.map(([s, n], i) => <span key={s}>{i > 0 && " · "}<span className="num">{n}</span> {BOARD_STATUS_LABELS[s].toLowerCase()}</span>)}
+                        <span className="hidden items-center gap-1 sm:flex">
+                          {counts.map(([s, n]) => (
+                            <span key={s} title={`${n} ${BOARD_STATUS_LABELS[s].toLowerCase()}`} className="num inline-flex items-center gap-1 rounded-full bg-surface px-1.5 text-[11px] leading-[18px] text-fg-muted ring-1 ring-line">
+                              <StatusDot tone={STATUS_TONE[s] ?? "neutral"} />{n}
+                            </span>
+                          ))}
                         </span>
                       </button>
                     </td>
@@ -458,9 +470,9 @@ function Row({ r, date, now, liveClock, canEdit, focused, selectedCol, draft, no
         ) : <span className="text-fg-faint">—</span>}
       </td>
       {/* Phone */}
-      <td className={cn(cell("phone"), "num text-[12px] leading-4")}>
-        {r.driver.phone ? <a href={`tel:${r.driver.phone.replace(/\s/g, "")}`} className="block whitespace-nowrap text-fg hover:text-accent-text hover:underline">{r.driver.phone}</a> : <span className="text-fg-faint">—</span>}
-        {r.driver.phone2 && <a href={`tel:${r.driver.phone2.replace(/\s/g, "")}`} className="block whitespace-nowrap text-fg-subtle hover:text-accent-text hover:underline">{r.driver.phone2}</a>}
+      <td className={cn(cell("phone"), "num whitespace-nowrap text-[12px]")}>
+        {r.driver.phone ? <a href={`tel:${r.driver.phone.replace(/\s/g, "")}`} className="text-fg hover:text-accent-text hover:underline">{r.driver.phone}</a> : <span className="text-fg-faint">—</span>}
+        {r.driver.phone2 && <a href={`tel:${r.driver.phone2.replace(/\s/g, "")}`} title={`Second number: ${r.driver.phone2}`} aria-label={`Second number ${r.driver.phone2}`} className="ml-1.5 rounded-full bg-neutral-soft px-1.5 text-[10.5px] leading-4 text-fg-subtle hover:text-accent-text">+1</a>}
       </td>
       {/* Status */}
       <td className={cell("status")}>
@@ -558,11 +570,9 @@ function EtaCell({ l, date }: { l: BoardRow["load"]; date: string }) {
 
 function SummaryPill({ label, count, tone = "neutral", active, onClick }: { label: string; count: number; tone?: Tone; active: boolean; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={active}
-      className={cn("inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[12px] transition-colors",
-        active ? "border-primary bg-primary text-on-primary" : "border-line bg-surface text-fg-muted hover:border-line-strong hover:text-fg")}>
-      {tone !== "neutral" && !active && <StatusDot tone={tone} />}
-      {label}<span className={cn("num text-[11px]", active ? "opacity-70" : "text-fg-subtle")}>{count}</span>
+    <button type="button" onClick={onClick} aria-pressed={active} className={segmentedThumb(active)}>
+      {tone !== "neutral" && <StatusDot tone={tone} />}
+      {label}<span className={cn("num text-[10.5px]", active ? "text-fg-subtle" : "text-fg-faint")}>{count}</span>
     </button>
   );
 }
